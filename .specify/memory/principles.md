@@ -1,41 +1,30 @@
 <!--
 Sync Impact Report
 ==================
-Version change: (unversioned template) → 1.0.0
-Bump rationale: Initial ratification. All placeholders replaced with project-specific content.
+Version change: 1.2.0 → 1.2.1
+Bump rationale: PATCH. Resolves an internal inconsistency introduced in 1.2.0: per-zone keys were
+still listed as an Enhanced (environment-type) control in Govern Data Access by Default, while
+Embed Compliance into the Architecture gates cost-incurring compliance controls on data
+designation. No guidance added or removed.
 
-Modified principles (placeholder → title):
-- ARCHITECTURE_PRINCIPLE_1_NAME → Govern Data Access by Default
-- ARCHITECTURE_PRINCIPLE_2_NAME → Embed Compliance into the Architecture
-- ARCHITECTURE_PRINCIPLE_3_NAME → Optimize for Cost Efficiency
-- CODE_PRINCIPLE_1_NAME → Define Small, Validated Module Contracts
-- CODE_PRINCIPLE_2_NAME → Secure by Construction
-- CODE_PRINCIPLE_3_NAME → Validate Before Merge
-- APPROACH_1_NAME → Environment-Driven Defaults
-- APPROACH_2_NAME → Compliance Floor, Cost Ceiling
+Modified principles:
+- Govern Data Access by Default — separate keys per data zone or sensitivity class moved from the
+  Enhanced tier to a new "Designated data" tier; Enhanced keeps fine-grained access and query
+  isolation
 
-Added sections (beyond the three template slots):
-- Architecture: Protect Data Durability and Recoverability
-- Architecture: Establish Resource Identity and Accountability
-- Code: Make Dependencies Explicit
-- Code: Lock Versions and Release Semantically
-- Approach: Compose, Don't Accumulate
-
+Added sections: none
 Removed sections: none
 
 Templates and commands reviewed:
-- ✅ .specify/templates/plan-template.md — "Principles Check" reads principles dynamically; no change needed
-- ✅ .specify/templates/spec-template.md — already has Cost Constraints (mandatory) and Compliance
-  Requirements sections; no change needed
-- ✅ .specify/templates/tasks-template.md — Polish phase already includes security scanning, cost
-  estimation, and tagging tasks; no change needed
-- ✅ .claude/commands/iac.analyze.md, iac.plan.md, iac.enrichplan.md, iac.implement.md,
-  iac.checklist.md, iac.clarify.md, iac.specify.md, iac.tasks.md, iac.principles.md — generic,
-  reference `.specify/memory/principles.md`; no change needed
-- ⚠ .claude/commands/iac.converge.md — uses the term "constitution" for this file; consistent in
-  intent, wording alignment optional
-- ✅ AGENTS.md — module goal and components filled in; references these principles
-- ✅ README.md — rewritten for the lakehouse module; links to these principles
+- ✅ .specify/templates/plan-template.md, spec-template.md, tasks-template.md — no change needed
+- ✅ .claude/commands/iac.*.md — no change needed
+- ✅ specs/001-governed-lakehouse/spec.md, plan.md, tasks.md — already gate per-zone keys on the
+  compliance designation (FR-022, T021); /iac.analyze finding P1 resolved
+- ✅ specs/001-governed-lakehouse/spec.md, plan.md, tasks.md — /iac.analyze findings P2 (query
+  results isolation, FR-012a), P3 (no writer DROP in Enhanced), and P4 (required tag validation,
+  FR-016) resolved in the spec, plan, and tasks
+- ⚠ .github/workflows/terraform-ci.yml — still invokes terraform and go test directly; task T061
+  switches it to make targets during implementation
 
 Deferred TODOs: none
 -->
@@ -55,10 +44,12 @@ data-zone, table, or column access their purpose requires.
 
 - **Baseline** (Ephemeral, Development, Testing): Public access blocked, encryption with a
   customer-managed key, transport encryption enforced, and access granted per data zone
-  (raw/curated/consumption) to named roles only.
+  (raw/curated) to named roles only.
 - **Enhanced** (UAT, Production, MissionCritical): Adds fine-grained (table, column, and row) access
-  controls, separate keys per data zone or sensitivity class, and query isolation so workloads cannot
-  read each other's results.
+  controls and query isolation so workloads cannot read each other's results.
+- **Designated data** (any environment type): Separate keys per data zone or sensitivity class are
+  added when the data is designated under a compliance framework, consistent with Embed Compliance
+  into the Architecture.
 
 ### Embed Compliance into the Architecture
 
@@ -70,10 +61,17 @@ deployed; sensitive data (PHI, cardholder data, personal data) is identifiable b
 metadata and isolated in its own access boundary; and stored data supports verifiable deletion so
 erasure requests remove records and their historical versions.
 
-- **Baseline**: Controls are present and enabled with shorter retention. Regulated data MUST NOT be
-  loaded into Baseline environments.
-- **Enhanced**: Full audit retention, immutable audit storage, classification-driven access
-  policies, and retention/expiration rules that satisfy the strictest applicable regime.
+Controls that add no infrastructure cost apply in every deployment. Controls that add cost and
+exist only for SOC 2, HIPAA, or PCI DSS MUST be activated by an explicit designation that the
+deployment's data falls under that framework, never by environment type alone. This way
+non-regulated workloads, including production ones, do not pay for regulated-data infrastructure.
+
+- **Baseline**: No-cost controls are enabled with shorter retention. Regulated data MUST NOT be
+  loaded into Baseline environments; designating a framework there is allowed only to test
+  compliance features.
+- **Enhanced**: Full audit retention, classification-driven access policies, and
+  retention/expiration rules that satisfy the strictest applicable regime. Cost-incurring
+  framework controls are added when the data is designated.
 
 ### Optimize for Cost Efficiency
 
@@ -134,11 +132,16 @@ findings are fixed or explicitly suppressed with justification.
 
 ### Validate Before Merge
 
-Every change MUST pass `terraform fmt -check`, `terraform validate`, TFLint, and `terraform-docs`
-regeneration, plus Terratest plan-only tests against `examples/defaults` and `examples/complete`.
-Tests verify the module contract—expected resources, feature-flag presence/absence, and input
-validation failures—with unique names per run and no shared state. These checks run via
-`make test` locally and in GitHub Actions on every pull request.
+Every change MUST pass the validation gates defined in the `Makefile`, and local and agent-driven
+validation MUST run through those `make` targets rather than invoking `terraform`, `tflint`,
+`terraform-docs`, or `go test` directly, so every contributor runs identical checks. Use
+`make pre-commit` before each commit (format, check, lint, docs) and `make validate` before each
+push (adds `make test`); run single targets such as `make check`, `make lint`, or
+`make test-complete` while iterating. A target that skips because its tool is not installed does
+not count as passing. Tests run by `make test` are Terratest plan-only tests against the examples
+that verify the module contract—expected resources, feature-flag presence/absence, and input
+validation failures—with unique names per run and no shared state. GitHub Actions runs the same
+gates on every pull request.
 
 ### Make Dependencies Explicit
 
@@ -169,16 +172,18 @@ as inputs.
 ### Compliance Floor, Cost Ceiling
 
 When trade-offs arise, security and compliance controls form a non-negotiable floor: they are never
-disabled to save money. Above that floor, the lowest-cost option that meets the environment's
-RPO/RTO wins. Added complexity—a new resource, input, or always-on component—requires a documented
+disabled to save money. The floor is every no-cost control plus the cost-incurring controls of
+each framework the data is designated under. Cost-incurring controls for frameworks the data is
+not designated under are not part of the floor. Above the floor, the lowest-cost option that
+meets the environment's RPO/RTO wins. Added complexity—a new resource, input, or always-on component—requires a documented
 justification tied to a compliance requirement, a recovery objective, or a measured cost saving.
 
 ### Compose, Don't Accumulate
 
 The MVP covers storage layers, catalog, governed access, and query setup. Ingestion pipelines,
-transformation jobs, streaming, BI tooling, and network foundations belong in separate modules that
-consume this module's outputs. Requests to add them here are resolved by exposing the outputs they
-need, not by adding feature flags.
+transformation jobs, streaming, semantic layers, BI tooling, and network foundations belong in
+separate modules that consume this module's outputs. Requests to add them here are resolved by
+exposing the outputs they need, not by adding feature flags.
 
 ## Governance
 
@@ -207,4 +212,4 @@ affect existing consumers include migration guidance in the CHANGELOG.
 (file layout, style, and test patterns) lives in `AGENTS.md`, which adapts more frequently and MUST
 NOT contradict these principles.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-13 | **Last Amended**: 2026-10-13
+**Version**: 1.2.1 | **Ratified**: 2026-10-13 | **Last Amended**: 2026-10-13

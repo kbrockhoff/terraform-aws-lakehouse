@@ -8,7 +8,8 @@ precedence over this guide when the two conflict.
 ## Components
 
 ### Storage Layers
-- Separate raw, curated, and consumption data zones with public access blocked
+- Separate raw and curated data zones with public access blocked
+- No consumption zone: consumption-ready data products are served by an external semantic layer
 - Encryption with customer-managed KMS keys and TLS-only access
 - Versioning and lifecycle tiering/expiration driven by environment type
 

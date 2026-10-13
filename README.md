@@ -8,14 +8,15 @@ Design principles for this module are recorded in [`.specify/memory/principles.m
 
 ## Features
 
-- **Layered Storage**: Raw, curated, and consumption data zones with lifecycle tiering and expiration *(in progress)*
+- **Layered Storage**: Raw and curated data zones with automatic table maintenance and expiration *(in progress)*
+- **Semantic Layer Ready**: Read-only grants let an external semantic layer serve consumption-ready data products
 - **Open Table Catalog**: Apache Iceberg tables registered in a central data catalog *(in progress)*
 - **Governed Access**: Centralized, least-privilege data permissions down to table and column level *(in progress)*
 - **Query Engine Setup**: Isolated query workgroups with encrypted results and per-query scan limits *(in progress)*
 - **Context Integration**: Leverages terraform-external-context for standardized naming and tagging
 - **Environment-Aware**: Derives security, durability, monitoring, and cost defaults from `environment_type`
 - **Encryption by Default**: Customer-managed KMS key created by default, or bring your own
-- **Compliance-Ready**: Designed to support SOC 2, HIPAA, PCI DSS, and GDPR workloads
+- **Compliance-Ready**: Supports SOC 2, HIPAA, PCI DSS, and GDPR workloads; cost-incurring controls activate only for frameworks the data is designated under
 - **Cost Visibility**: Monthly cost estimate output for module resources
 - **Alarm Notifications**: Optional SNS topic for metric alarms, enabled by default in production environment types
 

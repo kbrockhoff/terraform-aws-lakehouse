@@ -15,7 +15,7 @@ RESET := \033[0m
 
 ##@ Help
 help: ## Display this help message
-	@echo "$(CYAN)Terraform AWS S3 Backend Module$(RESET)"
+	@echo "$(CYAN)Terraform AWS Lakehouse Module$(RESET)"
 	@echo "$(CYAN)AI-optimized Makefile for efficient development$(RESET)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make $(CYAN)<target>$(RESET)\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(CYAN)%-15s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
