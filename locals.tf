@@ -68,7 +68,7 @@ locals {
 
   # Common tags for all resources including module metadata
   common_tags = merge(var.tags, {
-    ModuleName    = "kbrockhoff/replace-me/provider"
+    ModuleName    = "kbrockhoff/lakehouse/aws"
     ModuleVersion = local.module_version
     ModuleEnvType = var.environment_type
   })

@@ -146,7 +146,7 @@ jobs:
       env:
         TF_VAR_name_prefix: "ci-test"
         TF_VAR_environment_type: "Development"
-        TF_VAR_tags: '{"Environment":"ci","Project":"terraform-module","ManagedBy":"github-actions"}'
+        TF_VAR_tags: '{"Environment":"ci","Project":"terraform-aws-lakehouse","ManagedBy":"github-actions"}'
       run: |
         cd test
         go mod tidy

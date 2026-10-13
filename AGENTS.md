@@ -1,17 +1,28 @@
-# CLOUD XXX Terraform Module Guide for AI Agents
+# AWS Lakehouse Terraform Module Guide for AI Agents
 
-What the goal of this module is.
+Provisions an Apache Iceberg-based lakehouse foundation on AWS for analytics workloads, with governed access,
+compliance-ready defaults (SOC 2, HIPAA, PCI DSS, GDPR), and cost-efficient serverless querying. Configuration
+defaults derive from `environment_type`. Design principles are in `.specify/memory/principles.md`; they take
+precedence over this guide when the two conflict.
 
 ## Components
 
-### Component 1
-- Requirement
-- Requirement
+### Storage Layers
+- Separate raw, curated, and consumption data zones with public access blocked
+- Encryption with customer-managed KMS keys and TLS-only access
+- Versioning and lifecycle tiering/expiration driven by environment type
 
-### Component 2
-- Requirement
-- Requirement
+### Open Table Catalog
+- Catalog databases for Apache Iceberg tables in each data zone
+- Table snapshot retention aligned with the environment's RPO
 
+### Governed Access
+- Central, least-privilege data permissions for named principals only
+- Fine-grained (table, column, row) controls and audit logging for Enhanced environments
+
+### Query Engine Setup
+- Isolated query workgroups with encrypted, expiring query results
+- Per-query scan limits to control cost
 
 ## Terraform Module Guide
 
@@ -211,7 +222,7 @@ func TestModuleExample(t *testing.T) {
 **Shared helpers:**
 
 ```go
-func generateTestName(prefix string) string { /* unique Brockhoff Terrafom module names */ }
+func generateTestName(prefix string) string { /* unique Brockhoff Terraform module names */ }
 func getBaseTerraformOptions(dir string) *terraform.Options { /* common options */ }
 func getRetryableErrors() map[string]string { /* retry logic for transient errors */ }
 ```

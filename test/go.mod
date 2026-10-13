@@ -1,4 +1,4 @@
-module github.com/kbrockhoff/terraform-cloud-replaceme
+module github.com/kbrockhoff/terraform-aws-lakehouse/test
 
 go 1.26.0
 

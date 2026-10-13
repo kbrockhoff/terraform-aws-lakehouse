@@ -1,76 +1,41 @@
-# Terraform Module Template
+# AWS Lakehouse Terraform Module
 
-> **📋 Template Setup Instructions**
->
-> After cloning this template repository, complete these setup steps:
->
-> 1. **Configure GitHub repository settings:**
->    - Under **Settings → Actions → General**
->      - Enable **Allow all actions and reusable workflows**
->      - Set **Workflow permissions** to "Read and write permissions"
->      - Enable **Workflow permissions** "Allow GitHub Actions to create and approve pull requests"
->
-> 2. **Configure repository secrets:**
->    - Under **Settings → Environments**
->      - Create `development` environment
->      - Add `AWS_ROLE_ARN` secret for GitHub Actions AWS access to your AWS development account
->    - Under **Settings → Secrets and variables → Actions → Repository secrets**
->      - Add `RELEASE_PLEASE_TOKEN` secret (Personal Access Token with repo permissions)
->    - For AWS authentication, ensure your IAM role has cross-account trust with GitHub OIDC
->
-> 3. **Configure main branch protection:**
->    - Under **Settings → Rules → Rulesets**
->      - Create new ruleset which applies to default branch and is set to Active
->      - Enable **Require a pull request before merging**
->      - Enable other rules as needed for your workflow
->
-> 4. **Replace placeholder text:**
->    - Find and replace all instances of `replace-me` with your actual module name
->    - Find and replace all instances of `replace` with appropriate values
->    - Update `CLOUD` and `XXX` placeholders with your target cloud provider and resources
->
-> 5. **Update module metadata:**
->    - Modify `locals.tf` → `ModuleName` to match your module using Terraform registry naming conventions
->    - Update repository URLs and documentation
->    - Customize examples and tests for your specific resources
+Terraform module that provisions an Apache Iceberg-based lakehouse foundation on AWS: layered data storage, an open
+table catalog, governed data access, and a query engine configuration. It follows Brockhoff Cloud standards and
+integrates with the `terraform-external-context` module for consistent naming and tagging.
 
-This is a standardized multi-cloud Terraform module template that follows Brockhoff Cloud standards and integrates with the
-`terraform-external-context` module for consistent naming and tagging across AWS, Azure, and GCP.
+Design principles for this module are recorded in [`.specify/memory/principles.md`](.specify/memory/principles.md).
 
 ## Features
 
-- Feature 1
-- Feature 2
-- Feature 3
-- **Multi-Cloud Support**: Works across AWS, Azure, and GCP with consistent interfaces
+- **Layered Storage**: Raw, curated, and consumption data zones with lifecycle tiering and expiration *(in progress)*
+- **Open Table Catalog**: Apache Iceberg tables registered in a central data catalog *(in progress)*
+- **Governed Access**: Centralized, least-privilege data permissions down to table and column level *(in progress)*
+- **Query Engine Setup**: Isolated query workgroups with encrypted results and per-query scan limits *(in progress)*
 - **Context Integration**: Leverages terraform-external-context for standardized naming and tagging
-- **Environment-Aware**: Automatically adjusts configuration based on environment type
-- **Security-First**: Built-in encryption, monitoring, and compliance features
-- **Cost-Optimized**: Environment-specific instance sizing and cost optimization recommendations
-- **High Availability**: Optional HA configuration for production workloads
-- **AI-Friendly**: Includes metadata and structured outputs for AI agent consumption
+- **Environment-Aware**: Derives security, durability, monitoring, and cost defaults from `environment_type`
+- **Encryption by Default**: Customer-managed KMS key created by default, or bring your own
+- **Compliance-Ready**: Designed to support SOC 2, HIPAA, PCI DSS, and GDPR workloads
+- **Cost Visibility**: Monthly cost estimate output for module resources
+- **Alarm Notifications**: Optional SNS topic for metric alarms, enabled by default in production environment types
 
 ## Usage
+
+The module is not yet published to the Terraform Registry. Reference it by Git source pinned to a release tag.
 
 ### Basic Example
 
 ```hcl
-module "example" {
-  source = "path/to/terraform-module"
+module "lakehouse" {
+  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
 
-  # ... other required arguments ...
+  name_prefix = "dev-usw2"
 }
 ```
 
 ### Complete Example
 
-```hcl
-module "example" {
-  source = "path/to/terraform-module"
-
-  # ... all available arguments ...
-}
-```
+See [`examples/complete`](examples/complete) for a configuration that sets all available arguments.
 
 ## Environment Type Configuration
 
@@ -96,8 +61,8 @@ the table below. Cost optimization settings focus on shutting down resources dur
 #### Development Environment
 
 ```hcl
-module "dev_resources" {
-  source = "path/to/terraform-module"
+module "dev_lakehouse" {
+  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
   
   name_prefix      = "dev-usw2"
   environment_type = "Development"
@@ -112,8 +77,8 @@ module "dev_resources" {
 #### Production Environment
 
 ```hcl
-module "prod_resources" {
-  source = "path/to/terraform-module"
+module "prod_lakehouse" {
+  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
   
   name_prefix      = "prod-usw2"
   environment_type = "Production"
@@ -129,8 +94,8 @@ module "prod_resources" {
 #### Custom Configuration (None)
 
 ```hcl
-module "custom_resources" {
-  source = "path/to/terraform-module"
+module "custom_lakehouse" {
+  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
   
   name_prefix      = "custom-usw2"
   environment_type = "None"
