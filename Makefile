@@ -65,7 +65,8 @@ format: ## Format all Terraform files
 lint: ## Run TFLint on all Terraform files
 	@echo "$(CYAN)Running TFLint...$(RESET)"
 	@if command -v tflint >/dev/null 2>&1; then \
-		tflint --recursive; \
+		tflint --init >/dev/null || exit 1; \
+		tflint --recursive --minimum-failure-severity=error || { echo "$(RED)✗ TFLint found errors$(RESET)"; exit 1; }; \
 		echo "$(GREEN)✓ TFLint passed$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ TFLint not installed, skipping$(RESET)"; \
