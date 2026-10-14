@@ -121,26 +121,26 @@ data resource depends on.
 
 ### Catalog-integration submodule (FR-006, FR-007, FR-013)
 
-- [ ] T013 [P] Create `modules/catalog-integration/versions.tf` with `required_version = ">= 1.11"` and `hashicorp/aws >= 6.59.0, < 7.0.0`.
-- [ ] T014 [P] Create `modules/catalog-integration/variables.tf` with these inputs, each with a description and validation. It takes no KMS key ARNs, which avoids a dependency cycle with key policies.
+- [x] T013 [P] Create `modules/catalog-integration/versions.tf` with `required_version = ">= 1.11"` and `hashicorp/aws >= 6.59.0, < 7.0.0`.
+- [x] T014 [P] Create `modules/catalog-integration/variables.tf` with these inputs, each with a description and validation. It takes no KMS key ARNs, which avoids a dependency cycle with key policies.
   - `name_prefix`, `account_id`, `partition`, `region`, `tags`;
   - `admin_principal_arns` (list, non-empty);
   - `deployer_role_arn` (string);
   - `allow_full_table_external_data_access` (bool).
-- [ ] T015 Create `modules/catalog-integration/iam.tf` with the Lake Formation data-access role `aws_iam_role.lf_s3tables_access`, named `${name_prefix}-lf-s3tables-access`:
+- [x] T015 Create `modules/catalog-integration/iam.tf` with the Lake Formation data-access role `aws_iam_role.lf_s3tables_access`, named `${name_prefix}-lf-s3tables-access`:
   - Trust: `lakeformation.amazonaws.com` for `sts:AssumeRole`, `sts:SetContext`, `sts:SetSourceIdentity`, conditioned on `aws:SourceAccount`.
   - Inline policy, via `aws_iam_policy_document`:
     - S3 Tables data and metadata actions on `arn:${partition}:s3tables:${region}:${account_id}:bucket/*`;
     - `kms:Decrypt` and `kms:GenerateDataKey` on `*`, conditioned on `kms:ViaService = s3tables.${region}.amazonaws.com` and `aws:ResourceAccount = ${account_id}`. The platform and tenant key policies do the per-key scoping.
-- [ ] T016 Create `modules/catalog-integration/main.tf` with:
+- [x] T016 Create `modules/catalog-integration/main.tf` with:
   - `aws_lakeformation_resource.s3tables`: `arn = "arn:${partition}:s3tables:${region}:${account_id}:bucket/*"`, the role ARN from T015, `with_federation = true`, `hybrid_access_enabled = false`.
   - `aws_glue_catalog.s3tables`: `name = "s3tablescatalog"`, `federated_catalog { identifier = <same ARN>, connection_name = "aws:s3tables" }`, no default-permission blocks, `allow_full_table_external_data_access` from input, `depends_on` the resource registration.
-- [ ] T017 Add `aws_lakeformation_data_lake_settings.this` to `modules/catalog-integration/main.tf`:
+- [x] T017 Add `aws_lakeformation_data_lake_settings.this` to `modules/catalog-integration/main.tf`:
   - `admins = var.admin_principal_arns`, with empty default-permission blocks.
   - A `lifecycle.precondition` that `contains(var.admin_principal_arns, var.deployer_role_arn)`, with an error message explaining that the deploying role must be a data-lake admin.
   - A comment that this resource is authoritative for all data-lake settings, so tenant pipeline roles must be listed here.
-- [ ] T018 [P] Create `modules/catalog-integration/outputs.tf` with `data_access_role_arn`, `catalog_name`, and `catalog_arn`.
-- [ ] T019 [P] Create `modules/catalog-integration/README.md`:
+- [x] T018 [P] Create `modules/catalog-integration/outputs.tf` with `data_access_role_arn`, `catalog_name`, and `catalog_arn`.
+- [x] T019 [P] Create `modules/catalog-integration/README.md`:
   - purpose and the one-owner-per-account-and-Region rule;
   - the authoritative data-lake settings warning;
   - the requirement that every secondary deployment's deploying role and every tenant pipeline role appear in `admin_principal_arns`;
@@ -149,23 +149,23 @@ data resource depends on.
 
 ### Platform encryption (FR-019, FR-029)
 
-- [ ] T020 Extend `data.aws_iam_policy_document.kms_key_policy` in `kms.tf` with:
+- [x] T020 Extend `data.aws_iam_policy_document.kms_key_policy` in `kms.tf` with:
   - `AllowS3TablesMaintenance`: service `maintenance.s3tables.amazonaws.com`, actions `kms:GenerateDataKey` and `kms:Decrypt`, condition `StringLike kms:EncryptionContext:aws:s3:arn = "arn:${partition}:s3tables:${region}:${account_id}:bucket/${name_prefix}-*/*"`.
   - `AllowLakeFormationDataAccess`: principal `local.data_access_role_arn`, actions `kms:Decrypt` and `kms:GenerateDataKey`, conditioned on `kms:ViaService = s3tables.${region}.amazonaws.com`.
   - `AllowAthenaResults`: account principals via `kms:ViaService` for `s3.${region}.amazonaws.com` and `athena.${region}.amazonaws.com`.
   - Build these three statements in a separate `data "aws_iam_policy_document" "required_kms_statements"` and merge it with `source_policy_documents`, so the same document can be output for consumer-supplied keys (T058).
-- [ ] T021 Wire the catalog-integration submodule in `main.tf`: `module "catalog_integration"` with `count = var.enabled && var.catalog_integration_config.enabled ? 1 : 0` and `deployer_role_arn = local.deployer_role_arn`. Pass no key ARNs. Add a comment that the dependency is one-way: submodule role → key policies.
+- [x] T021 Wire the catalog-integration submodule in `main.tf`: `module "catalog_integration"` with `count = var.enabled && var.catalog_integration_config.enabled ? 1 : 0` and `deployer_role_arn = local.deployer_role_arn`. Pass no key ARNs. Add a comment that the dependency is one-way: submodule role → key policies.
 
 ### Guards and platform LF-tags (FR-009, FR-022)
 
-- [ ] T022 Add `resource "terraform_data" "secondary_admin_guard"` to `main.tf`, with `count` matching the T002 data source and a `lifecycle.precondition` that `contains(data.aws_lakeformation_data_lake_settings.current[0].admins, local.deployer_role_arn)`. The error message tells the operator to add the role to the owning deployment's `admin_principal_arns`.
-- [ ] T023 Add `resource "terraform_data" "required_tags_guard"` to `main.tf` with `count = var.enabled && local.effective_config.required_tags_enforced ? 1 : 0`. Its preconditions check that the cost-center and data-owner keys from `required_tags_config` are present and non-empty in `var.tags`. Error messages name the missing key. Every storage resource in Phase 3 `depends_on` this guard.
-- [ ] T024 Create `lf-tags.tf` with the platform-owned LF-tags:
+- [x] T022 Add `resource "terraform_data" "secondary_admin_guard"` to `main.tf`, with `count` matching the T002 data source and a `lifecycle.precondition` that `contains(data.aws_lakeformation_data_lake_settings.current[0].admins, local.deployer_role_arn)`. The error message tells the operator to add the role to the owning deployment's `admin_principal_arns`.
+- [x] T023 Add `resource "terraform_data" "required_tags_guard"` to `main.tf` with `count = var.enabled && local.effective_config.required_tags_enforced ? 1 : 0`. Its preconditions check that the cost-center and data-owner keys from `required_tags_config` are present and non-empty in `var.tags`. Error messages name the missing key. Every storage resource in Phase 3 `depends_on` this guard.
+- [x] T024 Create `lf-tags.tf` with the platform-owned LF-tags:
   - `aws_lakeformation_lf_tag.sensitivity`: key `"${local.name_prefix}-sensitivity"`, values `governance_config.sensitivity_values`;
   - `aws_lakeformation_lf_tag.regulation` (`for_each = var.enabled ? toset(regulation_values) : []`): key `"${local.name_prefix}-reg-${each.key}"`, values `["no", "yes"]`. Comment that one key per regulation is required because a resource holds one value per LF-tag key;
   - `aws_lakeformation_lf_tag.domain`: key `"${local.name_prefix}-domain"`, values `governance_config.domain_values`.
   All `depends_on` the catalog-integration module and `terraform_data.secondary_admin_guard`. Add a comment that there is deliberately no shared tenant tag, because each tenant submodule owns `${prefix}-tenant-<name>` (FR-001a).
-- [ ] T025 **Checkpoint**: run `make check`, then `make lint`. Confirm TFLint actually ran; a skip does not count.
+- [x] T025 **Checkpoint**: run `make check`, then `make lint`. Confirm TFLint actually ran; a skip does not count.
 
 ---
 

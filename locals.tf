@@ -178,6 +178,12 @@ locals {
   # Role ARN of the deploying session (issuer of an assumed-role session)
   deployer_role_arn = data.aws_iam_session_context.current.issuer_arn
 
+  # Lake Formation data-access role: created by the catalog-integration submodule, or passed in
+  # by secondary deployments
+  data_access_role_arn = var.catalog_integration_config.enabled ? (
+    var.enabled ? module.catalog_integration[0].data_access_role_arn : ""
+  ) : var.catalog_integration_config.data_access_role_arn
+
   # A platform setting, never computed from tenants: a tenant change must not modify platform
   # resources (FR-001), and standalone tenants are invisible to the platform (FR-022).
   shared_storage_classification = coalesce(
