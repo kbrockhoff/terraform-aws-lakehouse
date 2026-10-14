@@ -266,7 +266,11 @@ resource "aws_lakeformation_data_cells_filter" "this" {
 
     dynamic "column_wildcard" {
       for_each = each.value.column_names == null ? [1] : []
-      content {}
+      # An empty list rather than null: the provider reads it back as [] (an inconsistent result
+      # after apply otherwise)
+      content {
+        excluded_column_names = []
+      }
     }
   }
 
