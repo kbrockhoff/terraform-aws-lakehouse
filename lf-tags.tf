@@ -57,18 +57,21 @@ locals {
     { zone = aws_lakeformation_lf_tag.zone[0] },
     { for r, t in aws_lakeformation_lf_tag.regulation : "reg-${r}" => t },
   ) : {}
+  # The deploying role created the tags and already holds every permission on them; granting it
+  # again makes the provider try to revoke its implicit creator permissions on destroy, which fails
   admin_tag_permissions = {
     for pair in setproduct(var.governance_config.admin_principal_arns, keys(local.platform_lf_tags)) :
     "${pair[0]}/${pair[1]}" => { principal = pair[0], tag = pair[1] }
+    if pair[0] != local.deployer_role_arn
   }
 }
 
 resource "aws_lakeformation_permissions" "admin_tags" {
   for_each = local.admin_tag_permissions
 
-  principal                     = each.value.principal
-  permissions                   = ["DESCRIBE", "ASSOCIATE", "GRANT_WITH_LF_TAG_EXPRESSION"]
-  permissions_with_grant_option = ["DESCRIBE", "ASSOCIATE", "GRANT_WITH_LF_TAG_EXPRESSION"]
+  # No permissions_with_grant_option: AWS provider 6.69 then builds an invalid revoke on destroy
+  principal   = each.value.principal
+  permissions = ["DESCRIBE", "ASSOCIATE", "GRANT_WITH_LF_TAG_EXPRESSION"]
 
   lf_tag {
     key    = local.platform_lf_tags[each.value.tag].key

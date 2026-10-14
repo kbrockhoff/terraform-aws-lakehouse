@@ -255,6 +255,21 @@ data "aws_iam_policy_document" "basic" {
     ]
   }
 
+  # Athena checks access to a workgroup's output location when creating it; tenant workgroups
+  # write to a prefix of the shared results bucket (found in the T076 sandbox)
+  dynamic "statement" {
+    for_each = var.scope == "tenant" ? [1] : []
+    content {
+      sid    = "SharedResultsLocation"
+      effect = "Allow"
+      actions = [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+      ]
+      resources = ["arn:${var.partition}:s3:::${var.name_prefix}-athena-results-*"]
+    }
+  }
+
   # aws_iam_session_context resolves the deploying role
   statement {
     sid       = "ResolveSessionRole"
