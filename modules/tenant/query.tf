@@ -136,9 +136,12 @@ data "aws_iam_policy_document" "results" {
 # ----
 
 resource "aws_athena_workgroup" "this" {
-  name          = "${local.name_prefix}-${var.name}"
-  description   = "Query workgroup for tenant ${var.name}"
-  force_destroy = local.effective.force_destroy
+  name        = "${local.name_prefix}-${var.name}"
+  description = "Query workgroup for tenant ${var.name}"
+  # Always true: Athena refuses to delete a workgroup that has run queries otherwise, which blocks
+  # tenant offboarding. The workgroup holds only query history; results live in the results bucket,
+  # which keeps the environment's force_destroy (found in the T076 sandbox).
+  force_destroy = true
 
   configuration {
     enforce_workgroup_configuration    = true

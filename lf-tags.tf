@@ -46,3 +46,32 @@ resource "aws_lakeformation_lf_tag" "domain" {
 
   depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
 }
+
+# Lake Formation admins do not implicitly hold ASSOCIATE on LF-tags another principal created, so
+# tenant pipelines (admins per FR-001a) could not label their databases. Every listed admin gets
+# the platform tags' permissions (found in the T076 sandbox).
+locals {
+  platform_lf_tags = var.enabled ? merge(
+    { sensitivity = aws_lakeformation_lf_tag.sensitivity[0] },
+    { domain = aws_lakeformation_lf_tag.domain[0] },
+    { zone = aws_lakeformation_lf_tag.zone[0] },
+    { for r, t in aws_lakeformation_lf_tag.regulation : "reg-${r}" => t },
+  ) : {}
+  admin_tag_permissions = {
+    for pair in setproduct(var.governance_config.admin_principal_arns, keys(local.platform_lf_tags)) :
+    "${pair[0]}/${pair[1]}" => { principal = pair[0], tag = pair[1] }
+  }
+}
+
+resource "aws_lakeformation_permissions" "admin_tags" {
+  for_each = local.admin_tag_permissions
+
+  principal                     = each.value.principal
+  permissions                   = ["DESCRIBE", "ASSOCIATE", "GRANT_WITH_LF_TAG_EXPRESSION"]
+  permissions_with_grant_option = ["DESCRIBE", "ASSOCIATE", "GRANT_WITH_LF_TAG_EXPRESSION"]
+
+  lf_tag {
+    key    = local.platform_lf_tags[each.value.tag].key
+    values = local.platform_lf_tags[each.value.tag].values
+  }
+}

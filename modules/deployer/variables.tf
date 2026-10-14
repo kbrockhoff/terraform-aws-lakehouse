@@ -63,3 +63,14 @@ variable "cost_estimation_enabled" {
   type        = bool
   default     = true
 }
+
+variable "platform_contract_parameter_arn" {
+  description = "ARN of the SSM parameter holding the platform contract, when tenant pipelines read it from SSM. Adds ssm:GetParameter on exactly that parameter. Empty adds nothing."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.platform_contract_parameter_arn == "" || can(regex("^arn:aws[a-z-]*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+$", var.platform_contract_parameter_arn))
+    error_message = "platform_contract_parameter_arn must be empty or an SSM parameter ARN."
+  }
+}

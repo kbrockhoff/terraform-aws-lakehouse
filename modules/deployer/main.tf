@@ -168,6 +168,7 @@ data "aws_iam_policy_document" "basic" {
     effect = "Allow"
     actions = [
       "lakeformation:GetDataLakeSettings",
+      "lakeformation:GetDataAccess", # Glue resolves federated S3 Tables databases through it
       "lakeformation:GrantPermissions",
       "lakeformation:RevokePermissions",
       "lakeformation:ListPermissions",
@@ -260,6 +261,38 @@ data "aws_iam_policy_document" "basic" {
     effect    = "Allow"
     actions   = ["iam:GetRole"]
     resources = ["arn:${var.partition}:iam::${var.account_id}:role/*"]
+  }
+
+  # Lake Formation checks Glue read access to the databases and tables it labels and grants on
+  # (found in the T076 sandbox)
+  statement {
+    sid    = "CatalogRead"
+    effect = "Allow"
+    actions = [
+      "glue:GetCatalog",
+      "glue:GetCatalogs",
+      "glue:GetDatabase",
+      "glue:GetDatabases",
+      "glue:GetTable",
+      "glue:GetTables",
+    ]
+    resources = [
+      "arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog",
+      "arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/*",
+      "arn:${var.partition}:glue:${var.region}:${var.account_id}:database/*",
+      "arn:${var.partition}:glue:${var.region}:${var.account_id}:table/*",
+    ]
+  }
+
+  # Tenant pipelines that read the platform contract from SSM (found in the T076 sandbox)
+  dynamic "statement" {
+    for_each = var.platform_contract_parameter_arn != "" ? [1] : []
+    content {
+      sid       = "ReadPlatformContract"
+      effect    = "Allow"
+      actions   = ["ssm:GetParameter"]
+      resources = [var.platform_contract_parameter_arn]
+    }
   }
 
   # ----
