@@ -342,7 +342,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 
 **Purpose**: The platform cost estimate, deployer policies for both scopes, and root outputs.
 
-- [ ] T050 [P] Extend `modules/cost-estimation/variables.tf`, `modules/cost-estimation/main.tf`, `modules/cost-estimation/locals.tf`, and `modules/cost-estimation/outputs.tf` (FR-024). The module is used by both the root and the tenant submodule.
+- [x] T050 [P] Extend `modules/cost-estimation/variables.tf`, `modules/cost-estimation/main.tf`, `modules/cost-estimation/locals.tf`, and `modules/cost-estimation/outputs.tf` (FR-024). The module is used by both the root and the tenant submodule.
   - New inputs: `table_bucket_count`, `s3_bucket_count`, `athena_workgroup_count`, `alarm_count`, `kms_key_count`, and `compliance_kms_key_count`.
   - Price List lookups for the S3 Tables storage and maintenance rates, the Athena per-TB rate, and S3 Standard storage.
   - Outputs:
@@ -351,8 +351,8 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
     - `compliance_monthly_cost`;
     - `usage_rates`: S3 Tables storage per GB-month (Standard, and the Intelligent-Tiering Frequent, Infrequent, and Archive Instant Access tiers plus its monitoring charge), maintenance per object, Athena per TB scanned, and S3 Standard per GB-month.
   - The module creates no resources; keep it data-source only.
-- [ ] T051 Update `cost-estimation.tf` to pass platform-only counts: zone buckets, the shared results bucket, the platform key, and the SNS topic. Add `local.total_monthly_cost_estimate`, which sums the platform estimate and every platform-applied `module.tenant[*].monthly_cost_estimate`. Standalone tenants report through their own module (FR-024).
-- [ ] T052 [P] Extend `modules/deployer/main.tf` and `modules/deployer/variables.tf` (FR-025) with least-privilege statements that list every action explicitly (no wildcard actions).
+- [x] T051 Update `cost-estimation.tf` to pass platform-only counts: zone buckets, the shared results bucket, the platform key, and the SNS topic. Add `local.total_monthly_cost_estimate`, which sums the platform estimate and every platform-applied `module.tenant[*].monthly_cost_estimate`. Standalone tenants report through their own module (FR-024).
+- [x] T052 [P] Extend `modules/deployer/main.tf` and `modules/deployer/variables.tf` (FR-025) with least-privilege statements that list every action explicitly (no wildcard actions).
   - Add `scope` (`"platform"` default, or `"tenant"`, validated) and `cost_estimation_enabled` (default `true`, which gates the existing `PricingAPIAccess` statement).
   - Keep the existing KMS, CloudWatch, SNS, and caller-identity statements.
   - Use `${name_prefix}`-scoped resources wherever supported. Every `"*"` resource carries an inline comment naming why the service has no resource-level permission.
@@ -370,7 +370,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
   - **kms**: key and alias management.
   - **iam**, platform scope only: `CreateRole`, `DeleteRole`, `GetRole`, `PutRolePolicy`, `DeleteRolePolicy`, `GetRolePolicy`, `TagRole`, and `PassRole` on `${name_prefix}-lf-s3tables-access`, with `iam:PassedToService = lakeformation.amazonaws.com`.
   - **cloudwatch**: `PutMetricAlarm`, `DeleteAlarms`, `DescribeAlarms`.
-- [ ] T053 Rewrite `outputs.tf` (FR-026):
+- [x] T053 Rewrite `outputs.tf` (FR-026):
   - `zone_table_bucket_arns` (map by zone) and `catalog_name`;
   - `platform_contract` (T028);
   - `lf_tag_vocabulary`: the platform keys, allowed values, sensitivity order, and tenant key prefix, for pipeline labeling;
@@ -378,7 +378,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
   - `tenants`: a map by tenant of the `module.tenant` outputs;
   - `required_kms_key_policy_json`: the T020 `required_kms_statements` document.
   Keep the existing alarm and cost outputs, with `monthly_cost_estimate` as the T051 total. Every output returns empty or null values when `enabled = false`.
-- [ ] T054 **Checkpoint**: run `make check`, then `make lint`, then `make docs`. Confirm terraform-docs ran and updated `README.md` and `modules/*/README.md`.
+- [x] T054 **Checkpoint**: run `make check`, then `make lint`, then `make docs`. Confirm terraform-docs ran and updated `README.md` and `modules/*/README.md`.
 
 ---
 

@@ -46,3 +46,20 @@ variable "account_id" {
   description = "AWS account ID"
   type        = string
 }
+
+variable "scope" {
+  description = "Which deployment the policy is for: \"platform\" (the root module, including the account-level catalog integration) or \"tenant\" (a standalone tenant provisioning pipeline)."
+  type        = string
+  default     = "platform"
+
+  validation {
+    condition     = contains(["platform", "tenant"], var.scope)
+    error_message = "scope must be \"platform\" or \"tenant\"."
+  }
+}
+
+variable "cost_estimation_enabled" {
+  description = "Allow the AWS Price List API calls used by cost estimation."
+  type        = bool
+  default     = true
+}

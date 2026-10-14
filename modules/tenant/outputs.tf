@@ -45,5 +45,5 @@ output "monthly_cost_estimate" {
 
 output "compliance_monthly_cost" {
   description = "Portion of the monthly estimate caused by the compliance designation (the tenant key)."
-  value       = local.designated ? try(module.cost_estimation.cost_breakdown.kms_keys, 0) : 0
+  value       = module.cost_estimation.compliance_monthly_cost
 }
