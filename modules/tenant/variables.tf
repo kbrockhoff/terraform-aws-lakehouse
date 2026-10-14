@@ -39,6 +39,10 @@ variable "platform" {
         key    = string
         values = list(string)
       })
+      zone = object({
+        key    = string
+        values = list(string)
+      })
       tenant_key_prefix = string
     })
     regulation_designation  = map(string)

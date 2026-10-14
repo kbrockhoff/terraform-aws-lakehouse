@@ -25,6 +25,19 @@ resource "aws_lakeformation_lf_tag" "regulation" {
   depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
 }
 
+# Zone of each tenant database. Lake Formation only accepts account-level LF-tag policy grants
+# (catalog_id = account), not grants scoped to one S3 Tables bucket catalog, so zone isolation
+# (FR-014) comes from this tag in grant expressions. Only platform admins ASSOCIATE it, so nobody
+# can move a table into another zone by relabeling it.
+resource "aws_lakeformation_lf_tag" "zone" {
+  count = var.enabled ? 1 : 0
+
+  key    = "${local.name_prefix}-zone"
+  values = sort(tolist(local.zones))
+
+  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+}
+
 resource "aws_lakeformation_lf_tag" "domain" {
   count = var.enabled ? 1 : 0
 

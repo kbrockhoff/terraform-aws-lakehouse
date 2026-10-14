@@ -381,6 +381,7 @@ fails the plan if the deploying role is not in `admins`.
 | `aws_lakeformation_lf_tag.sensitivity` | root | `${name_prefix}-sensitivity` | `governance_config.sensitivity_values`, ordered least to most sensitive, default `["public", "internal", "confidential", "restricted"]` |
 | `aws_lakeformation_lf_tag.regulation[r]` | root | `${name_prefix}-reg-${r}` | `["no", "yes"]`, one tag per `governance_config.regulation_values`, default `["gdpr", "hipaa", "pci_dss"]` |
 | `aws_lakeformation_lf_tag.domain` | root | `${name_prefix}-domain` | `governance_config.domain_values`, default `["general"]` |
+| `aws_lakeformation_lf_tag.zone` | root | `${name_prefix}-zone` | the platform zones. Set on each tenant database by the tenant submodule; only platform admins can `ASSOCIATE` it |
 
 - **Per-tenant keys**: each tenant owns its tenant key, so neither entry point modifies a shared
   LF-tag when a tenant is added or removed (FR-001, FR-001a). Isolation is unchanged:
@@ -449,8 +450,11 @@ sensitivity order.
 
 **Grants (FR-008 to FR-014): `aws_lakeformation_permissions`**
 
-Every tag-based grant is an `lf_tag_policy` scoped to one table bucket's catalog
-(`catalog_id = "${account}:s3tablescatalog/${bucket}"`), for each zone the persona is assigned.
+Every tag-based grant is an account-level `lf_tag_policy` (`catalog_id = <account>`), one per
+persona. Lake Formation rejects LF-tag policy grants scoped to an S3 Tables bucket catalog (T049),
+but an account-level grant applies to matching databases and tables in every bucket catalog. Each
+expression therefore includes `zone ∈ Z(persona)`, matched against the zone label on each tenant
+database.
 All grants and tag permissions below are created by the tenant submodule. The notation in the table:
 - `T` is the tenant. The expression `tenant = T` means the tenant-owned tag
   `${name_prefix}-tenant-${T} = member`.
@@ -501,8 +505,16 @@ All grants and tag permissions below are created by the tenant submodule. The no
 - **Labeling trust**: a writer or steward can lower a column's label within `L(T)`, which widens
   what readers see. This is inherent to delegated labeling. Such changes are bounded to the
   tenant, recorded by CloudTrail (`AddLFTagsToResource`), and listed under Complexity Tracking.
-- **Zone isolation (FR-014)**: grants are made per bucket catalog, only for the zones listed on
-  the persona. A consumption-only reader therefore has no grant in the raw or curated catalogs.
+- **Zone isolation (FR-014)**: every expression includes `zone ∈ Z(persona)`, the persona's zones
+  (default: all of the tenant's zones). The tenant submodule labels each database with its zone,
+  tables inherit it, and only platform admins can `ASSOCIATE` the zone key, so nobody can relabel
+  a table into another zone. A consumption-only reader matches nothing in raw or curated.
+- **Catalog visibility**: Athena resolves a bucket catalog (`s3tablescatalog/<bucket>`) only for
+  principals with `DESCRIBE` on that catalog. The T049 sandbox verified that one grant per bucket
+  catalog to `<account>:IAMPrincipals` is enough and reveals only that the catalog exists:
+  databases and tables stay gated by the tag grants. AWS provider 6.69 cannot express a grant on a
+  bucket catalog, so the module does not create it yet; the README gives the one-time CLI grant
+  (see Complexity Tracking).
 - **Cross-tenant readers**: a principal listed as a reader by several tenants, such as the
   semantic layer, gets one grant set per tenant. Each grant set is declared by the owning tenant.
 - **Row filters (FR-012)**: `tenants[T].row_filters` entries name a zone, table, reader key,
@@ -905,3 +917,6 @@ These are spec adjustments that research forced, not principle violations.
 | T049 / T076 (sandbox account) | Before applying the examples in account 566376086856, add its existing data-lake admins (two SageMaker service roles) to `admin_principal_arns`. | The data-lake settings resource is authoritative and would remove them, which can break the SageMaker domain that uses them. Found during Phase 6. |
 | T049 (sandbox, account 492637581429, 2026-10-14) | **Failed item 1, which needs a plan revision.** `lf_tag_policy` grants with `catalog_id = <account>:s3tablescatalog/<bucket>` are rejected (`CatalogId of the resource must a valid AWS account id`). A probe showed that an account-level `lf_tag_policy` grant (`catalog_id = <account>`) applies and reaches tenant databases in every bucket catalog, and still isolates tenants: the sales steward saw only `sales`. Zone isolation (FR-014) therefore cannot come from catalog scoping. **Passed:** catalog integration (after fixes), namespaces, database LF-tag attachments in bucket catalogs, `lf_tag` permissions including `GRANT_WITH_LF_TAG_EXPRESSION` (item 2). **Not run:** items 3 and 4. | The proposed revision is a platform-owned `${prefix}-zone` LF-tag on each tenant database (value = zone, ASSOCIATE for admins only), plus `zone ∈ persona.zones` in every grant expression, with one account-level grant per persona instead of one per zone. |
 | FR-007 (catalog integration ordering and defaults) | The data-lake settings are created before the registration and the catalog. The settings have no `create_*_default_permissions` blocks. | Found in the T049 sandbox: `CreateCatalog` needs the deployer to be a data-lake admin first, and an empty default-permission block sends an empty principal, which the API rejects. Omitting the blocks cleared the `IAM_ALLOWED_PRINCIPALS` defaults (verified with `get-data-lake-settings`). |
+| T049 (sandbox rerun after the zone-tag redesign, 2026-10-14) | **Items 1, 2, and 4 passed.** Account-level LF-tag grants applied (138 resources). A reader cleared for `public`/`internal` with no regulations queried a table rolled up to `confidential` with `reg-gdpr = yes`, and got exactly the matching columns (`id`, `region`, `amount`). A GDPR analyst got all four. A role with no Lake Formation grants was denied. Item 3 (default storage class) cannot run until the provider supports it (awslkhs-oix). | Two findings remain: a provider gap for bucket catalog `DESCRIBE` grants, and Athena `INSERT` failing with `INTERNAL_ERROR_QUERY_ENGINE` (both tracked as beads). |
+| FR-007 / FR-019 (data-access role KMS conditions) | The data-access role policy and the platform and tenant key policies allow `kms:ViaService` for both `s3tables.<region>` and `s3.<region>`. | T049 sandbox: Lake Formation reads table metadata through S3, so the `s3tables`-only condition denied `kms:Decrypt` and tables were invisible even to admins. |
+| FR-014 / FR-016 (catalog DESCRIBE) | The module does not grant `DESCRIBE` on bucket catalogs. Consumers run the README's one-time `aws lakeformation grant-permissions` per zone bucket, and per dedicated bucket. | Athena needs it to resolve a bucket catalog. AWS provider 6.69 maps `catalog_resource` with a bucket catalog ID to the request catalog ID, which the API rejects. Per-persona grants were rejected in design, because tenants sharing a principal would revoke each other's grant. |

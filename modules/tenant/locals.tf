@@ -52,34 +52,29 @@ locals {
     { (var.platform.lf_tags.domain.key) = var.platform.lf_tags.domain.values },
   )
 
-  # Persona grants, one per persona and zone
+  # Persona grants: one account-level grant per persona, limited to its zones by the zone tag
+  # (Lake Formation rejects LF-tag policy grants scoped to a bucket catalog)
   steward_grants = {
-    for pair in setproduct(local.zones, var.tenant.stewards) : "${pair[0]}/${pair[1]}" => {
-      zone          = pair[0]
-      principal_arn = pair[1]
+    for arn in var.tenant.stewards : arn => {
+      principal_arn = arn
+      zones         = sort(tolist(local.zones))
     }
   }
-  writer_grants = merge([
-    for k, w in var.tenant.writers : {
-      for z in coalesce(w.zones, tolist(local.zones)) : "${k}/${z}" => {
-        key           = k
-        zone          = z
-        principal_arn = w.principal_arn
-      }
+  writer_grants = {
+    for k, w in var.tenant.writers : k => {
+      principal_arn = w.principal_arn
+      zones         = sort(coalesce(w.zones, tolist(local.zones)))
     }
-  ]...)
-  reader_grants = merge([
-    for k, r in var.tenant.readers : {
-      for z in coalesce(r.zones, tolist(local.zones)) : "${k}/${z}" => {
-        key                = k
-        zone               = z
-        principal_arn      = r.principal_arn
-        sensitivity_values = r.sensitivity_values
-        regulations        = r.regulations
-        domains            = r.domains
-      }
+  }
+  reader_grants = {
+    for k, r in var.tenant.readers : k => {
+      principal_arn      = r.principal_arn
+      zones              = sort(coalesce(r.zones, tolist(local.zones)))
+      sensitivity_values = r.sensitivity_values
+      regulations        = r.regulations
+      domains            = r.domains
     }
-  ]...)
+  }
   row_filters = var.tenant.row_filters
 
   bytes_scanned_cutoff_per_query = coalesce(var.tenant.bytes_scanned_cutoff_per_query, local.effective.bytes_scanned_cutoff_per_query)

@@ -94,8 +94,11 @@ func TestZoneOverrideWithoutConsumption(t *testing.T) {
 	assert.NotEmpty(t, changes)
 	for addr, rc := range changes {
 		assert.NotContains(t, addr, "consumption")
-		if p := block(after(rc), "lf_tag_policy"); p != nil {
-			assert.NotContains(t, p["catalog_id"], "consumption", addr)
+		for _, values := range lfExpression(rc) {
+			assert.NotContains(t, values, "consumption", addr)
+		}
+		if rc.Type == "aws_lakeformation_lf_tag" && strings.HasSuffix(addr, ".zone[0]") {
+			assert.Equal(t, []string{"curated", "raw"}, strs(after(rc)["values"]))
 		}
 	}
 }

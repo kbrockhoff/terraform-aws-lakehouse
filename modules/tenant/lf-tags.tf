@@ -22,7 +22,7 @@ resource "aws_lakeformation_resource_lf_tags" "database" {
   }
 
   dynamic "lf_tag" {
-    for_each = local.database_labels
+    for_each = merge(local.database_labels, { (var.platform.lf_tags.zone.key) = each.key })
     content {
       key   = lf_tag.key
       value = lf_tag.value

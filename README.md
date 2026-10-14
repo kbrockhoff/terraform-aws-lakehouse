@@ -112,6 +112,25 @@ module "custom_lakehouse" {
 Resources deployed to subnets use lookup by `NetworkTags` values to determine which subnets to deploy to.
 This eliminates the need to manage different subnet IDs variable values for each environment.
 
+## Required one-time catalog grant
+
+Athena resolves an S3 Tables bucket catalog only for principals that have Lake Formation `DESCRIBE`
+on that catalog. The AWS provider cannot express this grant yet, so after the first apply, a
+data-lake admin runs it once for each zone bucket and each dedicated tenant bucket:
+
+```bash
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+for bucket in <name_prefix>-raw <name_prefix>-curated <name_prefix>-consumption; do
+  aws lakeformation grant-permissions \
+    --principal "DataLakePrincipalIdentifier=${ACCOUNT}:IAMPrincipals" \
+    --permissions DESCRIBE \
+    --resource "{\"Catalog\":{\"Id\":\"${ACCOUNT}:s3tablescatalog/${bucket}\"}}"
+done
+```
+
+The grant only reveals that the catalog exists. Databases, tables, and columns remain gated by
+the tenant LF-tag grants.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -144,6 +163,7 @@ This eliminates the need to manage different subnet IDs variable values for each
 | [aws_lakeformation_lf_tag.domain](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_lakeformation_lf_tag.regulation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_lakeformation_lf_tag.sensitivity](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
+| [aws_lakeformation_lf_tag.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_s3_bucket.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket_lifecycle_configuration.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_lifecycle_configuration) | resource |
 | [aws_s3_bucket_ownership_controls.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_ownership_controls) | resource |

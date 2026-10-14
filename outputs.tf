@@ -49,6 +49,11 @@ output "lf_tag_vocabulary" {
       key    = aws_lakeformation_lf_tag.domain[0].key
       values = local.domain_values
     }
+    zone = {
+      key    = aws_lakeformation_lf_tag.zone[0].key
+      values = aws_lakeformation_lf_tag.zone[0].values
+      note   = "set by the platform on tenant databases; pipelines must not relabel it"
+    }
     tenant_key_prefix = "${local.name_prefix}-tenant-"
   } : null
 }

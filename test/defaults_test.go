@@ -22,6 +22,7 @@ func TestTerraformDefaultsExample(t *testing.T) {
 		`module.main.aws_s3tables_table_bucket.zone["consumption"]`,
 		`module.main.aws_lakeformation_lf_tag.sensitivity[0]`,
 		`module.main.aws_lakeformation_lf_tag.domain[0]`,
+		`module.main.aws_lakeformation_lf_tag.zone[0]`,
 		`module.main.aws_lakeformation_lf_tag.regulation["gdpr"]`,
 		`module.main.aws_lakeformation_lf_tag.regulation["hipaa"]`,
 		`module.main.aws_lakeformation_lf_tag.regulation["pci_dss"]`,

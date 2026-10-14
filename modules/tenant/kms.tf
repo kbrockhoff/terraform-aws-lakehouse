@@ -79,7 +79,10 @@ data "aws_iam_policy_document" "kms" {
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
-      values   = ["s3tables.${local.region}.amazonaws.com"]
+      values = [
+        "s3tables.${local.region}.amazonaws.com",
+        "s3.${local.region}.amazonaws.com", # table metadata and data files are read through S3
+      ]
     }
   }
 

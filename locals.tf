@@ -236,6 +236,10 @@ locals {
         key    = aws_lakeformation_lf_tag.domain[0].key
         values = local.domain_values
       }
+      zone = {
+        key    = aws_lakeformation_lf_tag.zone[0].key
+        values = aws_lakeformation_lf_tag.zone[0].values
+      }
       tenant_key_prefix = "${local.name_prefix}-tenant-"
     }
     regulation_designation = local.regulation_designation

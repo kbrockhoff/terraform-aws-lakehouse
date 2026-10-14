@@ -328,7 +328,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
   - the labeling and roll-up contract;
   - a terraform-docs injection block.
 - [x] T048 Wire the root in `main.tf`: `module "tenant"` with `for_each = var.enabled ? var.tenants : {}`, providers `aws` and `aws.pricing`, `platform = local.platform_contract`, `name = each.key`, `tenant = each.value`, and `verify_deployer_admin = false`. It `depends_on` the catalog-integration module, the root admin guards, and `lf-tags.tf`, because the contract carries only values.
-- [ ] T049 **Checkpoint and sandbox verification**: run `make check` and `make lint`. Then run `make plan-examples`, and `make apply-examples` for `examples/complete`, and confirm:
+- [x] T049 **Checkpoint and sandbox verification**: run `make check` and `make lint`. Then run `make plan-examples`, and `make apply-examples` for `examples/complete`, and confirm:
   - `lf_tag_policy` grants with an `s3tablescatalog/<bucket>` `catalog_id` apply and authorize a reader;
   - `GRANT_WITH_LF_TAG_EXPRESSION` is accepted;
   - the Terraform argument and minimum provider version that set a table bucket's default storage class exist. Update `versions.tf` if the floor rises. A table created in a Production bucket reports the `INTELLIGENT_TIERING` storage class;

@@ -2,11 +2,14 @@
 # Persona grants (FR-008 to FR-014)
 # ----
 
-# Every tag-based grant is scoped to one bucket catalog and includes the tenant term, so grants
-# never reach another tenant or a zone the persona is not assigned.
+# Lake Formation accepts LF-tag policy grants only at account level (catalog_id = account); a
+# grant then applies to matching resources in every S3 Tables bucket catalog. Every expression
+# includes the tenant term (FR-003) and the persona's zones (FR-014), so a grant never reaches
+# another tenant or a zone the persona is not assigned.
 
 locals {
-  tenant_expression = [{ key = local.tenant_tag_key, values = ["member"] }]
+  tenant_term = { key = local.tenant_tag_key, values = ["member"] }
+  zone_key    = var.platform.lf_tags.zone.key
 
   steward_database_permissions = ["CREATE_TABLE", "ALTER", "DROP", "DESCRIBE"]
   steward_table_permissions    = ["SELECT", "INSERT", "DELETE", "ALTER", "DROP", "DESCRIBE"]
@@ -27,6 +30,21 @@ locals {
       key           = pair[1]
     }
   }
+
+  # Reader table expressions: tenant, zones, sensitivity, every regulation, and optional domains
+  reader_expressions = {
+    for k, r in local.reader_grants : k => concat(
+      [local.tenant_term, { key = local.zone_key, values = r.zones }],
+      [{ key = var.platform.lf_tags.sensitivity.key, values = r.sensitivity_values }],
+      [
+        for reg, key in var.platform.lf_tags.regulations : {
+          key    = key
+          values = contains(r.regulations, reg) ? ["no", "yes"] : ["no"]
+        }
+      ],
+      r.domains == null ? [] : [{ key = var.platform.lf_tags.domain.key, values = r.domains }],
+    )
+  }
 }
 
 # Stewards: full control of the tenant's databases and tables, grantable within the tenant
@@ -39,10 +57,10 @@ resource "aws_lakeformation_permissions" "steward_database" {
   permissions_with_grant_option = local.steward_database_permissions
 
   lf_tag_policy {
-    catalog_id    = local.catalog_id[each.value.zone]
+    catalog_id    = local.account_id
     resource_type = "DATABASE"
     dynamic "expression" {
-      for_each = local.tenant_expression
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
       content {
         key    = expression.value.key
         values = expression.value.values
@@ -61,10 +79,10 @@ resource "aws_lakeformation_permissions" "steward_table" {
   permissions_with_grant_option = local.steward_table_permissions
 
   lf_tag_policy {
-    catalog_id    = local.catalog_id[each.value.zone]
+    catalog_id    = local.account_id
     resource_type = "TABLE"
     dynamic "expression" {
-      for_each = local.tenant_expression
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
       content {
         key    = expression.value.key
         values = expression.value.values
@@ -75,8 +93,8 @@ resource "aws_lakeformation_permissions" "steward_table" {
   depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
 }
 
-# LF-tag permissions. Nobody but platform admins can ASSOCIATE the tenant key, so nobody else can
-# retag a resource into or out of a tenant.
+# LF-tag permissions. Nobody but platform admins can ASSOCIATE the tenant or zone keys, so nobody
+# else can move a resource into another tenant or zone by relabeling it.
 
 resource "aws_lakeformation_permissions" "steward_label" {
   for_each = local.steward_label_permissions
@@ -106,6 +124,21 @@ resource "aws_lakeformation_permissions" "steward_tenant_tag" {
   depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
 }
 
+# Stewards may scope their own grants by zone, within the tenant's zones
+resource "aws_lakeformation_permissions" "steward_zone_tag" {
+  for_each = toset(var.tenant.stewards)
+
+  principal   = each.value
+  permissions = ["DESCRIBE", "GRANT_WITH_LF_TAG_EXPRESSION"]
+
+  lf_tag {
+    key    = local.zone_key
+    values = sort(tolist(local.zones))
+  }
+
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
+}
+
 resource "aws_lakeformation_permissions" "writer_label" {
   for_each = local.writer_label_permissions
 
@@ -120,7 +153,7 @@ resource "aws_lakeformation_permissions" "writer_label" {
   depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
 }
 
-# Writers: create and change tables in the tenant; DROP only in Baseline environments
+# Writers: create and change tables in their zones of the tenant; DROP only in Baseline
 
 resource "aws_lakeformation_permissions" "writer_database" {
   for_each = local.writer_grants
@@ -129,10 +162,10 @@ resource "aws_lakeformation_permissions" "writer_database" {
   permissions = ["CREATE_TABLE", "DESCRIBE"]
 
   lf_tag_policy {
-    catalog_id    = local.catalog_id[each.value.zone]
+    catalog_id    = local.account_id
     resource_type = "DATABASE"
     dynamic "expression" {
-      for_each = local.tenant_expression
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
       content {
         key    = expression.value.key
         values = expression.value.values
@@ -150,10 +183,10 @@ resource "aws_lakeformation_permissions" "writer_table" {
   permissions = local.writer_table_permissions
 
   lf_tag_policy {
-    catalog_id    = local.catalog_id[each.value.zone]
+    catalog_id    = local.account_id
     resource_type = "TABLE"
     dynamic "expression" {
-      for_each = local.tenant_expression
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
       content {
         key    = expression.value.key
         values = expression.value.values
@@ -164,8 +197,9 @@ resource "aws_lakeformation_permissions" "writer_table" {
   depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
 }
 
-# Readers: SELECT on tables whose labels fall within the reader's sensitivity, regulations, and
-# domains. LF-TBAC evaluates column tags, so columns outside the expression are excluded (FR-011).
+# Readers: SELECT on tables whose labels fall within the reader's zones, sensitivity, regulations,
+# and domains. LF-TBAC evaluates column tags, so columns outside the expression are excluded
+# (FR-011).
 
 resource "aws_lakeformation_permissions" "reader_database" {
   for_each = local.reader_grants
@@ -174,10 +208,10 @@ resource "aws_lakeformation_permissions" "reader_database" {
   permissions = ["DESCRIBE"]
 
   lf_tag_policy {
-    catalog_id    = local.catalog_id[each.value.zone]
+    catalog_id    = local.account_id
     resource_type = "DATABASE"
     dynamic "expression" {
-      for_each = local.tenant_expression
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
       content {
         key    = expression.value.key
         values = expression.value.values
@@ -195,20 +229,10 @@ resource "aws_lakeformation_permissions" "reader_table" {
   permissions = ["SELECT", "DESCRIBE"]
 
   lf_tag_policy {
-    catalog_id    = local.catalog_id[each.value.zone]
+    catalog_id    = local.account_id
     resource_type = "TABLE"
     dynamic "expression" {
-      for_each = concat(
-        local.tenant_expression,
-        [{ key = var.platform.lf_tags.sensitivity.key, values = each.value.sensitivity_values }],
-        [
-          for r, key in var.platform.lf_tags.regulations : {
-            key    = key
-            values = contains(each.value.regulations, r) ? ["no", "yes"] : ["no"]
-          }
-        ],
-        each.value.domains == null ? [] : [{ key = var.platform.lf_tags.domain.key, values = each.value.domains }],
-      )
+      for_each = local.reader_expressions[each.key]
       content {
         key    = expression.value.key
         values = expression.value.values

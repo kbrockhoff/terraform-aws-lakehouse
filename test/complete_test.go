@@ -55,20 +55,21 @@ func TestTerraformCompleteExample(t *testing.T) {
 	for addr, expr := range readers {
 		tn := tenantOf(addr)
 		assert.Contains(t, expr, key("tenant-"+tn), addr)
+		assert.Contains(t, expr, key("zone"), addr)
 		assert.Contains(t, expr, key("sensitivity"), addr)
 		for _, r := range regKeys {
 			assert.Contains(t, expr, r, addr)
 		}
 	}
-	semantic := readers[tenantPrefix("sales")+`aws_lakeformation_permissions.reader_table["semantic/consumption"]`]
+	semantic := readers[tenantPrefix("sales")+`aws_lakeformation_permissions.reader_table["semantic"]`]
 	for _, r := range regKeys {
 		assert.Equal(t, []string{"no"}, semantic[r], "semantic layer must see no regulated columns")
 	}
-	gdpr := readers[tenantPrefix("sales")+`aws_lakeformation_permissions.reader_table["gdpranalyst/raw"]`]
+	gdpr := readers[tenantPrefix("sales")+`aws_lakeformation_permissions.reader_table["gdpranalyst"]`]
 	assert.Equal(t, []string{"no", "yes"}, gdpr[key("reg-gdpr")])
 	for addr, expr := range readers {
 		_, hasDomain := expr[key("domain")]
-		assert.Equal(t, strings.Contains(addr, `tenant["finance"]`) && strings.Contains(addr, `controller/`), hasDomain,
+		assert.Equal(t, strings.Contains(addr, `tenant["finance"]`) && strings.Contains(addr, `["controller"]`), hasDomain,
 			"only the domain-limited finance reader filters by domain: %s", addr)
 	}
 
@@ -112,14 +113,40 @@ func TestTerraformCompleteExample(t *testing.T) {
 		}
 	}
 
-	// The semantic layer is granted only in consumption catalogs
+	// Grants are account-level, and the semantic layer's expressions reach only the consumption
+	// zone (Lake Formation rejects grants scoped to a bucket catalog; plan.md, Grants)
 	semanticARN := "arn:aws:iam::123456789012:role/semantic-layer"
+	semanticGrants := 0
 	for addr, rc := range changes {
 		a := after(rc)
-		if rc.Type == "aws_lakeformation_permissions" && a["principal"] == semanticARN {
-			if p := block(a, "lf_tag_policy"); p != nil {
-				assert.True(t, strings.HasSuffix(p["catalog_id"].(string), "-consumption"), addr)
+		p := block(a, "lf_tag_policy")
+		if rc.Type != "aws_lakeformation_permissions" || p == nil {
+			continue
+		}
+		assert.Regexp(t, `^[0-9]{12}$`, p["catalog_id"], "%s must be an account-level grant", addr)
+		assert.Contains(t, lfExpression(rc), key("zone"), "%s must limit zones", addr)
+		if a["principal"] == semanticARN {
+			semanticGrants++
+			assert.Equal(t, []string{"consumption"}, lfExpression(rc)[key("zone")], addr)
+		}
+	}
+	assert.Equal(t, 4, semanticGrants, "database and table grants in sales and finance")
+
+	// Databases carry their zone, which only platform admins can associate
+	for _, z := range []string{"raw", "curated", "consumption"} {
+		db := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.database["`+z+`"]`])
+		zoneLabel := ""
+		for _, l := range list(db["lf_tag"]) {
+			lm := l.(map[string]interface{})
+			if lm["key"] == key("zone") {
+				zoneLabel = lm["value"].(string)
 			}
+		}
+		assert.Equal(t, z, zoneLabel)
+	}
+	for addr, rc := range withPrefix(changes, tenantPrefix("sales")+"aws_lakeformation_permissions.") {
+		if lt := block(after(rc), "lf_tag"); lt != nil && lt["key"] == key("zone") {
+			assert.NotContains(t, strs(after(rc)["permissions"]), "ASSOCIATE", addr)
 		}
 	}
 
