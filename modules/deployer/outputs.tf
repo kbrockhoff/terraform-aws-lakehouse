@@ -7,3 +7,7 @@ output "policy_name" {
   description = "Name of the IAM policy created for deployment operations"
   value       = var.enabled ? aws_iam_policy.basic[0].name : null
 }
+output "policy_json" {
+  description = "Rendered policy document JSON"
+  value       = var.enabled ? data.aws_iam_policy_document.basic[0].json : null
+}

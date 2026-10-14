@@ -242,7 +242,7 @@ locals {
     kms_key_arn            = local.kms_key_arn
     data_access_role_arn   = local.data_access_role_arn
     query_results = {
-      bucket_name = aws_s3_bucket.query_results[0].id
+      bucket_name = aws_s3_bucket.query_results[0].bucket
       bucket_arn  = aws_s3_bucket.query_results[0].arn
     }
     alarm_sns_topic_arn     = local.alarm_sns_topic_arn

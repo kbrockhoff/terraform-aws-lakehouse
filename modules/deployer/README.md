@@ -66,5 +66,6 @@ No modules.
 | Name | Description |
 | ---- | ----------- |
 | <a name="output_policy_arn"></a> [policy\_arn](#output\_policy\_arn) | ARN of the IAM policy created for deployment operations |
+| <a name="output_policy_json"></a> [policy\_json](#output\_policy\_json) | Rendered policy document JSON |
 | <a name="output_policy_name"></a> [policy\_name](#output\_policy\_name) | Name of the IAM policy created for deployment operations |
 <!-- END_TF_DOCS -->    

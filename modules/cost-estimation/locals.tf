@@ -132,8 +132,9 @@ locals {
     s3_buckets          = var.s3_bucket_count * 0
     athena_workgroups   = var.athena_workgroup_count * 0
   }
-  total_monthly_cost      = sum(values(local.costs))
-  compliance_monthly_cost = local.costs.compliance_kms_keys
+  # Rounded to cents to drop floating-point noise
+  total_monthly_cost      = tonumber(format("%.2f", sum(values(local.costs))))
+  compliance_monthly_cost = tonumber(format("%.2f", local.costs.compliance_kms_keys))
 
   # Usage-based rates, for consumers to estimate data-dependent costs
   s3_usagetype_prefix = var.region == "us-east-1" ? "" : "${local.usagetype_region}-"

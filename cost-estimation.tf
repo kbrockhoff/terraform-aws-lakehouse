@@ -21,8 +21,8 @@ module "pricing" {
 locals {
   # Platform plus every platform-applied tenant. Standalone tenants report through their own
   # module instance (FR-024).
-  total_monthly_cost_estimate = module.pricing.monthly_cost_estimate + sum(concat(
+  total_monthly_cost_estimate = tonumber(format("%.2f", module.pricing.monthly_cost_estimate + sum(concat(
     [0],
     [for t in module.tenant : t.monthly_cost_estimate],
-  ))
+  ))))
 }

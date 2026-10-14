@@ -387,11 +387,11 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 **Purpose**: Plan-only coverage of every module promise in spec.md Success Criteria (Code
 Validation), for both tenant entry points.
 
-- [ ] T055 [P] Update `examples/defaults/main.tf`, `variables.tf`, `terraform.auto.tfvars`, and `outputs.tf`: required inputs only, with catalog integration enabled and `environment_type = "Development"`.
+- [x] T055 [P] Update `examples/defaults/main.tf`, `variables.tf`, `terraform.auto.tfvars`, and `outputs.tf`: required inputs only, with catalog integration enabled and `environment_type = "Development"`.
   - `name_prefix`.
   - `admin_principal_arns`: a variable defaulting to `[]`. When it's empty, `main.tf` passes `[data.aws_iam_session_context.current.issuer_arn]`, which means the role running the plan. The example declares `aws_caller_identity` and `aws_iam_session_context`, so the FR-013 precondition passes for whoever runs `make test`.
   - One minimal tenant, `analytics`, with `owner` and `sensitivity = "internal"`, no regulations, the default domain, and no personas.
-- [ ] T056 [P] Update `examples/complete/main.tf`, `variables.tf`, `terraform.auto.tfvars`, and `outputs.tf`. Set every input:
+- [x] T056 [P] Update `examples/complete/main.tf`, `variables.tf`, `terraform.auto.tfvars`, and `outputs.tf`. Set every input:
   - `domain_values = ["general", "sales", "finance", "health"]`;
   - three tenants:
     - `sales`: domain `sales`, all zones, sensitivity `confidential`, and regulations `["gdpr"]`. Personas: one steward, writers in raw and curated, a consumption-only semantic-layer reader with `["public", "internal"]` and no regulations, and a GDPR-assigned analyst. It also has a row filter;
@@ -402,14 +402,14 @@ Validation), for both tenant entry points.
   - `tags` with `CostCenter` and `DataOwner`;
   - the same caller-default admin list pattern as T055.
   The tenant definitions live in `tenants.auto.tfvars`, so `examples/standalone-tenant` can reuse the `sales` definition.
-- [ ] T057 [P] Create `examples/secondary/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`) with `catalog_integration_config = { enabled = false, data_access_role_arn = <variable> }` and one tenant. The README states that the deploying role must be in the owning deployment's admin list.
-- [ ] T058 [P] Create `examples/standalone-tenant/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`). It calls `../../modules/tenant` directly:
+- [x] T057 [P] Create `examples/secondary/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`) with `catalog_integration_config = { enabled = false, data_access_role_arn = <variable> }` and one tenant. The README states that the deploying role must be in the owning deployment's admin list.
+- [x] T058 [P] Create `examples/standalone-tenant/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`). It calls `../../modules/tenant` directly:
   - `platform` comes from a `platform_contract` variable, set in `platform_contract.auto.tfvars.json`, a synthetic contract fixture that matches `examples/complete`'s shape;
   - `name = "sales"`, with the `sales` definition copied from `examples/complete/tenants.auto.tfvars`;
   - `verify_deployer_admin = true`.
   The README shows the production pattern, which reads the contract from remote state or SSM.
-- [ ] T059 [P] Create `examples/deployer/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`). It calls `../../modules/deployer` twice, once with `scope = "platform"` and once with `scope = "tenant"`, against a placeholder role ARN variable, and outputs both rendered policy JSON documents.
-- [ ] T060 Update `test/defaults_test.go` to assert:
+- [x] T059 [P] Create `examples/deployer/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`). It calls `../../modules/deployer` twice, once with `scope = "platform"` and once with `scope = "tenant"`, against a placeholder role ARN variable, and outputs both rendered policy JSON documents.
+- [x] T060 Update `test/defaults_test.go` to assert:
   - present:
     - `module.main.aws_s3tables_table_bucket.zone["raw"]`, `["curated"]`, and `["consumption"]`;
     - `aws_lakeformation_lf_tag.sensitivity`, `.domain`, and `.regulation["gdpr"]`, `["hipaa"]`, and `["pci_dss"]`;
@@ -425,7 +425,7 @@ Validation), for both tenant entry points.
   - `monthly_cost_estimate = 0`;
   - no tenant `module.cost_estimation` data sources;
   - the same resource set as the default plan.
-- [ ] T061 Update `test/complete_test.go`. `TestTerraformCompleteExample` asserts:
+- [x] T061 Update `test/complete_test.go`. `TestTerraformCompleteExample` asserts:
   - every `aws_lakeformation_permissions` resource except data cells filter grants uses `lf_tag_policy`;
   - every reader table grant expression includes the tenant's own key, the sensitivity, and every `reg-*` key:
     - the semantic-layer reader's regulation keys allow only `no`;
@@ -457,29 +457,29 @@ Validation), for both tenant entry points.
   - every `aws_lakeformation_permissions.principal` is in the set of ARNs from the example's `admin_principal_arns` and tenant persona inputs;
   - no policy document (bucket, table bucket, key, persona output) has a `Principal` of `"*"` or `{"AWS": "*"}` in an `Allow` statement.
   T072 (Checkov) stays as the static scan.
-- [ ] T062 Add `TestComplianceDesignationGatesTenantKeys` to `test/complete_test.go`. It is table-driven over `claims` designations `[]`, `["SOC2"]`, `["HIPAA"]`, and `["PCI_DSS"]`, and sets `regulations = ["gdpr"]` for every case except `HIPAA`, so validation passes:
+- [x] T062 Add `TestComplianceDesignationGatesTenantKeys` to `test/complete_test.go`. It is table-driven over `claims` designations `[]`, `["SOC2"]`, `["HIPAA"]`, and `["PCI_DSS"]`, and sets `regulations = ["gdpr"]` for every case except `HIPAA`, so validation passes:
   - with `[]`, there is no `module.tenant["claims"].aws_kms_key.this`, no dedicated bucket, and no dedicated results bucket, and the `claims` namespaces sit in the shared zone buckets;
   - with each framework, the plan contains exactly the tenant key, `aws_s3tables_table_bucket.dedicated[<zone>]` for each zone, and `aws_s3_bucket.results`;
   - in every case, no root-level resource and no `sales` or `finance` resource changes;
   - the planned `tenants["claims"].compliance_monthly_cost` output is 0 with `[]` and greater than 0 otherwise.
   Add a case with `claims` set to `compliance_frameworks = []`, `regulations = ["gdpr"]`, and `dedicated_storage = true`. It plans dedicated buckets encrypted with the platform key, and no tenant key or dedicated results bucket.
   Also assert in `TestTerraformCompleteExample` that the planned `monthly_cost_estimate` is at most `10 + 3 × 0.50 + 2`.
-- [ ] T063 [P] Create `test/tenancy_test.go`:
+- [x] T063 [P] Create `test/tenancy_test.go`:
   - `TestAddingTenantTouchesOnlyThatTenant`: plans `examples/complete` with and without an extra tenant `marketing`. Every differing address must start with `module.main.module.tenant["marketing"]`, with no root-level changes.
   - `TestTenantTypeInSync`: parses `variables.tf` and `modules/tenant/variables.tf` and asserts the `tenants` element type and the `tenant` type expressions are identical.
   - `TestZoneOverrideWithoutConsumption`: plans `examples/defaults` with `zones_config = { zones = ["raw", "curated"] }` and asserts no `consumption` bucket, namespace, or grant is present.
-- [ ] T064 [P] Create `test/standalone_test.go`:
+- [x] T064 [P] Create `test/standalone_test.go`:
   - `TestStandaloneTenantMatchesPlatformApplied`: plans `examples/standalone-tenant` and `examples/complete`. Strip the prefixes `module.tenant` and `module.main.module.tenant["sales"]`; the remaining resource address sets for `sales` must be equal.
   - `TestStandaloneTenantReportsOwnCost`: the planned `monthly_cost_estimate` output of `examples/standalone-tenant` is greater than 0.
   - `TestStandaloneTenantRejectsInvalidAgainstContract`: sets a domain absent from the fixture contract and asserts the validation error.
-- [ ] T065 [P] Create `test/deployer_test.go`, which plans `examples/deployer` and parses both policy outputs. `TestDeployerPolicies` asserts:
+- [x] T065 [P] Create `test/deployer_test.go`, which plans `examples/deployer` and parses both policy outputs. `TestDeployerPolicies` asserts:
   - no statement action contains `*`;
   - the tenant scope contains none of `glue:CreateCatalog`, `lakeformation:PutDataLakeSettings`, `lakeformation:RegisterResource`, or any `iam:` action;
   - the platform scope contains a create action for every resource type in the `examples/complete` plan (`aws_s3tables_*`, `aws_lakeformation_*`, `aws_athena_workgroup`, `aws_s3_bucket*`, `aws_kms_*`, `aws_cloudwatch_metric_alarm`, `aws_sns_topic`, `aws_iam_role*`, `aws_glue_catalog`), using a type-to-action map kept in the test;
   - `pricing:GetProducts` is present only when `cost_estimation_enabled = true`;
   - both scopes contain `s3tables:PutTableBucketStorageClass` and `s3tables:GetTableBucketStorageClass` (FR-005 default storage class).
-- [ ] T066 [P] Create `test/secondary_test.go` with `TestSecondaryExampleSkipsAccountIntegration`. It asserts the plan has no `module.catalog_integration` resources, but contains the zone buckets, platform LF-tags, a tenant module, and `terraform_data.secondary_admin_guard[0]`. Document in `test/README.md` that the roles running `make test-secondary` and `make test-standalone` must already be Lake Formation data-lake admins in the sandbox account.
-- [ ] T067 [P] Create `test/validation_test.go` with table-driven, plan-expected-failure cases, each asserting the error message:
+- [x] T066 [P] Create `test/secondary_test.go` with `TestSecondaryExampleSkipsAccountIntegration`. It asserts the plan has no `module.catalog_integration` resources, but contains the zone buckets, platform LF-tags, a tenant module, and `terraform_data.secondary_admin_guard[0]`. Document in `test/README.md` that the roles running `make test-secondary` and `make test-standalone` must already be Lake Formation data-lake admins in the sandbox account.
+- [x] T067 [P] Create `test/validation_test.go` with table-driven, plan-expected-failure cases, each asserting the error message:
   - tenant `Sales_1` (invalid name);
   - a tenant zone that is not a platform zone;
   - a writer zone outside its tenant's zones;
@@ -502,8 +502,8 @@ Validation), for both tenant entry points.
   - `storage_config.table_storage_class = "GLACIER"`;
   - `environment_type = "None"` with `required_tags_config.enforced = null`.
   Add `TestRegulatedDataInBaselineWarns`, which plans `examples/complete` with `environment_type = "Development"` and asserts the plan succeeds and its output contains the `regulated_data_in_baseline` warning naming `claims` (FR-030).
-- [ ] T068 Add `test-tenancy`, `test-standalone`, `test-deployer`, `test-secondary`, and `test-validation` targets to `Makefile`, following the existing `test-complete` pattern. Add them to `make help` output via `##` comments.
-- [ ] T069 **Checkpoint**: run `make test`. All plan-only tests must pass. Fix failures and rerun the single failing target.
+- [x] T068 Add `test-tenancy`, `test-standalone`, `test-deployer`, `test-secondary`, and `test-validation` targets to `Makefile`, following the existing `test-complete` pattern. Add them to `make help` output via `##` comments.
+- [x] T069 **Checkpoint**: run `make test`. All plan-only tests must pass. Fix failures and rerun the single failing target.
 
 ---
 

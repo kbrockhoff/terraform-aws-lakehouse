@@ -33,14 +33,7 @@ variable "data_tags" {
 variable "environment_type" {
   description = "Environment type for resource configuration defaults. Select 'None' to use individual config values."
   type        = string
-  default     = "Development"
-
-  validation {
-    condition = contains([
-      "None", "Ephemeral", "Development", "Testing", "UAT", "Production", "MissionCritical"
-    ], var.environment_type)
-    error_message = "Environment type must be one of: None, Ephemeral, Development, Testing, UAT, Production, MissionCritical."
-  }
+  default     = "Production"
 }
 
 variable "cost_estimation_config" {
@@ -54,7 +47,7 @@ variable "cost_estimation_config" {
 }
 
 # ----
-# Encryption
+# Encryption and monitoring
 # ----
 
 variable "encryption_config" {
@@ -67,26 +60,9 @@ variable "encryption_config" {
   default = {
     create_kms_key               = true
     kms_key_id                   = ""
-    kms_key_deletion_window_days = 14
-  }
-
-  validation {
-    condition = (
-      (var.encryption_config.create_kms_key && var.encryption_config.kms_key_id == "") ||
-      (!var.encryption_config.create_kms_key && var.encryption_config.kms_key_id != "")
-    )
-    error_message = "kms_key_id must be empty when create_kms_key is true, or provided when create_kms_key is false."
-  }
-
-  validation {
-    condition     = var.encryption_config.kms_key_deletion_window_days >= 7 && var.encryption_config.kms_key_deletion_window_days <= 30
-    error_message = "KMS key deletion window must be between 7 and 30 days when specified."
+    kms_key_deletion_window_days = 30
   }
 }
-
-# ----
-# Monitoring
-# ----
 
 variable "monitoring_config" {
   description = "Configuration object for CloudWatch monitoring"
@@ -94,28 +70,100 @@ variable "monitoring_config" {
     enabled = bool
   })
   default = {
-    enabled = false
+    enabled = true
   }
 }
 
 variable "alarms_config" {
   description = "Configuration object for CloudWatch alarms and SNS notifications"
   type = object({
-    enabled          = bool
-    create_sns_topic = bool
-    sns_topic_arn    = string
+    enabled                 = bool
+    create_sns_topic        = bool
+    sns_topic_arn           = string
+    scanned_bytes_threshold = optional(number)
   })
   default = {
-    enabled          = false
+    enabled          = true
     create_sns_topic = true
     sns_topic_arn    = ""
   }
+}
 
-  validation {
-    condition = (
-      (var.alarms_config.create_sns_topic && var.alarms_config.sns_topic_arn == "") ||
-      (!var.alarms_config.create_sns_topic && var.alarms_config.sns_topic_arn != "")
-    )
-    error_message = "sns_topic_arn must be empty when create_sns_topic is true, or provided when create_sns_topic is false."
+# ----
+# Lakehouse
+# ----
+
+# The object inputs below are typed `any` here and validated by the module's typed variables, so
+# the example does not repeat every type.
+
+variable "zones_config" {
+  description = "Data zones"
+  type        = any
+  default = {
+    zones = ["raw", "curated", "consumption"]
   }
+}
+
+variable "storage_config" {
+  description = "Table storage settings"
+  type        = any
+  default     = {}
+}
+
+variable "query_config" {
+  description = "Platform query defaults"
+  type        = any
+  default     = {}
+}
+
+variable "required_tags_config" {
+  description = "Required tag keys"
+  type        = any
+  default     = {}
+}
+
+variable "catalog_integration_config" {
+  description = "Account-level catalog integration"
+  type        = any
+  default = {
+    enabled                               = true
+    data_access_role_arn                  = ""
+    allow_full_table_external_data_access = false
+  }
+}
+
+variable "governance_config" {
+  description = "LF-tag vocabularies and settings, without admin_principal_arns (see admin_principal_arns)"
+  type        = any
+  default     = {}
+}
+
+variable "admin_principal_arns" {
+  description = "Lake Formation data-lake admins. Empty means the role running Terraform."
+  type        = list(string)
+  default     = []
+}
+
+variable "tenants" {
+  description = "Tenant definitions (tenants.auto.tfvars); the module's tenants variable enforces the type"
+  type        = any
+  default     = {}
+}
+
+variable "claims_compliance_frameworks" {
+  description = "Compliance designation of the claims tenant"
+  type        = list(string)
+  default     = ["HIPAA"]
+}
+
+variable "tenant_overrides" {
+  description = "Attributes merged into individual tenant definitions, keyed by tenant name (used by tests)"
+  type        = any
+  default     = {}
+}
+
+variable "extra_tenants" {
+  description = "Additional tenants merged into the tenant map (used by tests)"
+  type        = any
+  default     = {}
 }

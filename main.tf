@@ -55,8 +55,10 @@ resource "terraform_data" "required_tags_guard" {
 # Platform-applied tenants
 # ----
 
-# The contract carries values only, so explicit dependencies on the platform's governance
-# resources are needed for grants to wait for the LF-tags and admin settings.
+# No module-level depends_on: it would defer every data source in the tenant (cost lookups,
+# session context) to apply time. Ordering comes from the contract instead: it references the
+# platform LF-tags, which depend on the catalog integration and the admin guard, so every tenant
+# resource that reads var.platform waits for them.
 module "tenant" {
   source   = "./modules/tenant"
   for_each = var.enabled ? var.tenants : {}
@@ -70,12 +72,4 @@ module "tenant" {
   name                  = each.key
   tenant                = each.value
   verify_deployer_admin = false # the root already guards (FR-013)
-
-  depends_on = [
-    module.catalog_integration,
-    terraform_data.secondary_admin_guard,
-    aws_lakeformation_lf_tag.sensitivity,
-    aws_lakeformation_lf_tag.regulation,
-    aws_lakeformation_lf_tag.domain,
-  ]
 }

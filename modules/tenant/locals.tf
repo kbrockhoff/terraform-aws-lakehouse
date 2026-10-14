@@ -28,7 +28,7 @@ locals {
 
   results = local.designated ? {
     bucket_arn  = aws_s3_bucket.results[0].arn
-    bucket_name = aws_s3_bucket.results[0].id
+    bucket_name = aws_s3_bucket.results[0].bucket
     prefix      = ""
     } : {
     bucket_arn  = var.platform.query_results.bucket_arn

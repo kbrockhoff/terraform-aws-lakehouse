@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check plan-examples destroy-examples
+.PHONY: help validate test clean format docs all status pre-commit lint check plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation
 
 # Default target
 .DEFAULT_GOAL := help
@@ -79,20 +79,45 @@ test: check-aws ## Run all tests
 	@cd test && go test -v -timeout 30m -parallel 4
 	@echo "$(GREEN)✓ All tests passed$(RESET)"
 
-test-defaults: check-aws ## Run only defaults example test
+test-defaults: check-aws ## Run only defaults example tests
 	@echo "$(CYAN)Running defaults test...$(RESET)"
-	@cd test && go test -v -timeout 15m -run TestTerraformDefaultsExample
+	@cd test && go test -v -timeout 15m -run 'TestTerraformDefaultsExample|TestCostEstimationDisabled'
 	@echo "$(GREEN)✓ Defaults test passed$(RESET)"
 
-test-complete: check-aws ## Run only complete example test
+test-complete: check-aws ## Run only complete example tests
 	@echo "$(CYAN)Running complete test...$(RESET)"
-	@cd test && go test -v -timeout 15m -run TestTerraformCompleteExample
+	@cd test && go test -v -timeout 30m -run 'TestTerraformCompleteExample|TestCompleteExampleSecurityControls|TestComplianceDesignationGatesTenantKeys'
 	@echo "$(GREEN)✓ Complete test passed$(RESET)"
 
 test-enabled-false: check-aws ## Run only enabled=false test
 	@echo "$(CYAN)Running enabled=false test...$(RESET)"
 	@cd test && go test -v -timeout 15m -run TestEnabledFalse
 	@echo "$(GREEN)✓ Enabled=false test passed$(RESET)"
+
+test-tenancy: check-aws ## Run only tenancy tests (tenant isolation, type sync, zone override)
+	@echo "$(CYAN)Running tenancy tests (tenant isolation, type sync, zone override)...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestAddingTenantTouchesOnlyThatTenant|TestTenantTypeInSync|TestZoneOverrideWithoutConsumption'
+	@echo "$(GREEN)✓ test-tenancy passed$(RESET)"
+
+test-standalone: check-aws ## Run only standalone tenant tests
+	@echo "$(CYAN)Running standalone tenant tests...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestStandaloneTenant'
+	@echo "$(GREEN)✓ test-standalone passed$(RESET)"
+
+test-deployer: check-aws ## Run only deployer policy tests
+	@echo "$(CYAN)Running deployer policy tests...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestDeployerPolicies'
+	@echo "$(GREEN)✓ test-deployer passed$(RESET)"
+
+test-secondary: check-aws ## Run only secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)
+	@echo "$(CYAN)Running secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestSecondaryExampleSkipsAccountIntegration'
+	@echo "$(GREEN)✓ test-secondary passed$(RESET)"
+
+test-validation: check-aws ## Run only input validation tests
+	@echo "$(CYAN)Running input validation tests...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestInvalidInputsFailPlan|TestRegulatedDataInBaselineWarns'
+	@echo "$(GREEN)✓ test-validation passed$(RESET)"
 
 ##@ Documentation
 docs: ## Generate documentation
