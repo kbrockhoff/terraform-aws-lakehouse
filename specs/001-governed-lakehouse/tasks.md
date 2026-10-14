@@ -547,7 +547,7 @@ verification of the spec's operational success criteria.
   - complete (Production, three tenants, one HIPAA) must be at most $10 + 3 × $0.50 for the platform and tenants, plus at most $2 compliance cost for `claims`;
   - standalone-tenant reports its own estimate.
 - [ ] T075 Run `make pre-commit`, then `make validate`. Both must pass with TFLint and terraform-docs installed, and no files may be left modified.
-- [ ] T076 Sandbox end-to-end (Development first, then Production configuration): run `make apply-examples` and record the plan and apply durations against the 3-minute and 15-minute targets. Then verify the spec success criteria:
+- [x] T076 Sandbox end-to-end (Development first, then Production configuration): run `make apply-examples` and record the plan and apply durations against the 3-minute and 15-minute targets. Then verify the spec success criteria:
   - **Fail-closed labeling and roll-up**:
     - a `sales` writer creates a table through Athena without stating encryption; the table inherits the database LF-tags and the bucket key;
     - before labeling, the table is invisible to the semantic-layer reader;
@@ -580,7 +580,7 @@ verification of the spec's operational success criteria.
     - the table restores to an earlier snapshot within the RPO window;
     - a forced query failure triggers the tenant's `query_failures` alarm and delivers to the SNS topic.
   Then destroy the standalone tenant, then run `make destroy-examples`.
-- [ ] T077 Record T076 results and any deviations in `specs/001-governed-lakehouse/plan.md` under Complexity Tracking.
+- [x] T077 Record T076 results and any deviations in `specs/001-governed-lakehouse/plan.md` under Complexity Tracking.
 
 ---
 
