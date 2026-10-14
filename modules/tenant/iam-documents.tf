@@ -94,6 +94,21 @@ data "aws_iam_policy_document" "persona" {
     }
   }
 
+  # Stewards hold CREATE_TABLE, ALTER, and DROP in Lake Formation, so IAM must allow the Glue calls
+  dynamic "statement" {
+    for_each = each.value.persona == "steward" ? [1] : []
+    content {
+      sid    = "StewardTables"
+      effect = "Allow"
+      actions = [
+        "glue:CreateTable",
+        "glue:UpdateTable",
+        "glue:DeleteTable",
+      ]
+      resources = ["*"]
+    }
+  }
+
   dynamic "statement" {
     for_each = contains(["writer", "steward"], each.value.persona) ? [1] : []
     content {

@@ -544,6 +544,8 @@ Writers additionally get:
   `GetLFTag`, and `ListLFTags`, for labeling.
 
 Stewards additionally get:
+- `glue:CreateTable`, `glue:UpdateTable`, and `glue:DeleteTable`, matching their Lake Formation
+  `CREATE_TABLE`, `ALTER`, and `DROP` (found in T076: without them IAM denied steward DDL);
 - `lakeformation:GrantPermissions`, `RevokePermissions`, `ListPermissions`;
 - `AddLFTagsToResource`, `RemoveLFTagsFromResource`, `GetResourceLFTags`, `GetLFTag`, `ListLFTags`;
 - `SearchTablesByLFTags`, `SearchDatabasesByLFTags`, `CreateDataCellsFilter`, and
