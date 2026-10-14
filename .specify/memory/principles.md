@@ -1,16 +1,20 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.2.0 → 1.2.1
-Bump rationale: PATCH. Resolves an internal inconsistency introduced in 1.2.0: per-zone keys were
-still listed as an Enhanced (environment-type) control in Govern Data Access by Default, while
-Embed Compliance into the Architecture gates cost-incurring compliance controls on data
-designation. No guidance added or removed.
+Version change: 1.2.2 → 1.3.0
+Bump rationale: MINOR. Materially expands guidance: the module is a multi-tenant platform, tenant
+isolation is part of the access model, and fine-grained access is tag-based in every environment
+type. The tags cover sensitivity, regulations, and domain, and the most restrictive column labels
+roll up to the table. The compliance designation applies per tenant. No principle removed or redefined.
 
 Modified principles:
-- Govern Data Access by Default — separate keys per data zone or sensitivity class moved from the
-  Enhanced tier to a new "Designated data" tier; Enhanced keeps fine-grained access and query
-  isolation
+- Govern Data Access by Default — adds tenant isolation; tag-based (sensitivity, regulation,
+  domain) fine-grained access moves from Enhanced to every tier; adds fail-closed defaults and
+  column-to-table roll-up; designated keys are per tenant
+- Embed Compliance into the Architecture — designation is made per tenant
+- Optimize for Cost Efficiency — Enhanced usage attribution is per tenant
+- Define Small, Validated Module Contracts — tenants are data-driven inputs
+- Compose, Don't Accumulate — tenant onboarding portals are out of scope
 
 Added sections: none
 Removed sections: none
@@ -18,12 +22,10 @@ Removed sections: none
 Templates and commands reviewed:
 - ✅ .specify/templates/plan-template.md, spec-template.md, tasks-template.md — no change needed
 - ✅ .claude/commands/iac.*.md — no change needed
-- ✅ specs/001-governed-lakehouse/spec.md, plan.md, tasks.md — already gate per-zone keys on the
-  compliance designation (FR-022, T021); /iac.analyze finding P1 resolved
-- ✅ specs/001-governed-lakehouse/spec.md, plan.md, tasks.md — /iac.analyze findings P2 (query
-  results isolation, FR-012a), P3 (no writer DROP in Enhanced), and P4 (required tag validation,
-  FR-016) resolved in the spec, plan, and tasks
-- ⚠ .github/workflows/terraform-ci.yml — still invokes terraform and go test directly; task T061
+- ✅ specs/001-governed-lakehouse/spec.md, plan.md, tasks.md — redesigned 2026-10-14 as a
+  multi-tenant platform with LF-tag access control
+- ✅ AGENTS.md, README.md — components and features updated
+- ⚠ .github/workflows/terraform-ci.yml — still invokes terraform and go test directly; task T073
   switches it to make targets during implementation
 
 Deferred TODOs: none
@@ -40,16 +42,27 @@ a single permissive grant can expose everything. Access MUST be denied unless ex
 through one central, auditable permission model that covers storage, catalog, and query layers
 together. No data layer is ever publicly reachable, all data is encrypted at rest with
 customer-controlled keys and in transit, and human and workload identities receive only the
-data-zone, table, or column access their purpose requires.
+tenant, data-zone, table, or column access their purpose requires.
+
+The module is a platform shared by many tenants, so tenant isolation is part of this floor: no
+principal reaches a tenant's data, query results, or keys unless that tenant grants it. Access is
+expressed as tag-based policies over tenant, sensitivity, regulation, and domain metadata on
+databases, tables, and columns, not as per-resource grants. Tag-based policies scale with tenant
+count and stay auditable. A table's labels are at least as restrictive as its most restrictive
+column, and anything unlabeled inherits its tenant's most restrictive labels, so missing metadata
+hides data rather than exposing it. Any named-resource grant
+(such as a row filter) is a documented exception. Authority delegated to tenants is always bounded
+by their own tenant scope.
 
 - **Baseline** (Ephemeral, Development, Testing): Public access blocked, encryption with a
-  customer-managed key, transport encryption enforced, and access granted per data zone
-  (raw/curated) to named roles only.
-- **Enhanced** (UAT, Production, MissionCritical): Adds fine-grained (table, column, and row) access
-  controls and query isolation so workloads cannot read each other's results.
-- **Designated data** (any environment type): Separate keys per data zone or sensitivity class are
-  added when the data is designated under a compliance framework, consistent with Embed Compliance
-  into the Architecture.
+  customer-managed key, transport encryption enforced, tenant isolation, and tag-based access per
+  tenant, data zone (raw/curated/consumption), sensitivity, and regulation, granted to named roles
+  only.
+- **Enhanced** (UAT, Production, MissionCritical): Adds stricter destructive-action limits and
+  per-tenant monitoring. Query isolation applies in every tier, so tenants cannot read each other's
+  results.
+- **Designated data** (any environment type): A designated tenant gets its own key and storage
+  encrypted with it, consistent with Embed Compliance into the Architecture.
 
 ### Embed Compliance into the Architecture
 
@@ -62,14 +75,14 @@ metadata and isolated in its own access boundary; and stored data supports verif
 erasure requests remove records and their historical versions.
 
 Controls that add no infrastructure cost apply in every deployment. Controls that add cost and
-exist only for SOC 2, HIPAA, or PCI DSS MUST be activated by an explicit designation that the
-deployment's data falls under that framework, never by environment type alone. This way
-non-regulated workloads, including production ones, do not pay for regulated-data infrastructure.
+exist only for SOC 2, HIPAA, or PCI DSS MUST be activated by an explicit designation that a
+tenant's data falls under that framework, never by environment type alone. This way
+non-regulated tenants, including production ones, do not pay for regulated-data infrastructure.
 
 - **Baseline**: No-cost controls are enabled with shorter retention. Regulated data MUST NOT be
   loaded into Baseline environments; designating a framework there is allowed only to test
   compliance features.
-- **Enhanced**: Full audit retention, classification-driven access policies, and
+- **Enhanced**: Full audit retention, sensitivity- and regulation-driven access policies, and
   retention/expiration rules that satisfy the strictest applicable regime. Cost-incurring
   framework controls are added when the data is designated.
 
@@ -84,7 +97,7 @@ configuration before applying it.
 
 - **Baseline**: Aggressive expiration of transient data, tight query scan limits, minimal retained
   versions.
-- **Enhanced**: Tiering tuned to access patterns, usage attribution per workload, and limits sized
+- **Enhanced**: Tiering tuned to access patterns, usage attribution per tenant, and limits sized
   for production query volume—still with no idle fixed-capacity resources.
 
 ### Protect Data Durability and Recoverability
@@ -112,8 +125,9 @@ storage resources MUST carry additional data-classification tags.
 
 ### Define Small, Validated Module Contracts
 
-The module provisions the lakehouse foundation—storage layers, open table catalog, governed access,
-and query engine setup—and nothing else. Inputs MUST be minimal, typed, grouped into `*_config`
+The module provisions the lakehouse platform—storage layers, open table catalog, governed access,
+and query engine setup for its tenants—and nothing else. Tenants are data-driven input entries, so
+onboarding a tenant changes configuration, not code. Inputs MUST be minimal, typed, grouped into `*_config`
 objects with sensible defaults, and validated with `validation` blocks so misconfiguration fails at
 `plan` rather than at `apply`. Optional capabilities are toggled with boolean feature flags, the
 top-level `enabled` flag disables all resources, and outputs expose only identifiers needed for
@@ -180,8 +194,9 @@ justification tied to a compliance requirement, a recovery objective, or a measu
 
 ### Compose, Don't Accumulate
 
-The MVP covers storage layers, catalog, governed access, and query setup. Ingestion pipelines,
-transformation jobs, streaming, semantic layers, BI tooling, and network foundations belong in
+The MVP covers storage layers, catalog, governed access, and query setup for tenants. Ingestion
+pipelines, transformation jobs, streaming, semantic layers, BI tooling, tenant onboarding portals,
+and network foundations belong in
 separate modules that consume this module's outputs. Requests to add them here are resolved by
 exposing the outputs they need, not by adding feature flags.
 
@@ -212,4 +227,4 @@ affect existing consumers include migration guidance in the CHANGELOG.
 (file layout, style, and test patterns) lives in `AGENTS.md`, which adapts more frequently and MUST
 NOT contradict these principles.
 
-**Version**: 1.2.1 | **Ratified**: 2026-10-13 | **Last Amended**: 2026-10-13
+**Version**: 1.3.0 | **Ratified**: 2026-10-13 | **Last Amended**: 2026-10-14

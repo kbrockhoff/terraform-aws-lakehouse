@@ -37,6 +37,17 @@
   - FR-009: account-level permission settings are managed behind the FR-005 flag (option A).
   - FR-014: audit logging relies on an existing trail (option A).
 - All items pass; spec is ready for `/iac.plan`.
+- Amended 2026-10-14: `consumption` restored as a third default zone, with zone access isolation.
+- Amended 2026-10-14: redesigned as a multi-tenant platform (tenant per namespace, tag-based
+  access, delegated stewards, per-tenant workgroups and designation). Requirements were
+  renumbered to FR-001 to FR-030. All items still pass.
+- Amended 2026-10-14: tag vocabulary extended (sensitivity, per-regulation, domain) with the
+  pipeline-applied roll-up rule (FR-011a). Roll-up and domain clarifications resolved. All items
+  still pass.
+- Amended 2026-10-14: tenant provisioning is a separately callable unit with platform-applied and
+  standalone entry points through a published platform contract (FR-001a). All items still pass;
+  the spec describes the unit and contract generically, and the plan names the submodule. The body uses generic terms ("tag-based
+  permissions", "namespace"); the LF-tag choice appears only in the amended Input line.
 - Cloud service names appear only in the verbatim Input line; the body uses generic terms.
   References to the module's own tooling (`terraform plan`, TFLint, `environment_type`) are the
   module's established contract and test harness, not provider-specific design choices.

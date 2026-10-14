@@ -1,22 +1,23 @@
 # AWS Lakehouse Terraform Module
 
-Terraform module that provisions an Apache Iceberg-based lakehouse foundation on AWS: layered data storage, an open
-table catalog, governed data access, and a query engine configuration. It follows Brockhoff Cloud standards and
+Terraform module that provisions a multi-tenant, Apache Iceberg-based lakehouse platform on AWS: layered data storage,
+an open table catalog, tag-based governed data access, and per-tenant query engine configuration. It follows Brockhoff Cloud standards and
 integrates with the `terraform-external-context` module for consistent naming and tagging.
 
 Design principles for this module are recorded in [`.specify/memory/principles.md`](.specify/memory/principles.md).
 
 ## Features
 
-- **Layered Storage**: Raw and curated data zones with automatic table maintenance and expiration *(in progress)*
-- **Semantic Layer Ready**: Read-only grants let an external semantic layer serve consumption-ready data products
+- **Multi-Tenant Platform**: Each tenant is an S3 Tables namespace (Glue database) in every zone it uses, provisioned by the `modules/tenant` submodule, either from the platform's `tenants` map or standalone by a tenant provisioning pipeline using the published platform contract *(in progress)*
+- **Layered Storage**: Raw, curated, and consumption (gold) data zones with automatic table maintenance and expiration *(in progress)*
+- **Semantic Layer Ready**: Read-only grants on tenants' consumption namespaces let an external semantic layer serve published data products
 - **Open Table Catalog**: Apache Iceberg tables registered in a central data catalog *(in progress)*
-- **Governed Access**: Centralized, least-privilege data permissions down to table and column level *(in progress)*
-- **Query Engine Setup**: Isolated query workgroups with encrypted results and per-query scan limits *(in progress)*
+- **Governed Access**: Lake Formation LF-tag access control by per-tenant tag, sensitivity, compliance regulation, and data domain on databases, tables, and columns, with the most restrictive column labels rolled up to the table and delegated tenant stewards *(in progress)*
+- **Query Engine Setup**: A query workgroup per tenant with encrypted, isolated results, per-query scan limits, and cost attribution *(in progress)*
 - **Context Integration**: Leverages terraform-external-context for standardized naming and tagging
 - **Environment-Aware**: Derives security, durability, monitoring, and cost defaults from `environment_type`
 - **Encryption by Default**: Customer-managed KMS key created by default, or bring your own
-- **Compliance-Ready**: Supports SOC 2, HIPAA, PCI DSS, and GDPR workloads; cost-incurring controls activate only for frameworks the data is designated under
+- **Compliance-Ready**: Supports SOC 2, HIPAA, PCI DSS, and GDPR workloads; cost-incurring controls (dedicated keys and storage) activate only for tenants designated under a framework
 - **Cost Visibility**: Monthly cost estimate output for module resources
 - **Alarm Notifications**: Optional SNS topic for metric alarms, enabled by default in production environment types
 

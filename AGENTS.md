@@ -1,29 +1,38 @@
 # AWS Lakehouse Terraform Module Guide for AI Agents
 
-Provisions an Apache Iceberg-based lakehouse foundation on AWS for analytics workloads, with governed access,
+Provisions a multi-tenant, Apache Iceberg-based lakehouse platform on AWS for analytics workloads, with governed access,
 compliance-ready defaults (SOC 2, HIPAA, PCI DSS, GDPR), and cost-efficient serverless querying. Configuration
 defaults derive from `environment_type`. Design principles are in `.specify/memory/principles.md`; they take
 precedence over this guide when the two conflict.
 
 ## Components
 
+### Tenancy
+- Each tenant is one S3 Tables namespace (Glue database) per zone it uses
+- `modules/tenant` provisions everything tenant-scoped; the root applies it per `tenants` map entry, or a tenant pipeline calls it standalone with its own state
+- The tenant submodule depends on the platform only through the typed `platform_contract` output and never modifies platform-owned resources
+- Tenants are isolated: data, query results, and (for designated tenants) keys, table buckets, and results buckets are tenant-scoped
+
 ### Storage Layers
-- Separate raw and curated data zones with public access blocked
-- No consumption zone: consumption-ready data products are served by an external semantic layer
+- Separate raw, curated, and consumption (gold) data zones with public access blocked
+- Shared table bucket per zone; compliance-designated tenants get dedicated buckets with their own key
+- Each zone is an isolated access boundary; the external semantic layer reads tenants' consumption namespaces
 - Encryption with customer-managed KMS keys and TLS-only access
 - Versioning and lifecycle tiering/expiration driven by environment type
 
 ### Open Table Catalog
-- Catalog databases for Apache Iceberg tables in each data zone
+- Catalog databases (tenant namespaces) for Apache Iceberg tables in each data zone
 - Table snapshot retention aligned with the environment's RPO
 
 ### Governed Access
-- Central, least-privilege data permissions for named principals only
-- Fine-grained (table, column, row) controls and audit logging for Enhanced environments
+- Lake Formation LF-tag grants over a per-tenant `tenant-<name>` key (owned by the tenant submodule) and platform-owned `sensitivity`, `reg-<regulation>` (yes/no per regulation), and `domain` tags, for named principals only
+- Module labels tenant databases with the tenant's most restrictive values (fail closed); writer pipelines label tables and columns, rolling the most restrictive column up to the table
+- Column-level control through those tags; domain is an optional reader filter; row filters are the only named-resource grants
+- Delegated tenant stewards label and grant within their own tenant; audit via the existing CloudTrail
 
 ### Query Engine Setup
-- Isolated query workgroups with encrypted, expiring query results
-- Per-query scan limits to control cost
+- One query workgroup per tenant with encrypted, expiring, tenant-prefixed query results
+- Per-query scan limits (overridable per tenant) and per-tenant cost attribution
 
 ## Terraform Module Guide
 
