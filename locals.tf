@@ -151,6 +151,7 @@ locals {
   kms_key_id = var.enabled ? (
     var.encryption_config.create_kms_key ? aws_kms_key.main[0].arn : var.encryption_config.kms_key_id
   ) : ""
+  kms_key_arn = local.kms_key_id
 
   # SNS topic logic - use provided topic ARN or create new one
   create_sns_topic = var.enabled && local.effective_config.alarms_enabled && var.alarms_config.create_sns_topic
@@ -190,4 +191,69 @@ locals {
     var.governance_config.shared_storage_classification,
     local.sensitivity_values[length(local.sensitivity_values) - 1],
   )
+
+  data_classification_key = var.required_tags_config.data_classification_key
+
+  # Versioned public interface consumed by modules/tenant (plan.md: Tenant Submodule and Platform
+  # Contract). Identifiers and effective settings only, never resource objects. Adding a field is
+  # a minor change; removing or renaming one is a major change.
+  platform_contract = var.enabled ? {
+    name_prefix          = local.name_prefix
+    account_id           = local.account_id
+    partition            = local.partition
+    region               = local.region
+    environment_type     = var.environment_type
+    baseline_environment = local.baseline_environment
+    effective = {
+      bytes_scanned_cutoff_per_query = local.effective_config.bytes_scanned_cutoff_per_query
+      query_results_expiration_days  = local.effective_config.query_results_expiration_days
+      unreferenced_days              = local.effective_config.unreferenced_days
+      non_current_days               = local.effective_config.non_current_days
+      force_destroy                  = local.effective_config.force_destroy
+      writer_drop_enabled            = local.effective_config.writer_drop_enabled
+      monitoring_enabled             = local.effective_config.monitoring_enabled
+      alarms_enabled                 = local.effective_config.alarms_enabled
+      scanned_bytes_alarm_threshold  = local.effective_config.scanned_bytes_alarm_threshold
+      kms_key_deletion_window_days   = local.effective_config.kms_key_deletion_window_days
+      table_storage_class            = local.effective_config.table_storage_class
+    }
+    shared_storage_classification = local.shared_storage_classification
+    zones = {
+      for z in local.zones : z => {
+        bucket_name = aws_s3tables_table_bucket.zone[z].name
+        bucket_arn  = aws_s3tables_table_bucket.zone[z].arn
+        catalog_id  = "${local.account_id}:s3tablescatalog/${aws_s3tables_table_bucket.zone[z].name}"
+      }
+    }
+    lf_tags = {
+      sensitivity = {
+        key    = aws_lakeformation_lf_tag.sensitivity[0].key
+        values = local.sensitivity_values
+      }
+      regulations = { for r, t in aws_lakeformation_lf_tag.regulation : r => t.key }
+      domain = {
+        key    = aws_lakeformation_lf_tag.domain[0].key
+        values = local.domain_values
+      }
+      tenant_key_prefix = "${local.name_prefix}-tenant-"
+    }
+    regulation_designation = local.regulation_designation
+    kms_key_arn            = local.kms_key_arn
+    data_access_role_arn   = local.data_access_role_arn
+    query_results = {
+      bucket_name = aws_s3_bucket.query_results[0].id
+      bucket_arn  = aws_s3_bucket.query_results[0].arn
+    }
+    alarm_sns_topic_arn     = local.alarm_sns_topic_arn
+    cost_estimation_enabled = var.cost_estimation_config.enabled
+    common_tags             = local.common_tags
+    data_tags               = var.data_tags
+    required_tags = {
+      enforced                = local.effective_config.required_tags_enforced
+      cost_center_key         = var.required_tags_config.cost_center_key
+      data_owner_key          = var.required_tags_config.data_owner_key
+      data_classification_key = var.required_tags_config.data_classification_key
+      tenant_key              = var.required_tags_config.tenant_key
+    }
+  } : null
 }

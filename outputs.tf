@@ -48,3 +48,12 @@ output "cost_breakdown" {
   description = "Detailed breakdown of monthly costs by service"
   value       = module.pricing.cost_breakdown
 }
+
+# ----
+# Platform contract
+# ----
+
+output "platform_contract" {
+  description = "Versioned public interface consumed by modules/tenant, both platform-applied and standalone: identifiers and effective settings only. Adding a field is a minor change; removing or renaming one is a major change. Null when enabled = false."
+  value       = local.platform_contract
+}

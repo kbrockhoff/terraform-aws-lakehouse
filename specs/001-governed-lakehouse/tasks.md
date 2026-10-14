@@ -174,7 +174,7 @@ data resource depends on.
 **Purpose**: Shared zone buckets, the shared results bucket, and the `platform_contract` that the
 tenant submodule consumes.
 
-- [ ] T026 Create `table-buckets.tf` (FR-004, FR-005) with `aws_s3tables_table_bucket.zone` (`for_each = var.enabled ? local.zones : []`):
+- [x] T026 Create `table-buckets.tf` (FR-004, FR-005) with `aws_s3tables_table_bucket.zone` (`for_each = var.enabled ? local.zones : []`):
   - `name = local.zone_bucket_names[each.key]`;
   - `encryption_configuration { sse_algorithm = "aws:kms", kms_key_arn = local.kms_key_arn }`;
   - `maintenance_configuration.iceberg_unreferenced_file_removal` enabled, with `unreferenced_days` and `non_current_days` from `local.effective_config`;
@@ -187,7 +187,7 @@ tenant submodule consumes.
   - `EnforceKMSEncryptionAlgorithm`: `s3tables:CreateTable` when `StringNotEqualsIfExists s3tables:SSEAlgorithm = aws:kms`;
   - `EnforceKMSEncryptionKey`: `s3tables:CreateTable` when `StringNotEqualsIfExists s3tables:KMSKeyArn` differs from the platform key.
   Comment why `IfExists` is used, and why bucket-default inheritance forces dedicated buckets for designated tenants.
-- [ ] T027 Create `query.tf` (FR-016) with the shared results bucket `aws_s3_bucket.query_results`, named `${name_prefix}-athena-results-${account_id}`:
+- [x] T027 Create `query.tf` (FR-016) with the shared results bucket `aws_s3_bucket.query_results`, named `${name_prefix}-athena-results-${account_id}`:
   - a public access block with all four settings true;
   - `BucketOwnerEnforced` ownership;
   - SSE `aws:kms` with `local.kms_key_arn` and `bucket_key_enabled = true`;
@@ -195,8 +195,8 @@ tenant submodule consumes.
   - a bucket policy denying non-TLS requests from non-service principals and unencrypted uploads;
   - `force_destroy` from effective config, and `tags = merge(local.common_data_tags, { (data_classification_key) = local.shared_storage_classification })`. Comment that results expire instead of tiering (FR-005).
   Comment that the policy has no per-tenant statements, so standalone tenants never edit it.
-- [ ] T028 Add `local.platform_contract` to `locals.tf` with exactly the fields in the plan.md platform contract table, including `cost_estimation_enabled`, `shared_storage_classification`, and `effective.table_storage_class`: identifiers, effective settings, zones with bucket names, ARNs, and catalog IDs, the LF-tag vocabulary, the regulation-designation map, the platform key, the data-access role, the results bucket, the SNS topic, and tag settings. Add the `platform_contract` output in `outputs.tf`, with a description stating that it is a versioned public interface (plan.md: Versioning). When `enabled = false` it is `null`.
-- [ ] T029 **Checkpoint**: run `make check`, then `make lint`.
+- [x] T028 Add `local.platform_contract` to `locals.tf` with exactly the fields in the plan.md platform contract table, including `cost_estimation_enabled`, `shared_storage_classification`, and `effective.table_storage_class`: identifiers, effective settings, zones with bucket names, ARNs, and catalog IDs, the LF-tag vocabulary, the regulation-designation map, the platform key, the data-access role, the results bucket, the SNS topic, and tag settings. Add the `platform_contract` output in `outputs.tf`, with a description stating that it is a versioned public interface (plan.md: Versioning). When `enabled = false` it is `null`.
+- [x] T029 **Checkpoint**: run `make check`, then `make lint`.
 
 ---
 
