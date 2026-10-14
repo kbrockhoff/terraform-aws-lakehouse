@@ -112,7 +112,7 @@ module "custom_lakehouse" {
 Resources deployed to subnets use lookup by `NetworkTags` values to determine which subnets to deploy to.
 This eliminates the need to manage different subnet IDs variable values for each environment.
 
-## Required one-time catalog grant
+## Required one-time grants
 
 Athena resolves an S3 Tables bucket catalog only for principals that have Lake Formation `DESCRIBE`
 on that catalog. The AWS provider cannot express this grant yet, so after the first apply, a
@@ -130,6 +130,22 @@ done
 
 The grant only reveals that the catalog exists. Databases, tables, and columns remain gated by
 the tenant LF-tag grants.
+
+Tenant pipeline roles (and any other `admin_principal_arns` entry that did not create the
+platform LF-tags) also need the platform tags' permissions, because Lake Formation admins do not
+implicitly hold `ASSOCIATE` on tags another principal created. Run once per role:
+
+```bash
+ROLE_ARN=arn:aws:iam::${ACCOUNT}:role/<tenant-pipeline-role>
+for key in $(aws lakeformation list-lf-tags --query "LFTags[?starts_with(TagKey, '<name_prefix>-') && !contains(TagKey, '-tenant-')].TagKey" --output text); do
+  aws lakeformation grant-permissions \
+    --principal "DataLakePrincipalIdentifier=${ROLE_ARN}" \
+    --permissions DESCRIBE ASSOCIATE GRANT_WITH_LF_TAG_EXPRESSION \
+    --resource "{\"LFTag\":{\"TagKey\":\"${key}\",\"TagValues\":[\"*\"]}}"
+done
+```
+
+Both grants are outside Terraform only because AWS provider 6.x cannot manage them correctly yet.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
