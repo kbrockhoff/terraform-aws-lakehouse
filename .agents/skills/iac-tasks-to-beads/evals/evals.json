@@ -1,0 +1,29 @@
+{
+  "skill_name": "iac-tasks-to-beads",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "load the tasks from /iac.tasks into beads please. whole tasks.md as one epic, each phase a feature, tasks underneath",
+      "expected_output": "One epic, 7 phase features chained by blocks edges, 77 tasks under the right features, nothing committed.",
+      "files": [
+        "specs/001-governed-lakehouse/tasks.md"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I finished all of phase 1 and checked the boxes in tasks.md. I also added a test task (T078) to phase 6 and dropped T077 since we're not doing that writeup anymore. Can you get beads in sync with tasks.md?",
+      "expected_output": "T001-T012 and the Phase 1 feature closed; T078 created under Phase 6; T077 bead not deleted, reported to the user; no duplicate beads.",
+      "files": [
+        "specs/001-governed-lakehouse/tasks.md"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "just ran /iac.tasks for the audit logging feature. put it in bd so we can start claiming work",
+      "expected_output": "Epic 'Audit Log Shipping', 5 phase features, 12 tasks, T001-T002 closed, US1 phase P1, story labels.",
+      "files": [
+        "specs/002-audit-logging/tasks.md"
+      ]
+    }
+  ]
+}
