@@ -43,14 +43,239 @@ variable "environment_type" {
   }
 }
 
-variable "networktags_name" {
-  description = "Name of the network tags key used for subnet classification"
-  type        = string
-  default     = "NetworkTags"
+variable "zones_config" {
+  description = "Data zones shared by the platform. Each zone becomes an S3 table bucket named <name_prefix>-<zone>."
+  type = object({
+    zones = list(string)
+  })
+  default = {
+    zones = ["raw", "curated", "consumption"]
+  }
 
   validation {
-    condition     = var.networktags_name != null && var.networktags_name != ""
-    error_message = "Network tags name cannot be null or blank."
+    condition     = length(var.zones_config.zones) > 0 && length(distinct(var.zones_config.zones)) == length(var.zones_config.zones)
+    error_message = "zones_config.zones must be non-empty and contain no duplicates."
+  }
+
+  validation {
+    condition     = alltrue([for z in var.zones_config.zones : can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", z))])
+    error_message = "Zone names must be lowercase alphanumeric or hyphens (no underscores), starting and ending with an alphanumeric character, because they become table bucket names."
+  }
+
+  validation {
+    condition     = alltrue([for z in var.zones_config.zones : length(var.name_prefix) + 1 + length(z) <= 63])
+    error_message = "Every table bucket name <name_prefix>-<zone> must be at most 63 characters."
+  }
+}
+
+# ----
+# Catalog integration and governance
+# ----
+
+variable "catalog_integration_config" {
+  description = "Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN."
+  type = object({
+    enabled                               = bool
+    data_access_role_arn                  = string
+    allow_full_table_external_data_access = bool
+  })
+  default = {
+    enabled                               = true
+    data_access_role_arn                  = ""
+    allow_full_table_external_data_access = false
+  }
+
+  validation {
+    condition = (
+      (var.catalog_integration_config.enabled && var.catalog_integration_config.data_access_role_arn == "") ||
+      (!var.catalog_integration_config.enabled && can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$", var.catalog_integration_config.data_access_role_arn)))
+    )
+    error_message = "data_access_role_arn must be empty when enabled is true, and a valid IAM role ARN when enabled is false."
+  }
+}
+
+variable "governance_config" {
+  description = "Lake Formation governance: data-lake admins and the platform LF-tag vocabularies for sensitivity, regulations, and domains."
+  type = object({
+    admin_principal_arns          = list(string)
+    sensitivity_values            = optional(list(string), ["public", "internal", "confidential", "restricted"])
+    regulation_values             = optional(list(string), ["gdpr", "hipaa", "pci_dss"])
+    domain_values                 = optional(list(string), ["general"])
+    shared_storage_classification = optional(string)
+    writer_drop_enabled           = optional(bool)
+  })
+  default = {
+    admin_principal_arns = []
+  }
+
+  validation {
+    condition     = alltrue([for a in var.governance_config.admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))])
+    error_message = "Every admin_principal_arns entry must be an IAM role or user ARN."
+  }
+
+  validation {
+    condition = (
+      length(var.governance_config.sensitivity_values) > 0 &&
+      length(distinct(var.governance_config.sensitivity_values)) == length(var.governance_config.sensitivity_values)
+    )
+    error_message = "sensitivity_values must be non-empty and unique, ordered least to most sensitive."
+  }
+
+  validation {
+    condition = (
+      length(var.governance_config.regulation_values) <= 20 &&
+      length(distinct(var.governance_config.regulation_values)) == length(var.governance_config.regulation_values) &&
+      alltrue([for r in var.governance_config.regulation_values : can(regex("^[a-z0-9_]{1,40}$", r))])
+    )
+    error_message = "regulation_values must be unique, at most 20 entries (each becomes an LF-tag key), each matching ^[a-z0-9_]{1,40}$."
+  }
+
+  validation {
+    condition = (
+      length(var.governance_config.domain_values) > 0 &&
+      length(distinct(var.governance_config.domain_values)) == length(var.governance_config.domain_values) &&
+      alltrue([for d in var.governance_config.domain_values : can(regex("^[a-z0-9_-]{1,64}$", d))])
+    )
+    error_message = "domain_values must be non-empty and unique, each matching ^[a-z0-9_-]{1,64}$. The first entry is the default tenant domain."
+  }
+
+  validation {
+    condition = (
+      var.governance_config.shared_storage_classification == null ||
+      contains(var.governance_config.sensitivity_values, coalesce(var.governance_config.shared_storage_classification, "-"))
+    )
+    error_message = "shared_storage_classification must be one of sensitivity_values, or null for the most sensitive value."
+  }
+
+  validation {
+    condition     = var.environment_type != "None" || var.governance_config.writer_drop_enabled != null
+    error_message = "governance_config.writer_drop_enabled is required when environment_type is None."
+  }
+}
+
+variable "required_tags_config" {
+  description = "Tag keys the module requires or writes. When enforced (null uses the environment default), tags must include the cost-center and data-owner keys."
+  type = object({
+    enforced                = optional(bool)
+    cost_center_key         = optional(string, "CostCenter")
+    data_owner_key          = optional(string, "DataOwner")
+    data_classification_key = optional(string, "DataClassification")
+    tenant_key              = optional(string, "Tenant")
+  })
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for k in [
+        var.required_tags_config.cost_center_key,
+        var.required_tags_config.data_owner_key,
+        var.required_tags_config.data_classification_key,
+        var.required_tags_config.tenant_key,
+      ] : k != null && k != ""
+    ])
+    error_message = "required_tags_config key names must be non-empty."
+  }
+
+  validation {
+    condition     = var.environment_type != "None" || var.required_tags_config.enforced != null
+    error_message = "required_tags_config.enforced is required when environment_type is None."
+  }
+}
+
+# ----
+# Tenants
+# ----
+
+# Only the key format is validated here. Every other tenant rule lives in modules/tenant
+# (var.tenant), so platform-applied and standalone tenants are validated identically.
+# This object type must stay identical to modules/tenant var.tenant.
+variable "tenants" {
+  description = "Tenants to provision with the platform, keyed by tenant name. Each entry is applied through modules/tenant."
+  type = map(object({
+    owner                 = string
+    sensitivity           = string
+    regulations           = optional(set(string), [])
+    domain                = optional(string)
+    zones                 = optional(list(string))
+    compliance_frameworks = optional(set(string), [])
+    stewards              = optional(list(string), [])
+    writers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
+    readers = optional(map(object({
+      principal_arn      = string
+      zones              = optional(list(string))
+      sensitivity_values = list(string)
+      regulations        = optional(set(string), [])
+      domains            = optional(list(string))
+    })), {})
+    row_filters = optional(map(object({
+      reader                = string
+      zone                  = string
+      table                 = string
+      row_filter_expression = string
+      column_names          = optional(list(string))
+    })), {})
+    bytes_scanned_cutoff_per_query = optional(number)
+    scanned_bytes_alarm_threshold  = optional(number)
+    dedicated_storage              = optional(bool, false)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for k in keys(var.tenants) : can(regex("^[a-z][a-z0-9]{1,31}$", k))])
+    error_message = "Tenant names must match ^[a-z][a-z0-9]{1,31}$."
+  }
+}
+
+# ----
+# Storage and query
+# ----
+
+variable "storage_config" {
+  description = "Table storage settings. Null values use the environment default."
+  type = object({
+    table_storage_class = optional(string)
+  })
+  default = {}
+
+  validation {
+    condition     = var.storage_config.table_storage_class == null || contains(["STANDARD", "INTELLIGENT_TIERING"], coalesce(var.storage_config.table_storage_class, "-"))
+    error_message = "table_storage_class must be STANDARD or INTELLIGENT_TIERING."
+  }
+
+  validation {
+    condition     = var.environment_type != "None" || var.storage_config.table_storage_class != null
+    error_message = "storage_config.table_storage_class is required when environment_type is None."
+  }
+}
+
+variable "query_config" {
+  description = "Platform query defaults that tenants may override. Null values use the environment default."
+  type = object({
+    bytes_scanned_cutoff_per_query = optional(number)
+    results_expiration_days        = optional(number)
+  })
+  default = {}
+
+  validation {
+    condition     = var.query_config.bytes_scanned_cutoff_per_query == null || coalesce(var.query_config.bytes_scanned_cutoff_per_query, 0) >= 10485760
+    error_message = "bytes_scanned_cutoff_per_query must be at least 10485760 (10 MB)."
+  }
+
+  validation {
+    condition = var.query_config.results_expiration_days == null || (
+      coalesce(var.query_config.results_expiration_days, 0) >= 1 && coalesce(var.query_config.results_expiration_days, 0) <= 3650
+    )
+    error_message = "results_expiration_days must be between 1 and 3650."
+  }
+
+  validation {
+    condition = var.environment_type != "None" || (
+      var.query_config.bytes_scanned_cutoff_per_query != null && var.query_config.results_expiration_days != null
+    )
+    error_message = "query_config values are required when environment_type is None."
   }
 }
 
@@ -102,14 +327,20 @@ variable "monitoring_config" {
 variable "alarms_config" {
   description = "Configuration object for metric alarms and notifications"
   type = object({
-    enabled          = bool
-    create_sns_topic = bool
-    sns_topic_arn    = string
+    enabled                 = bool
+    create_sns_topic        = bool
+    sns_topic_arn           = string
+    scanned_bytes_threshold = optional(number)
   })
   default = {
     enabled          = false
     create_sns_topic = true
     sns_topic_arn    = ""
+  }
+
+  validation {
+    condition     = var.environment_type != "None" || var.alarms_config.scanned_bytes_threshold != null
+    error_message = "alarms_config.scanned_bytes_threshold is required when environment_type is None."
   }
 
   validation {

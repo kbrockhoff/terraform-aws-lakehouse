@@ -53,17 +53,6 @@ variable "cost_estimation_config" {
   }
 }
 
-variable "networktags_name" {
-  description = "Name of the network tags key used for subnet classification"
-  type        = string
-  default     = "NetworkTags"
-
-  validation {
-    condition     = var.networktags_name != null && var.networktags_name != ""
-    error_message = "Network tags name cannot be null or blank."
-  }
-}
-
 # ----
 # Encryption
 # ----

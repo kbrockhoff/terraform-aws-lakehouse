@@ -47,21 +47,21 @@ data resource depends on.
 
 **Purpose**: Version constraints, root inputs, environment defaults, and shared data sources.
 
-- [ ] T001 Update `versions.tf`: set the `hashicorp/aws` constraint to `>= 6.59.0, < 7.0.0` and keep `configuration_aliases = [aws.pricing]` and `required_version = ">= 1.11"`. Apply the same AWS constraint in `examples/defaults/versions.tf`, `examples/complete/versions.tf`, `modules/cost-estimation/versions.tf`, and `modules/deployer/versions.tf`.
-- [ ] T002 [P] Add two data sources to `dependencies.tf`:
+- [x] T001 Update `versions.tf`: set the `hashicorp/aws` constraint to `>= 6.59.0, < 7.0.0` and keep `configuration_aliases = [aws.pricing]` and `required_version = ">= 1.11"`. Apply the same AWS constraint in `examples/defaults/versions.tf`, `examples/complete/versions.tf`, `modules/cost-estimation/versions.tf`, and `modules/deployer/versions.tf`.
+- [x] T002 [P] Add two data sources to `dependencies.tf`:
   - `data "aws_iam_session_context" "current"` with `arn = data.aws_caller_identity.current.arn`, which resolves the deploying role ARN;
   - `data "aws_lakeformation_data_lake_settings" "current"`, with `count = var.enabled && !var.catalog_integration_config.enabled ? 1 : 0`, which secondary deployments use for their admin check.
-- [ ] T003 Edit `variables.tf`:
+- [x] T003 Edit `variables.tf`:
   - Remove `networktags_name`.
   - Add `zones_config` as `object({ zones = list(string) })`, defaulting to `zones = ["raw", "curated", "consumption"]`.
   - Validate `zones_config`:
     - zone names match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` (no underscores; they become table bucket names);
     - `length(var.name_prefix) + 1 + length(zone) <= 63` for every zone (cross-variable check);
     - the zones list is unique and non-empty.
-- [ ] T004 Add `catalog_integration_config` to `variables.tf` (FR-007):
+- [x] T004 Add `catalog_integration_config` to `variables.tf` (FR-007):
   - Type `object({ enabled = bool, data_access_role_arn = string, allow_full_table_external_data_access = bool })`, default `{ enabled = true, data_access_role_arn = "", allow_full_table_external_data_access = false }`.
   - Validation: `data_access_role_arn` must be a valid IAM role ARN when `enabled = false`, and empty when `enabled = true`.
-- [ ] T005 Add `governance_config` to `variables.tf` (FR-009, FR-010, FR-013):
+- [x] T005 Add `governance_config` to `variables.tf` (FR-009, FR-010, FR-013):
   - `admin_principal_arns = list(string)`: the platform admins.
   - `sensitivity_values = list(string)`, defaulting to `["public", "internal", "confidential", "restricted"]`, ordered least to most sensitive.
   - `regulation_values = list(string)`, defaulting to `["gdpr", "hipaa", "pci_dss"]`.
@@ -73,7 +73,7 @@ data resource depends on.
     - `sensitivity_values` and `domain_values` are unique and non-empty;
     - `regulation_values` is unique, has at most 20 entries, and matches `^[a-z0-9_]{1,40}$` (50 LF-tags per resource);
     - `domain_values` matches `^[a-z0-9_-]{1,64}$`.
-- [ ] T006 Add `tenants` to `variables.tf` (FR-001, FR-001a, FR-002): `map(object({ ... }))`, default `{}`. This task is the source of truth for the tenant object type, with these attributes:
+- [x] T006 Add `tenants` to `variables.tf` (FR-001, FR-001a, FR-002): `map(object({ ... }))`, default `{}`. This task is the source of truth for the tenant object type, with these attributes:
   - `owner = string`, `sensitivity = string`;
   - `regulations = optional(set(string), [])`, `domain = optional(string)`;
   - `zones = optional(list(string))`;
@@ -85,30 +85,30 @@ data resource depends on.
   - `bytes_scanned_cutoff_per_query = optional(number)`, `scanned_bytes_alarm_threshold = optional(number)`;
   - `dedicated_storage = optional(bool, false)`.
   Validate only that keys match `^[a-z][a-z0-9]{1,31}$`. All other tenant validation runs inside the submodule (T031), so both entry points enforce identical rules. Add a comment saying so, and that the type must stay identical to `modules/tenant` `var.tenant`.
-- [ ] T007 Add `query_config` to `variables.tf` (FR-015 to FR-017):
+- [x] T007 Add `query_config` to `variables.tf` (FR-015 to FR-017):
   - Type `object({ bytes_scanned_cutoff_per_query = number, results_expiration_days = number })`, with both `null` by default so environment defaults apply.
   - Validation: cutoff `>= 10485760` when not null, and expiration between 1 and 3650 days when not null.
   - Add `scanned_bytes_threshold` to the `alarms_config` object (number, default `null`).
   - Add `storage_config` as `object({ table_storage_class = string })`, default `{ table_storage_class = null }`, validated against `["STANDARD", "INTELLIGENT_TIERING"]` (FR-005).
-- [ ] T008 Add `required_tags_config` to `variables.tf` (FR-022):
+- [x] T008 Add `required_tags_config` to `variables.tf` (FR-022):
   - Type `object({ enforced = bool, cost_center_key = string, data_owner_key = string, data_classification_key = string, tenant_key = string })`.
   - Default `{ enforced = null, cost_center_key = "CostCenter", data_owner_key = "DataOwner", data_classification_key = "DataClassification", tenant_key = "Tenant" }`.
   - Validate only that the key names are non-empty. Enforcement itself is the T023 precondition.
-- [ ] T009 Extend `locals.environment_defaults` in `locals.tf` with the keys and values from the plan.md Environment Configuration table:
+- [x] T009 Extend `locals.environment_defaults` in `locals.tf` with the keys and values from the plan.md Environment Configuration table:
   - `query_results_expiration_days`, `bytes_scanned_cutoff_per_query`, `unreferenced_days`, `non_current_days`, `force_destroy`;
   - `writer_drop_enabled`, `required_tags_enforced`, `scanned_bytes_alarm_threshold`;
   - `table_storage_class`: `STANDARD` for Baseline and `INTELLIGENT_TIERING` for Enhanced (FR-005).
   - The `None` entry reads every key from its `*_config` input, and a validation requires the nullable inputs to be non-null when `environment_type = "None"`.
   - For other environment types, a non-null input overrides the default (`coalesce(input, default)`).
-- [ ] T010 Add derived platform locals to `locals.tf`:
+- [x] T010 Add derived platform locals to `locals.tf`:
   - `zones` (set) and `zone_bucket_names` (`"${local.name_prefix}-${zone}"`);
   - `regulation_designation = { hipaa = "HIPAA", pci_dss = "PCI_DSS" }`;
   - `baseline_environment = contains(["Ephemeral", "Development", "Testing"], var.environment_type)`;
   - `deployer_role_arn = data.aws_iam_session_context.current.issuer_arn`;
   - `data_access_role_arn`: `module.catalog_integration[0].data_access_role_arn` when integration is enabled, otherwise `var.catalog_integration_config.data_access_role_arn`;
   - `shared_storage_classification = coalesce(var.governance_config.shared_storage_classification, local.sensitivity_values[length(local.sensitivity_values) - 1])`. Comment that it is a platform setting, never computed from tenants: a tenant change must not modify platform resources (FR-001), and standalone tenants are invisible to the platform (FR-022).
-- [ ] T011 [P] Remove the `networktags_name` argument from `examples/complete/main.tf`, `examples/complete/variables.tf`, `examples/defaults/main.tf`, `examples/defaults/variables.tf`, and the `terraform.auto.tfvars` files that set it.
-- [ ] T012 **Checkpoint**: run `make check`. Formatting and `validate` must pass for all submodules and examples before Phase 2.
+- [x] T011 [P] Remove the `networktags_name` argument from `examples/complete/main.tf`, `examples/complete/variables.tf`, `examples/defaults/main.tf`, `examples/defaults/variables.tf`, and the `terraform.auto.tfvars` files that set it.
+- [x] T012 **Checkpoint**: run `make check`. Formatting and `validate` must pass for all submodules and examples before Phase 2.
 
 ---
 

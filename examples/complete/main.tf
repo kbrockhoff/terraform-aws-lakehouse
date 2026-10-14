@@ -23,7 +23,6 @@ module "main" {
   data_tags              = var.data_tags
   environment_type       = var.environment_type
   cost_estimation_config = var.cost_estimation_config
-  networktags_name       = var.networktags_name
   encryption_config      = var.encryption_config
   monitoring_config      = var.monitoring_config
   alarms_config          = var.alarms_config
