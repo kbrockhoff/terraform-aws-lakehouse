@@ -13,7 +13,8 @@ resource "aws_lakeformation_resource" "s3tables" {
   with_federation       = true
   hybrid_access_enabled = false
 
-  depends_on = [aws_iam_role_policy.lf_s3tables_access]
+  # Registration and the catalog need the deploying role to be a data-lake admin first
+  depends_on = [aws_iam_role_policy.lf_s3tables_access, aws_lakeformation_data_lake_settings.this]
 }
 
 # Federated catalog exposing S3 table buckets to Glue, Athena, and Lake Formation
@@ -29,7 +30,7 @@ resource "aws_glue_catalog" "s3tables" {
 
   tags = var.tags
 
-  depends_on = [aws_lakeformation_resource.s3tables]
+  depends_on = [aws_lakeformation_resource.s3tables, aws_lakeformation_data_lake_settings.this]
 }
 
 # Authoritative for ALL data-lake settings in the account and Region: admins not listed here are
@@ -37,15 +38,9 @@ resource "aws_glue_catalog" "s3tables" {
 resource "aws_lakeformation_data_lake_settings" "this" {
   admins = var.admin_principal_arns
 
-  # Empty defaults: no IAM_ALLOWED_PRINCIPALS access to new databases or tables
-  create_database_default_permissions {
-    permissions = []
-    principal   = null
-  }
-  create_table_default_permissions {
-    permissions = []
-    principal   = null
-  }
+  # No create_*_default_permissions blocks: omitting them sends empty lists, which removes the
+  # IAM_ALLOWED_PRINCIPALS defaults, so Lake Formation grants are the only access to new
+  # databases and tables. (An empty block would send an empty principal, which the API rejects.)
 
   lifecycle {
     precondition {
