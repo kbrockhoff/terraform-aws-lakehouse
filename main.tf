@@ -50,3 +50,32 @@ resource "terraform_data" "required_tags_guard" {
     }
   }
 }
+
+# ----
+# Platform-applied tenants
+# ----
+
+# The contract carries values only, so explicit dependencies on the platform's governance
+# resources are needed for grants to wait for the LF-tags and admin settings.
+module "tenant" {
+  source   = "./modules/tenant"
+  for_each = var.enabled ? var.tenants : {}
+
+  providers = {
+    aws         = aws
+    aws.pricing = aws.pricing
+  }
+
+  platform              = local.platform_contract
+  name                  = each.key
+  tenant                = each.value
+  verify_deployer_admin = false # the root already guards (FR-013)
+
+  depends_on = [
+    module.catalog_integration,
+    terraform_data.secondary_admin_guard,
+    aws_lakeformation_lf_tag.sensitivity,
+    aws_lakeformation_lf_tag.regulation,
+    aws_lakeformation_lf_tag.domain,
+  ]
+}

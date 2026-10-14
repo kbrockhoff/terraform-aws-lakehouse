@@ -118,15 +118,16 @@ locals {
   }
 
   # Apply environment defaults when environment_type is not "None". For other environment
-  # types, a non-null *_config input overrides the default.
+  # types, a non-null *_config input overrides the default. Null checks instead of coalesce():
+  # under None both sides can be null, and the variable validations report that clearly.
   environment_config = local.environment_defaults[var.environment_type]
   effective_config = merge(local.environment_config, {
-    query_results_expiration_days  = coalesce(var.query_config.results_expiration_days, local.environment_config.query_results_expiration_days)
-    bytes_scanned_cutoff_per_query = coalesce(var.query_config.bytes_scanned_cutoff_per_query, local.environment_config.bytes_scanned_cutoff_per_query)
-    table_storage_class            = coalesce(var.storage_config.table_storage_class, local.environment_config.table_storage_class)
-    writer_drop_enabled            = coalesce(var.governance_config.writer_drop_enabled, local.environment_config.writer_drop_enabled)
-    required_tags_enforced         = coalesce(var.required_tags_config.enforced, local.environment_config.required_tags_enforced)
-    scanned_bytes_alarm_threshold  = coalesce(var.alarms_config.scanned_bytes_threshold, local.environment_config.scanned_bytes_alarm_threshold)
+    query_results_expiration_days  = var.query_config.results_expiration_days != null ? var.query_config.results_expiration_days : local.environment_config.query_results_expiration_days
+    bytes_scanned_cutoff_per_query = var.query_config.bytes_scanned_cutoff_per_query != null ? var.query_config.bytes_scanned_cutoff_per_query : local.environment_config.bytes_scanned_cutoff_per_query
+    table_storage_class            = var.storage_config.table_storage_class != null ? var.storage_config.table_storage_class : local.environment_config.table_storage_class
+    writer_drop_enabled            = var.governance_config.writer_drop_enabled != null ? var.governance_config.writer_drop_enabled : local.environment_config.writer_drop_enabled
+    required_tags_enforced         = var.required_tags_config.enforced != null ? var.required_tags_config.enforced : local.environment_config.required_tags_enforced
+    scanned_bytes_alarm_threshold  = var.alarms_config.scanned_bytes_threshold != null ? var.alarms_config.scanned_bytes_threshold : local.environment_config.scanned_bytes_alarm_threshold
   })
 
   # AWS account, partition, and region info

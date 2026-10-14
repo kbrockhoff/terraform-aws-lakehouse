@@ -207,8 +207,8 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 
 ### Interface and locals
 
-- [ ] T030 [P] Create `modules/tenant/versions.tf` with `required_version = ">= 1.11"`, `hashicorp/aws >= 6.59.0, < 7.0.0`, and `configuration_aliases = [aws.pricing]`.
-- [ ] T031 Create `modules/tenant/variables.tf`:
+- [x] T030 [P] Create `modules/tenant/versions.tf` with `required_version = ">= 1.11"`, `hashicorp/aws >= 6.59.0, < 7.0.0`, and `configuration_aliases = [aws.pricing]`.
+- [x] T031 Create `modules/tenant/variables.tf`:
   - `platform`: a typed `object` matching the plan.md contract (no `any`). Its validation requires non-empty `zones` and `lf_tags`.
   - `name`: string, validated against `^[a-z][a-z0-9]{1,31}$`.
   - `tenant`: the object type from T006, copied verbatim. A comment names T006 as the source of truth.
@@ -227,10 +227,10 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
   - cutoffs are `>= 10485760`;
   - when dedicated, every dedicated bucket name `${name_prefix}-${zone}-${name}` is at most 63 characters and does not equal any shared bucket name. When designated, the results bucket name also fits;
   - when not dedicated and not designated, `sensitivity` ranks at or below `var.platform.shared_storage_classification` (FR-022).
-- [ ] T032 [P] Create `modules/tenant/dependencies.tf` with:
+- [x] T032 [P] Create `modules/tenant/dependencies.tf` with:
   - `aws_caller_identity` and `aws_iam_session_context`;
   - `aws_lakeformation_data_lake_settings` with `count = var.verify_deployer_admin ? 1 : 0`.
-- [ ] T033 Create `modules/tenant/locals.tf`:
+- [x] T033 Create `modules/tenant/locals.tf`:
   - `zones`: `var.tenant.zones`, or all platform zones;
   - `designated = length(var.tenant.compliance_frameworks) > 0`;
   - `dedicated = var.tenant.dedicated_storage || local.designated`;
@@ -247,11 +247,11 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 
 ### Encryption and storage (FR-019, FR-028)
 
-- [ ] T034 Create `modules/tenant/kms.tf`: `aws_kms_key.this` and `aws_kms_alias.this`, with `count = local.designated ? 1 : 0`.
+- [x] T034 Create `modules/tenant/kms.tf`: `aws_kms_key.this` and `aws_kms_alias.this`, with `count = local.designated ? 1 : 0`.
   - The policy statements match the platform's T020 statements: maintenance (scoped to `local.dedicated_bucket_names` ARNs), `var.platform.data_access_role_arn`, and Athena and S3 via `kms:ViaService`.
   - Rotation is on, and the deletion window comes from the platform effective settings.
   - Tags add `ComplianceFrameworks`.
-- [ ] T035 Create `modules/tenant/storage.tf`:
+- [x] T035 Create `modules/tenant/storage.tf`:
   - `aws_s3tables_table_bucket.dedicated` (`for_each = local.dedicated ? local.zones : []`):
     - encrypted with `local.kms_key_arn`, which is the tenant key when designated and the platform key otherwise;
     - maintenance, default storage class (`var.platform.effective.table_storage_class`), and `force_destroy` from the platform effective settings;
@@ -261,25 +261,25 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 
 ### LF-tags and grants (FR-003, FR-009 to FR-014)
 
-- [ ] T036 Create `modules/tenant/lf-tags.tf`:
+- [x] T036 Create `modules/tenant/lf-tags.tf`:
   - `aws_lakeformation_lf_tag.tenant`: key `local.tenant_tag_key`, values `["member"]`;
   - `aws_lakeformation_resource_lf_tags.database` (`for_each = local.zones`) on `database { catalog_id = local.catalog_id[each.key], name = var.name }`, setting every key in `local.database_labels`.
   Comment that:
   - labels are the tenant's most restrictive values, so unlabeled tables fail closed;
   - every key must resolve on every table and column for expressions to match;
   - the submodule never labels tables or columns (FR-011a).
-- [ ] T037 Create `modules/tenant/permissions.tf` with steward grants. For each `local.steward_grants` entry, create two `aws_lakeformation_permissions` `lf_tag_policy` grants on `local.catalog_id[zone]`, with expression `tenant-T = member`:
+- [x] T037 Create `modules/tenant/permissions.tf` with steward grants. For each `local.steward_grants` entry, create two `aws_lakeformation_permissions` `lf_tag_policy` grants on `local.catalog_id[zone]`, with expression `tenant-T = member`:
   - `DATABASE` with `["CREATE_TABLE", "ALTER", "DROP", "DESCRIBE"]`;
   - `TABLE` with `["SELECT", "INSERT", "DELETE", "ALTER", "DROP", "DESCRIBE"]`.
   On both, `permissions_with_grant_option` equals `permissions`.
-- [ ] T038 Add LF-tag permissions to `permissions.tf`:
+- [x] T038 Add LF-tag permissions to `permissions.tf`:
   - each steward gets an `lf_tag` permission per key in `local.label_scope`, with `["DESCRIBE", "ASSOCIATE", "GRANT_WITH_LF_TAG_EXPRESSION"]`, plus `lf_tag { key = local.tenant_tag_key, values = ["member"] }` with `["DESCRIBE", "GRANT_WITH_LF_TAG_EXPRESSION"]`;
   - each writer gets an `lf_tag` permission per key in `local.label_scope`, with `["DESCRIBE", "ASSOCIATE"]`.
   Comment that nobody but platform admins can `ASSOCIATE` the tenant key.
-- [ ] T039 Add writer grants to `permissions.tf`. Per `local.writer_grants` entry, create two grants with expression `tenant-T = member`:
+- [x] T039 Add writer grants to `permissions.tf`. Per `local.writer_grants` entry, create two grants with expression `tenant-T = member`:
   - `DATABASE` with `["CREATE_TABLE", "DESCRIBE"]`;
   - `TABLE` with `concat(["SELECT", "INSERT", "DELETE", "ALTER", "DESCRIBE"], var.platform.effective.writer_drop_enabled ? ["DROP"] : [])`.
-- [ ] T040 Add reader grants to `permissions.tf`. Per `local.reader_grants` entry, create:
+- [x] T040 Add reader grants to `permissions.tf`. Per `local.reader_grants` entry, create:
   - a `DATABASE` grant with `["DESCRIBE"]` on `tenant-T = member`;
   - a `TABLE` grant with `["SELECT", "DESCRIBE"]` and this expression:
     - `tenant-T = member`;
@@ -287,7 +287,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
     - for every platform regulation `r`, `reg-r ∈ ["no", "yes"]` when `r` is in the reader's regulations, else `["no"]`;
     - `domain ∈ reader.domains`, only when `domains` is non-null.
   Comment that LF-TBAC evaluates column tags (FR-011).
-- [ ] T041 Add row filters to `permissions.tf` (FR-012). Per `local.row_filters` entry, create an `aws_lakeformation_data_cells_filter` on `local.catalog_id[zone]` / `var.name` / `table`, and a `data_cells_filter` grant with `["SELECT"]` to the reader's ARN. Comment that this is the only named-resource grant.
+- [x] T041 Add row filters to `permissions.tf` (FR-012). Per `local.row_filters` entry, create an `aws_lakeformation_data_cells_filter` on `local.catalog_id[zone]` / `var.name` / `table`, and a `data_cells_filter` grant with `["SELECT"]` to the reader's ARN. Comment that this is the only named-resource grant.
 
   Every grant in this file `depends_on`:
   - `aws_lakeformation_resource_lf_tags.database`;
@@ -296,7 +296,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 
 ### Query, policies, alarms, guards (FR-015 to FR-018, FR-023, FR-030)
 
-- [ ] T042 Create `modules/tenant/query.tf`:
+- [x] T042 Create `modules/tenant/query.tf`:
   - When designated, create `aws_s3_bucket.results` named `${name_prefix}-${name}-athena-results-${account_id}`, with the same controls as T027. It uses the tenant key, and its bucket policy also denies uploads whose `s3:x-amz-server-side-encryption-aws-kms-key-id` is not the tenant key.
   - `aws_athena_workgroup.this`, named `${name_prefix}-${name}`:
     - `enforce_workgroup_configuration = true`;
@@ -308,18 +308,18 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
     - `expected_bucket_owner`;
     - `force_destroy` from the platform effective settings;
     - tags from `local.tags`.
-- [ ] T043 [P] Create `modules/tenant/iam-documents.tf`. Create one `data "aws_iam_policy_document"` per steward, writer, and reader entry, keyed `"<persona>/<key>"`, with the statements in plan.md "Persona IAM policy documents". Scope them to `aws_athena_workgroup.this.arn`, the `local.results` location, and `local.kms_key_arn`.
-- [ ] T044 [P] Create `modules/tenant/alarms.tf`. When `var.platform.effective.alarms_enabled`, create `query_failures` and `scanned_bytes` alarms on the workgroup, routed to `var.platform.alarm_sns_topic_arn`, with the effective threshold.
-- [ ] T045 Create `modules/tenant/main.tf`:
+- [x] T043 [P] Create `modules/tenant/iam-documents.tf`. Create one `data "aws_iam_policy_document"` per steward, writer, and reader entry, keyed `"<persona>/<key>"`, with the statements in plan.md "Persona IAM policy documents". Scope them to `aws_athena_workgroup.this.arn`, the `local.results` location, and `local.kms_key_arn`.
+- [x] T044 [P] Create `modules/tenant/alarms.tf`. When `var.platform.effective.alarms_enabled`, create `query_failures` and `scanned_bytes` alarms on the workgroup, routed to `var.platform.alarm_sns_topic_arn`, with the effective threshold.
+- [x] T045 Create `modules/tenant/main.tf`:
   - `terraform_data.admin_guard`, with `count = var.verify_deployer_admin ? 1 : 0` and a precondition that the session issuer ARN is in the data-lake settings `admins`. The error message names the pipeline role and the platform's `admin_principal_arns`.
   - `check "regulated_data_in_baseline"` (FR-030): warns when `local.designated && var.platform.baseline_environment`, naming the tenant.
   - `module "cost_estimation"` (`source = "../cost-estimation"`, providers `aws.pricing`), with `enabled = var.platform.cost_estimation_enabled` and this tenant's counts: designated buckets, keys, results bucket, workgroup, and alarms. Tenant keys count as compliance-only (FR-024).
-- [ ] T046 Create `modules/tenant/outputs.tf` with the outputs listed in plan.md (Tenant Submodule):
+- [x] T046 Create `modules/tenant/outputs.tf` with the outputs listed in plan.md (Tenant Submodule):
   - `namespaces`, `catalog_ids`, and `table_bucket_arns` (maps by zone);
   - `tenant_tag_key`, `workgroup_name`, `query_results_location`, and `kms_key_arn`;
   - `persona_policy_json`;
   - `monthly_cost_estimate` and `compliance_monthly_cost`.
-- [ ] T047 [P] Create `modules/tenant/README.md` covering:
+- [x] T047 [P] Create `modules/tenant/README.md` covering:
   - both entry points, with the HCL from plan.md;
   - publishing and consuming the `platform_contract` through remote state or an SSM parameter with `jsonencode`/`jsondecode`;
   - that tenant provisioning pipelines are platform-operated. The pipeline role is a data-lake admin, uses the `scope = "tenant"` deployer policy, and is never handed to tenant-operated identities (FR-001a);
@@ -327,7 +327,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
   - moving a tenant between entry points with `terraform state mv` or `moved`/`removed` and `import` blocks;
   - the labeling and roll-up contract;
   - a terraform-docs injection block.
-- [ ] T048 Wire the root in `main.tf`: `module "tenant"` with `for_each = var.enabled ? var.tenants : {}`, providers `aws` and `aws.pricing`, `platform = local.platform_contract`, `name = each.key`, `tenant = each.value`, and `verify_deployer_admin = false`. It `depends_on` the catalog-integration module, the root admin guards, and `lf-tags.tf`, because the contract carries only values.
+- [x] T048 Wire the root in `main.tf`: `module "tenant"` with `for_each = var.enabled ? var.tenants : {}`, providers `aws` and `aws.pricing`, `platform = local.platform_contract`, `name = each.key`, `tenant = each.value`, and `verify_deployer_admin = false`. It `depends_on` the catalog-integration module, the root admin guards, and `lf-tags.tf`, because the contract carries only values.
 - [ ] T049 **Checkpoint and sandbox verification**: run `make check` and `make lint`. Then run `make plan-examples`, and `make apply-examples` for `examples/complete`, and confirm:
   - `lf_tag_policy` grants with an `s3tablescatalog/<bucket>` `catalog_id` apply and authorize a reader;
   - `GRANT_WITH_LF_TAG_EXPRESSION` is accepted;
