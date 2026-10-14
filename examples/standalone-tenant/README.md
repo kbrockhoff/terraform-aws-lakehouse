@@ -19,7 +19,7 @@ data "terraform_remote_state" "platform" {
 module "tenant" {
   source   = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git//modules/tenant?ref=vX.Y.Z"
   platform = data.terraform_remote_state.platform.outputs.platform_contract
-  # or: jsondecode(data.aws_ssm_parameter.platform_contract.value)
+  # or: jsondecode(nonsensitive(data.aws_ssm_parameter.platform_contract.value))
   name   = "sales"
   tenant = { owner = "sales-data@example.com", sensitivity = "confidential" }
 

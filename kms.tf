@@ -121,6 +121,26 @@ data "aws_iam_policy_document" "required_kms_statements" {
     }
   }
 
+  # CloudWatch alarms publish to the alarm topic, which this key encrypts
+  statement {
+    sid    = "AllowCloudWatchAlarms"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com"]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey*",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account_id]
+    }
+  }
+
   # Athena query results in the shared results bucket
   statement {
     sid    = "AllowAthenaResults"

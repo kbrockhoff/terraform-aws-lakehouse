@@ -60,7 +60,9 @@ read it in two ways:
   }
   module "tenant_sales" {
     # ...
-    platform = jsondecode(data.aws_ssm_parameter.platform_contract.value)
+    # The parameter value is marked sensitive, but the contract holds no secrets, and
+    # Terraform cannot use sensitive values in for_each
+    platform = jsondecode(nonsensitive(data.aws_ssm_parameter.platform_contract.value))
   }
   ```
 
