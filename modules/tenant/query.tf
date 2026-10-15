@@ -3,6 +3,9 @@
 # ----
 
 resource "aws_s3_bucket" "results" {
+  # checkov:skip=CKV_AWS_21:Query results are transient and must actually be deleted by the lifecycle rule; versioning would retain them (plan.md, Data Storage)
+  # checkov:skip=CKV_AWS_18:Access is audited through CloudTrail (FR-020); the module has no log bucket to deliver to
+  # checkov:skip=CKV2_AWS_62:Nothing consumes notifications for transient query results
   count = local.designated ? 1 : 0
 
   bucket        = "${local.name_prefix}-${var.name}-athena-results-${local.account_id}"

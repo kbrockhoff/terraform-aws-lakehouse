@@ -44,7 +44,9 @@ No modules.
 | Name | Type |
 | ---- | ---- |
 | [aws_iam_policy.basic](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_policy) | resource |
+| [aws_iam_policy.lakehouse](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_policy) | resource |
 | [aws_iam_role_policy_attachment.basic](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
+| [aws_iam_role_policy_attachment.lakehouse](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 
 ## Inputs
 
@@ -58,6 +60,7 @@ No modules.
 | <a name="input_dns_suffix"></a> [dns\_suffix](#input\_dns\_suffix) | AWS services DNS suffix | `string` | `"amazonaws.com"` | no |
 | <a name="input_enabled"></a> [enabled](#input\_enabled) | Set to false to prevent the module from creating any resources. | `bool` | `true` | no |
 | <a name="input_partition"></a> [partition](#input\_partition) | AWS partition | `string` | `"aws"` | no |
+| <a name="input_platform_contract_parameter_arn"></a> [platform\_contract\_parameter\_arn](#input\_platform\_contract\_parameter\_arn) | ARN of the SSM parameter holding the platform contract, when tenant pipelines read it from SSM. Adds ssm:GetParameter on exactly that parameter. Empty adds nothing. | `string` | `""` | no |
 | <a name="input_scope"></a> [scope](#input\_scope) | Which deployment the policy is for: "platform" (the root module, including the account-level catalog integration) or "tenant" (a standalone tenant provisioning pipeline). | `string` | `"platform"` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags/labels to apply to all resources. | `map(string)` | `{}` | no |
 
@@ -66,6 +69,7 @@ No modules.
 | Name | Description |
 | ---- | ----------- |
 | <a name="output_policy_arn"></a> [policy\_arn](#output\_policy\_arn) | ARN of the IAM policy created for deployment operations |
-| <a name="output_policy_json"></a> [policy\_json](#output\_policy\_json) | Rendered policy document JSON |
+| <a name="output_policy_arns"></a> [policy\_arns](#output\_policy\_arns) | ARNs of both managed policies attached to the role |
+| <a name="output_policy_json"></a> [policy\_json](#output\_policy\_json) | Both rendered policy documents merged, for review (the role gets them as two managed policies) |
 | <a name="output_policy_name"></a> [policy\_name](#output\_policy\_name) | Name of the IAM policy created for deployment operations |
 <!-- END_TF_DOCS -->    

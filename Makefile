@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation
 
 # Default target
 .DEFAULT_GOAL := help
@@ -29,11 +29,12 @@ pre-commit: ## Run lightweight validation before commit without push (format, va
 	@$(MAKE) docs
 	@echo "$(GREEN)✓ Pre-commit checks passed$(RESET)"
 
-validate: ## Run complete validation pipeline before commit with push (format, validate, lint, test, docs)
+validate: ## Run complete validation pipeline before commit with push (format, validate, lint, security scan, test, docs)
 	@echo "$(CYAN)Running complete validation pipeline...$(RESET)"
 	@$(MAKE) format
 	@$(MAKE) check
 	@$(MAKE) lint
+	@$(MAKE) security-scan
 	@$(MAKE) test
 	@$(MAKE) docs
 	@echo "$(GREEN)✓ All validations passed$(RESET)"
@@ -70,6 +71,16 @@ lint: ## Run TFLint on all Terraform files
 		echo "$(GREEN)✓ TFLint passed$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ TFLint not installed, skipping$(RESET)"; \
+	fi
+
+security-scan: ## Run the Checkov security scan with the same flags as CI (extra flags: CHECKOV_ARGS=...)
+	@echo "$(CYAN)Running Checkov...$(RESET)"
+	@if command -v checkov >/dev/null 2>&1; then \
+		checkov --framework terraform --directory . --output cli --skip-check CKV_AWS_144 --quiet --compact $(CHECKOV_ARGS) \
+			|| { echo "$(RED)✗ Checkov found failing checks$(RESET)"; exit 1; }; \
+		echo "$(GREEN)✓ Checkov passed$(RESET)"; \
+	else \
+		echo "$(RED)✗ checkov not installed (pip install checkov or uv tool install checkov)$(RESET)"; exit 1; \
 	fi
 
 ##@ Testing
@@ -132,13 +143,21 @@ docs: ## Generate documentation
 ##@ Examples
 plan-examples: check-aws ## Plan all examples (useful for verification)
 	@echo "$(CYAN)Planning all examples...$(RESET)"
+	@# secondary and standalone-tenant need the caller to already be a Lake Formation data-lake
+	@# admin; set LAKEHOUSE_TEST_LF_ADMIN=true in such an account (see test/README.md)
 	@for dir in examples/*/; do \
+		vars=""; \
+		grep -qs 'variable "name_prefix"' "$$dir/variables.tf" && vars="-var=name_prefix=make-$$(date +%s)"; \
+		if [ "$${LAKEHOUSE_TEST_LF_ADMIN:-}" != "true" ]; then \
+			case "$$dir" in \
+				examples/secondary/) echo "$(YELLOW)↷ $$dir skipped (needs LAKEHOUSE_TEST_LF_ADMIN=true)$(RESET)"; continue ;; \
+				examples/standalone-tenant/) vars="$$vars -var=verify_deployer_admin=false" ;; \
+			esac; \
+		fi; \
 		echo "$(CYAN)Planning $$dir...$(RESET)"; \
 		(cd "$$dir" && \
 			terraform init && \
-			terraform plan \
-				-var="name_prefix=make-$$(date +%s)" \
-				-out=makefile.tfplan) || exit 1; \
+			terraform plan $$vars -out=makefile.tfplan) || exit 1; \
 		echo "$(GREEN)✓ $$dir plan successful$(RESET)"; \
 	done
 

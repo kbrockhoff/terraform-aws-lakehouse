@@ -9,6 +9,15 @@ locals {
     { for k in keys(var.tenant.readers) : "reader/${k}" => { persona = "reader" } },
   )
   results_object_arn = "${local.results.bucket_arn}/${local.results.prefix}*"
+
+  # Lake Formation authorizes the tenant scope; IAM limits Glue to this account's Data Catalog,
+  # including the federated S3 Tables catalogs
+  glue_arns = [
+    "arn:${local.partition}:glue:${local.region}:${local.account_id}:catalog",
+    "arn:${local.partition}:glue:${local.region}:${local.account_id}:catalog/*",
+    "arn:${local.partition}:glue:${local.region}:${local.account_id}:database/*",
+    "arn:${local.partition}:glue:${local.region}:${local.account_id}:table/*",
+  ]
 }
 
 data "aws_iam_policy_document" "persona" {
@@ -26,9 +35,15 @@ data "aws_iam_policy_document" "persona" {
       "glue:GetTables",
       "glue:GetTableVersion",
       "glue:GetTableVersions",
-      "lakeformation:GetDataAccess",
     ]
-    resources = ["*"]
+    resources = local.glue_arns
+  }
+
+  statement {
+    sid       = "LakeFormationDataAccess"
+    effect    = "Allow"
+    actions   = ["lakeformation:GetDataAccess"]
+    resources = ["*"] # Lake Formation has no resource-level permissions
   }
 
   statement {
@@ -90,7 +105,7 @@ data "aws_iam_policy_document" "persona" {
         ["glue:CreateTable", "glue:UpdateTable"],
         local.effective.writer_drop_enabled ? ["glue:DeleteTable"] : [],
       )
-      resources = ["*"]
+      resources = local.glue_arns
     }
   }
 
@@ -105,7 +120,7 @@ data "aws_iam_policy_document" "persona" {
         "glue:UpdateTable",
         "glue:DeleteTable",
       ]
-      resources = ["*"]
+      resources = local.glue_arns
     }
   }
 
@@ -121,7 +136,7 @@ data "aws_iam_policy_document" "persona" {
         "lakeformation:GetLFTag",
         "lakeformation:ListLFTags",
       ]
-      resources = ["*"]
+      resources = ["*"] # Lake Formation has no resource-level permissions
     }
   }
 
@@ -139,7 +154,7 @@ data "aws_iam_policy_document" "persona" {
         "lakeformation:CreateDataCellsFilter",
         "lakeformation:GetDataCellsFilter",
       ]
-      resources = ["*"]
+      resources = ["*"] # Lake Formation has no resource-level permissions
     }
   }
 }

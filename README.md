@@ -1,25 +1,28 @@
 # AWS Lakehouse Terraform Module
 
-Terraform module that provisions a multi-tenant, Apache Iceberg-based lakehouse platform on AWS: layered data storage,
-an open table catalog, tag-based governed data access, and per-tenant query engine configuration. It follows Brockhoff Cloud standards and
-integrates with the `terraform-external-context` module for consistent naming and tagging.
+Terraform module that provisions a multi-tenant, Apache Iceberg-based lakehouse platform on AWS: S3 Tables
+storage in data zones, the federated Lake Formation catalog, tag-based governed access down to columns, and a
+query workgroup per tenant. It follows Brockhoff Cloud standards and integrates with the
+`terraform-external-context` module for consistent naming and tagging.
 
 Design principles for this module are recorded in [`.specify/memory/principles.md`](.specify/memory/principles.md).
+The design and its verified deviations are in [`specs/001-governed-lakehouse/plan.md`](specs/001-governed-lakehouse/plan.md).
 
 ## Features
 
-- **Multi-Tenant Platform**: Each tenant is an S3 Tables namespace (Glue database) in every zone it uses, provisioned by the `modules/tenant` submodule, either from the platform's `tenants` map or standalone by a tenant provisioning pipeline using the published platform contract *(in progress)*
-- **Layered Storage**: Raw, curated, and consumption (gold) data zones with automatic table maintenance and expiration *(in progress)*
-- **Semantic Layer Ready**: Read-only grants on tenants' consumption namespaces let an external semantic layer serve published data products
-- **Open Table Catalog**: Apache Iceberg tables registered in a central data catalog *(in progress)*
-- **Governed Access**: Lake Formation LF-tag access control by per-tenant tag, sensitivity, compliance regulation, and data domain on databases, tables, and columns, with the most restrictive column labels rolled up to the table and delegated tenant stewards *(in progress)*
-- **Query Engine Setup**: A query workgroup per tenant with encrypted, isolated results, per-query scan limits, and cost attribution *(in progress)*
-- **Context Integration**: Leverages terraform-external-context for standardized naming and tagging
-- **Environment-Aware**: Derives security, durability, monitoring, and cost defaults from `environment_type`
-- **Encryption by Default**: Customer-managed KMS key created by default, or bring your own
-- **Compliance-Ready**: Supports SOC 2, HIPAA, PCI DSS, and GDPR workloads; cost-incurring controls (dedicated keys and storage) activate only for tenants designated under a framework
-- **Cost Visibility**: Monthly cost estimate output for module resources
-- **Alarm Notifications**: Optional SNS topic for metric alarms, enabled by default in production environment types
+- **Multi-Tenant Platform**: each tenant is an S3 Tables namespace (a Lake Formation database) in every zone it
+  uses, provisioned by `modules/tenant` from the platform's `tenants` map or standalone by a tenant pipeline
+- **Data Zones**: raw, curated, and consumption (gold) table buckets with table maintenance and fail-closed access
+- **Semantic Layer Ready**: consumption-only reader grants let an external semantic layer serve published data products
+- **Open Table Catalog**: Apache Iceberg tables in the federated `s3tablescatalog`, queryable from Athena and other engines
+- **Governed Access**: LF-tag access by tenant, zone, sensitivity, regulation, and domain on databases, tables, and
+  columns, with delegated tenant stewards and row filters
+- **Query Isolation**: an Athena workgroup per tenant with encrypted, isolated results, scan limits, and alarms
+- **Environment-Aware**: security, durability, monitoring, and cost defaults derived from `environment_type`
+- **Encryption by Default**: a customer-managed KMS key created by default, or bring your own
+- **Compliance-Ready**: SOC 2, HIPAA, PCI DSS, and GDPR support; dedicated keys and storage only for designated tenants
+- **Cost Visibility**: idle monthly estimates for the platform and each tenant, compliance cost, and usage rates
+- **Least-Privilege Deployment**: `modules/deployer` policies for the platform and for tenant pipelines
 
 ## Usage
 
@@ -28,91 +31,258 @@ The module is not yet published to the Terraform Registry. Reference it by Git s
 ### Basic Example
 
 ```hcl
+provider "aws" {}
+
+# Cost estimation uses the AWS Price List API in us-east-1
+provider "aws" {
+  alias  = "pricing"
+  region = "us-east-1"
+}
+
 module "lakehouse" {
   source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
+  providers = {
+    aws         = aws
+    aws.pricing = aws.pricing
+  }
 
-  name_prefix = "dev-usw2"
+  name_prefix      = "dev-usw2"
+  environment_type = "Development"
+
+  # Authoritative Lake Formation admins; must include the role running Terraform
+  governance_config = {
+    admin_principal_arns = ["arn:aws:iam::123456789012:role/lakehouse-deployer"]
+  }
+
+  tenants = {
+    analytics = {
+      owner       = "analytics-data@example.com"
+      sensitivity = "internal"
+    }
+  }
 }
 ```
 
-### Complete Example
+After the first apply, run the [required one-time grants](#required-one-time-grants).
 
-See [`examples/complete`](examples/complete) for a configuration that sets all available arguments.
+### More Examples
+
+- [`examples/defaults`](examples/defaults): required inputs and one tenant
+- [`examples/complete`](examples/complete): Production, three tenants (one HIPAA-designated), every persona type, a row filter
+- [`examples/secondary`](examples/secondary): a second platform in an account whose catalog integration another deployment owns
+- [`examples/standalone-tenant`](examples/standalone-tenant): a tenant applied by its own pipeline from the platform contract
+- [`examples/deployer`](examples/deployer): the least-privilege deployer policies for both scopes
 
 ## Environment Type Configuration
 
-The `environment_type` variable provides a standardized way to configure resource defaults based on environment
-characteristics. This follows cloud well-architected framework recommendations for different deployment stages.
-Resiliency settings comply with the recovery point objective (RPO) and recovery time objective (RTO) values in
-the table below. Cost optimization settings focus on shutting down resources during off-hours.
+`environment_type` sets resource defaults. Ephemeral, Development, and Testing are **Baseline**; UAT, Production, and
+MissionCritical are **Enhanced**. `None` takes every value from the `*_config` inputs.
 
-### Available Environment Types
+| Type | RPO | RTO | Writer `DROP` | Required tags enforced | Query results kept | Scan cutoff | Default table storage class |
+|------|-----|-----|---------------|------------------------|--------------------|-------------|-----------------------------|
+| `Ephemeral` | N/A | 48h | yes | no | 1 day | 10 GB | STANDARD |
+| `Development` | 24h | 48h | yes | no | 7 days | 10 GB | STANDARD |
+| `Testing` | 24h | 48h | yes | no | 7 days | 10 GB | STANDARD |
+| `UAT` | 12h | 24h | no | yes | 30 days | 1 TB | INTELLIGENT_TIERING |
+| `Production` | 1h | 4h | no | yes | 30 days | 1 TB | INTELLIGENT_TIERING |
+| `MissionCritical` | 5m | 1h | no | yes | 30 days | 1 TB | INTELLIGENT_TIERING |
 
-| Type | Use Case | Configuration Focus | RPO | RTO |
-|------|----------|---------------------|-----|-----|
-| `None` | Custom configuration | No defaults applied, use individual config values | N/A | N/A |
-| `Ephemeral` | Temporary environments | Cost-optimized, minimal durability requirements | N/A | 48h |
-| `Development` | Developer workspaces | Balanced cost and functionality for active development | 24h | 48h |
-| `Testing` | Automated testing | Consistent, repeatable configurations | 24h | 48h |
-| `UAT` | User acceptance testing | Production-like settings with some cost optimization | 12h | 24h |
-| `Production` | Live systems | High availability, durability, and performance | 1h  | 4h  |
-| `MissionCritical` | Critical production | Maximum reliability, redundancy, and monitoring | 5m  | 1h  |
+Override individual values with `query_config`, `storage_config`, `governance_config.writer_drop_enabled`,
+`required_tags_config.enforced`, and `alarms_config.scanned_bytes_threshold`; tenants can override their scan
+cutoff and alarm threshold. The default table storage class is published in `platform_contract.effective`, but
+AWS provider 6.x cannot yet set it on table buckets, so new tables use S3 Tables' default until it can.
 
-### Usage Examples
+## Tenancy Model
 
-#### Development Environment
+- **Tenant = namespace per zone.** A tenant is the namespace `<tenant>` in each zone's table bucket, which Lake
+  Formation exposes as the database `<tenant>` in the catalog `s3tablescatalog/<bucket>`.
+- **Two entry points, one implementation.** The platform applies `modules/tenant` for each `tenants` entry, or a
+  tenant provisioning pipeline calls it standalone with its own state. See
+  [`modules/tenant/README.md`](modules/tenant/README.md). Both entry points produce the same resources and validate
+  identically.
+- **Platform contract.** `platform_contract` is the versioned interface tenants consume: identifiers and effective
+  settings only. Publish it through remote state or an SSM parameter (see the tenant README).
+- **Shared or dedicated storage.** By default a tenant's namespaces sit in the shared zone buckets. Set
+  `dedicated_storage = true` for a tenant that needs its own table quota per zone, or whose sensitivity ranks above
+  `governance_config.shared_storage_classification`. Compliance-designated tenants always get dedicated buckets,
+  their own KMS key, and their own results bucket.
+- **Pipelines are platform-operated.** Creating a tenant's LF-tag and grants needs Lake Formation admin authority, so
+  tenant pipelines run as data-lake admins under the `scope = "tenant"` deployer policy and are never handed to
+  tenant-operated identities (FR-001a).
 
-```hcl
-module "dev_lakehouse" {
-  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
-  
-  name_prefix      = "dev-usw2"
-  environment_type = "Development"
-  
-  tags = {
-    Environment = "development"
-    Team        = "platform"
-  }
-}
+### Service quotas
+
+| Quota | Default | Effect on tenant count |
+|-------|---------|------------------------|
+| Tables per table bucket | 10,000 | Shared across all tenants in a zone; large tenants set `dedicated_storage = true` |
+| Table buckets per Region | 100 | 3 shared buckets, plus one per zone for each dedicated or designated tenant |
+| LF-tag keys per account | check Service Quotas | One key per tenant, plus the platform's sensitivity, domain, zone, and per-regulation keys |
+| Athena workgroups per account | check Service Quotas | One workgroup per tenant |
+
+## Data Zones
+
+| Zone | Holds | Personas normally granted |
+|------|-------|---------------------------|
+| `raw` | Landed source data | Ingestion writers, stewards |
+| `curated` | Conformed, validated data | Transformation writers, stewards, analysts |
+| `consumption` (gold) | Published data products | Product writers, stewards, the semantic layer, analysts |
+
+Zones are an access boundary: every grant is limited to the zones listed on the persona (default: all of the
+tenant's zones). The external semantic layer is a reader with `zones = ["consumption"]` in each tenant it serves.
+Override the zones with `zones_config`.
+
+## Access Control with LF-Tags
+
+### Vocabulary
+
+| Key | Values | Set by |
+|-----|--------|--------|
+| `<prefix>-tenant-<tenant>` | `member` | The tenant submodule, on its databases. Only platform admins can ASSOCIATE it |
+| `<prefix>-zone` | the zones | The tenant submodule, on its databases. Only platform admins can ASSOCIATE it |
+| `<prefix>-sensitivity` | `governance_config.sensitivity_values`, least to most sensitive | Databases (tenant ceiling), then pipelines and stewards |
+| `<prefix>-reg-<regulation>` | `no`, `yes` | One key per `regulation_values` entry |
+| `<prefix>-domain` | `governance_config.domain_values` | Databases (tenant domain), optionally tables |
+
+The `lf_tag_vocabulary` output lists the keys and values for pipelines.
+
+### Fail-closed defaults
+
+Each tenant database carries the tenant's most restrictive values: its sensitivity ceiling, `yes` for each of its
+regulations, and its domain. New tables and columns inherit them, so a table nobody has labeled is visible only to
+readers cleared for the ceiling and every one of the tenant's regulations.
+
+### Grants per persona
+
+Grants are account-level LF-tag policies; every expression includes `tenant = T` and `zone ∈ persona zones`.
+
+| Persona | Databases | Tables | LF-tags |
+|---------|-----------|--------|---------|
+| Steward | `CREATE_TABLE`, `ALTER`, `DROP`, `DESCRIBE` (grantable) | all table permissions (grantable) | ASSOCIATE and grant within the tenant's label scope |
+| Writer | `CREATE_TABLE`, `DESCRIBE` | `SELECT`, `INSERT`, `DELETE`, `ALTER`, `DESCRIBE`, plus `DROP` in Baseline | ASSOCIATE within the tenant's label scope |
+| Reader | `DESCRIBE` | `SELECT`, `DESCRIBE` where sensitivity, each regulation, and optionally domain match | — |
+
+Column-level control is built in: a reader sees only the columns whose labels fall within its expression. A
+reader's `domains` list is an optional filter. Row filters (`row_filters`) are the only named-resource grants; they
+need the table to exist, so add them after writers create it. The module outputs least-privilege IAM policy
+documents per persona (`persona_policy_json`) but never attaches them.
+
+### Steward runbook
+
+- Correct a label: `aws lakeformation add-lf-tags-to-resource` on the table or columns, then recompute the table's
+  roll-up (see the contract below).
+- Grant within the tenant: `aws lakeformation grant-permissions` with an LF-tag expression that includes
+  `<prefix>-tenant-<tenant> = member`. Lake Formation rejects anything outside the steward's tenant.
+- Every label change and grant is recorded in CloudTrail (`AddLFTagsToResource`, `GrantPermissions`).
+
+## Labeling and Roll-Up Contract
+
+Writer pipelines (and stewards correcting labels) must, whenever they create a table or change its schema:
+
+1. Label **every column** with sensitivity and every `reg-*` key (and optionally domain). Explicit column labels stop
+   a raised table label from cascading to the columns.
+2. Set the table's sensitivity to the highest column value, and each `reg-*` to `yes` if any column is `yes`.
+3. Apply the table labels. On a schema change, label the new columns and recompute.
+
+AWS CLI:
+
+```bash
+CATALOG="${ACCOUNT}:s3tablescatalog/<prefix>-curated"
+aws lakeformation add-lf-tags-to-resource \
+  --resource "{\"TableWithColumns\":{\"CatalogId\":\"${CATALOG}\",\"DatabaseName\":\"sales\",\"Name\":\"customers\",\"ColumnNames\":[\"email\"]}}" \
+  --lf-tags '[{"TagKey":"<prefix>-sensitivity","TagValues":["confidential"]},{"TagKey":"<prefix>-reg-gdpr","TagValues":["yes"]}]'
+aws lakeformation add-lf-tags-to-resource \
+  --resource "{\"Table\":{\"CatalogId\":\"${CATALOG}\",\"DatabaseName\":\"sales\",\"Name\":\"customers\"}}" \
+  --lf-tags '[{"TagKey":"<prefix>-sensitivity","TagValues":["confidential"]},{"TagKey":"<prefix>-reg-gdpr","TagValues":["yes"]}]'
 ```
 
-#### Production Environment
+boto3:
 
-```hcl
-module "prod_lakehouse" {
-  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
-  
-  name_prefix      = "prod-usw2"
-  environment_type = "Production"
-  
-  tags = {
-    Environment = "production"
-    Team        = "platform"
-    Backup      = "required"
-  }
-}
+```python
+import boto3
+
+lf = boto3.client("lakeformation")
+ORDER = ["public", "internal", "confidential", "restricted"]  # lf_tag_vocabulary.sensitivity.values
+
+
+def label(catalog, db, table, columns, prefix, regulations):
+    """columns: {name: {"sensitivity": str, "regs": set[str]}}"""
+    for name, c in columns.items():
+        tags = [{"TagKey": f"{prefix}-sensitivity", "TagValues": [c["sensitivity"]]}]
+        tags += [{"TagKey": f"{prefix}-reg-{r}", "TagValues": ["yes" if r in c["regs"] else "no"]} for r in regulations]
+        lf.add_lf_tags_to_resource(
+            Resource={"TableWithColumns": {"CatalogId": catalog, "DatabaseName": db, "Name": table, "ColumnNames": [name]}},
+            LFTags=tags,
+        )
+    top = max((c["sensitivity"] for c in columns.values()), key=ORDER.index)
+    table_tags = [{"TagKey": f"{prefix}-sensitivity", "TagValues": [top]}]
+    table_tags += [
+        {"TagKey": f"{prefix}-reg-{r}", "TagValues": ["yes" if any(r in c["regs"] for c in columns.values()) else "no"]}
+        for r in regulations
+    ]
+    lf.add_lf_tags_to_resource(Resource={"Table": {"CatalogId": catalog, "DatabaseName": db, "Name": table}}, LFTags=table_tags)
 ```
 
-#### Custom Configuration (None)
+Lake Formation does not enforce the roll-up, and the module does not detect drift.
 
-```hcl
-module "custom_lakehouse" {
-  source = "git::https://github.com/kbrockhoff/terraform-aws-lakehouse.git?ref=vX.Y.Z"
-  
-  name_prefix      = "custom-usw2"
-  environment_type = "None"
-  
-  # Specify all individual configuration values
-  # when environment_type is "None"
-}
-```
+## Account-Level Integration Ownership
 
-## Network Tags Configuration
+The catalog integration (`modules/catalog-integration`) is an account and Region singleton: the Lake Formation
+data-access role, the `bucket/*` registration, the federated `s3tablescatalog`, and the data-lake settings.
 
-Resources deployed to subnets use lookup by `NetworkTags` values to determine which subnets to deploy to.
-This eliminates the need to manage different subnet IDs variable values for each environment.
+- Exactly one deployment per account and Region keeps `catalog_integration_config.enabled = true`.
+- Its data-lake settings are **authoritative**: admins not in `governance_config.admin_principal_arns` are removed,
+  including console-added ones, and the default `IAM_ALLOWED_PRINCIPALS` permissions are cleared. List the deploying
+  role, every secondary deployment's role, and every tenant pipeline role.
+- Secondary deployments set `enabled = false` and pass the owner's `data_access_role_arn` output (see
+  [`examples/secondary`](examples/secondary)).
 
-## Required one-time grants
+## Audit Trail Prerequisites
+
+The module creates no CloudTrail trail. Configure one in the account with:
+
+- management events for `lakeformation` (including stewards' `GrantPermissions` and `AddLFTagsToResource`), `glue`,
+  `s3tables`, and `athena`;
+- data events for `AWS::S3Tables::Table`;
+- retention of at least 90 days, or at least 1 year when any tenant is designated.
+
+## Table Maintenance
+
+- Unreferenced-file removal is configured on every table bucket from the environment defaults.
+- Compaction and snapshot management are per-table S3 Tables settings; the module creates no tables, so tables keep
+  the S3 Tables defaults (compaction on; at least 1 snapshot, 120-hour maximum age). Writers must not disable them.
+- **GDPR erasure:** delete the subject's rows in every zone (Iceberg `DELETE`), then rebuild or re-run the
+  consumption data products that derived from them. Deleted data leaves storage once its snapshots expire (up to
+  5 days) and the unreferenced and noncurrent windows pass (3 and 7 days in Enhanced): about 15 days in total.
+
+## Compliance Designation
+
+Set `compliance_frameworks` (`SOC2`, `HIPAA`, `PCI_DSS`) on a tenant to designate it. A designated tenant gets
+dedicated table buckets, its own KMS key, and its own results bucket, tagged `ComplianceFrameworks`; their cost is
+reported as `compliance_monthly_cost`. A tenant with the `hipaa` or `pci_dss` regulation must carry the matching
+designation. A `regulated_data_in_baseline` check warns when a designated tenant runs in a Baseline environment.
+
+## Required Tags
+
+In Enhanced environments (or with `required_tags_config.enforced = true`), `tags` must include the cost-center and
+data-owner keys (`CostCenter` and `DataOwner` by default), or the plan fails. The module writes the
+data-classification key itself: the platform's `shared_storage_classification` on shared storage, and the tenant's
+ceiling on dedicated storage. Tenant resources also carry `Tenant` and the tenant's `DataOwner`.
+
+## Bring Your Own KMS Key
+
+Set `encryption_config = { create_kms_key = false, kms_key_id = "<key ARN>", ... }`. The module cannot edit that key's
+policy, so merge the `required_kms_key_policy_json` output into it (S3 Tables maintenance, Lake Formation data access,
+CloudWatch alarms, and Athena results). Tenant keys for designated tenants are always module-created.
+
+## Query Isolation
+
+Each tenant gets the Athena workgroup `<prefix>-<tenant>` with enforced settings: results under
+`s3://<shared results bucket>/<tenant>/` (or the designated tenant's own bucket), SSE-KMS, the scan cutoff, and
+CloudWatch metrics. When alarms are enabled, `query_failures` and `scanned_bytes` alarms per tenant notify the
+platform SNS topic. The shared results bucket policy has no per-tenant statements; persona IAM policies limit each
+persona to its own workgroup and results prefix.
+
+## Required One-Time Grants
 
 Athena resolves an S3 Tables bucket catalog only for principals that have Lake Formation `DESCRIBE`
 on that catalog. The AWS provider cannot express this grant yet, so after the first apply, a

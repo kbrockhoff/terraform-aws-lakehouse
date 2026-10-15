@@ -8,31 +8,43 @@ precedence over this guide when the two conflict.
 ## Components
 
 ### Tenancy
-- Each tenant is one S3 Tables namespace (Glue database) per zone it uses
-- `modules/tenant` provisions everything tenant-scoped; the root applies it per `tenants` map entry, or a tenant pipeline calls it standalone with its own state
-- The tenant submodule depends on the platform only through the typed `platform_contract` output and never modifies platform-owned resources
+- Each tenant is one S3 Tables namespace (Lake Formation database) per zone it uses
+- `modules/tenant` provisions everything tenant-scoped; the root applies it per `tenants` map entry, or a tenant pipeline calls it standalone with its own state (`git::...//modules/tenant`)
+- The tenant submodule depends on the platform only through the typed `platform_contract` output and never modifies platform-owned resources; tenant validation lives only in the submodule
 - Tenants are isolated: data, query results, and (for designated tenants) keys, table buckets, and results buckets are tenant-scoped
+- Tenant provisioning pipelines are platform-operated Lake Formation admins (FR-001a)
 
 ### Storage Layers
-- Separate raw, curated, and consumption (gold) data zones with public access blocked
-- Shared table bucket per zone; compliance-designated tenants get dedicated buckets with their own key
-- Each zone is an isolated access boundary; the external semantic layer reads tenants' consumption namespaces
-- Encryption with customer-managed KMS keys and TLS-only access
-- Versioning and lifecycle tiering/expiration driven by environment type
+- Raw, curated, and consumption (gold) data zones; one shared, KMS-encrypted table bucket per zone with a deny-only TLS and key policy
+- Dedicated per-zone table buckets when `dedicated_storage = true` or the tenant is compliance-designated (designated tenants also get their own key and results bucket)
+- Unreferenced-file removal per bucket from environment defaults; compaction and snapshot management use the S3 Tables per-table defaults
+- Shared Athena results bucket: public access blocked, SSE-KMS with bucket keys, expiring and unversioned, no per-tenant policy statements
 
-### Open Table Catalog
-- Catalog databases (tenant namespaces) for Apache Iceberg tables in each data zone
-- Table snapshot retention aligned with the environment's RPO
+### Account Integration
+- `modules/catalog-integration` (one owner per account and Region): the Lake Formation data-access role, the `bucket/*` registration with federation, the federated `s3tablescatalog`, and authoritative data-lake settings
+- Secondary deployments set `catalog_integration_config.enabled = false`, pass the owner's data-access role, and are guarded by `terraform_data.secondary_admin_guard`
+- One-time CLI grants the provider cannot express yet (README, "Required one-time grants"): bucket catalog `DESCRIBE`, and platform tag permissions for non-creator admins
 
 ### Governed Access
-- Lake Formation LF-tag grants over a per-tenant `tenant-<name>` key (owned by the tenant submodule) and platform-owned `sensitivity`, `reg-<regulation>` (yes/no per regulation), and `domain` tags, for named principals only
-- Module labels tenant databases with the tenant's most restrictive values (fail closed); writer pipelines label tables and columns, rolling the most restrictive column up to the table
-- Column-level control through those tags; domain is an optional reader filter; row filters are the only named-resource grants
-- Delegated tenant stewards label and grant within their own tenant; audit via the existing CloudTrail
+- LF-tags: per-tenant `<prefix>-tenant-<name>` (owned by the tenant submodule), and platform-owned `<prefix>-sensitivity`, `<prefix>-reg-<regulation>` (yes/no per regulation), `<prefix>-domain`, and `<prefix>-zone`
+- Tenant databases carry the tenant's most restrictive labels plus their zone (fail closed); writer pipelines and stewards label tables and columns with roll-up (pipeline contract)
+- Grants are account-level `lf_tag_policy` grants, one per persona and resource type; every expression includes the tenant and zone terms (Lake Formation rejects grants scoped to a bucket catalog)
+- Column-level control through those tags; domain is an optional reader filter; row filters (data cells filters) are the only named-resource grants
+- Only platform admins can ASSOCIATE the tenant and zone keys; stewards and writers label within `L(T)`; stewards grant within their tenant
+- Persona IAM policy documents are outputs; the module never attaches them
 
 ### Query Engine Setup
-- One query workgroup per tenant with encrypted, expiring, tenant-prefixed query results
-- Per-query scan limits (overridable per tenant) and per-tenant cost attribution
+- One Athena workgroup per tenant with enforced configuration, encrypted tenant-prefixed results (or the designated tenant's results bucket), and a scan cutoff overridable per tenant
+- `query_failures` and `scanned_bytes` alarms per tenant when alarms are enabled, routed to the platform SNS topic
+
+### Operations
+- `modules/cost-estimation`: idle fixed monthly estimates for the platform and each tenant, compliance cost, and usage rates from the AWS Price List
+- `modules/deployer`: least-privilege `platform` or `tenant` scope policies (split into two managed policies) attached to an existing role; never called by the root
+
+### Module Files
+- Root: `variables.tf`, `locals.tf` (environment defaults, effective config, `platform_contract`), `dependencies.tf`, `main.tf` (catalog integration, guards, `module.tenant`), `kms.tf`, `lf-tags.tf`, `table-buckets.tf`, `query.tf`, `alarms.tf`, `cost-estimation.tf`, `outputs.tf`
+- `modules/tenant`: `variables.tf` (all tenant validation), `locals.tf`, `kms.tf`, `storage.tf`, `lf-tags.tf`, `permissions.tf`, `query.tf`, `iam-documents.tf`, `alarms.tf`, `main.tf`, `outputs.tf`
+- Examples: `defaults`, `complete`, `secondary`, `standalone-tenant`, `deployer`; tests in `test/` are plan-only (`make test`)
 
 ## Terraform Module Guide
 

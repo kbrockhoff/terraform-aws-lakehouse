@@ -5,6 +5,9 @@
 # Results expire instead of tiering to a cheaper storage class (FR-005): they are transient and
 # must actually be deleted, so versioning is also off.
 resource "aws_s3_bucket" "query_results" {
+  # checkov:skip=CKV_AWS_21:Query results are transient and must actually be deleted by the lifecycle rule; versioning would retain them (plan.md, Data Storage)
+  # checkov:skip=CKV_AWS_18:Access is audited through CloudTrail (FR-020); the module has no log bucket to deliver to
+  # checkov:skip=CKV2_AWS_62:Nothing consumes notifications for transient query results
   count = var.enabled ? 1 : 0
 
   bucket        = "${local.name_prefix}-athena-results-${local.account_id}"

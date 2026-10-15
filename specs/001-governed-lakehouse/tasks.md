@@ -512,7 +512,7 @@ Validation), for both tenant entry points.
 **Purpose**: Documentation, security scan, CI alignment, cost check, full gates, and sandbox
 verification of the spec's operational success criteria.
 
-- [ ] T070 Update `README.md`:
+- [x] T070 Update `README.md`:
   - replace the "(in progress)" feature markers;
   - add a "Tenancy model" section covering:
     - tenant = namespace per zone;
@@ -535,18 +535,18 @@ verification of the spec's operational success criteria.
   - add an "Audit trail prerequisites" section;
   - add a "Table maintenance" section, including GDPR rebuild and purge of consumption data products;
   - add "Compliance designation", "Required tags", "Bring your own KMS key", and "Query isolation" sections.
-- [ ] T071 [P] Update `AGENTS.md` Components to match the implemented files, including `modules/tenant` and `modules/catalog-integration`.
-- [ ] T072 [P] Add a `security-scan` target to `Makefile` that runs `checkov --framework terraform -d .` with the same flags as `.github/workflows/terraform-ci.yml`, then run `make security-scan`. Fix or suppress every HIGH or CRITICAL finding with an inline justification comment.
-- [ ] T073 Update `.github/workflows/terraform-ci.yml` so CI runs the same gates as local validation:
+- [x] T071 [P] Update `AGENTS.md` Components to match the implemented files, including `modules/tenant` and `modules/catalog-integration`.
+- [x] T072 [P] Add a `security-scan` target to `Makefile` that runs `checkov --framework terraform -d .` with the same flags as `.github/workflows/terraform-ci.yml`, then run `make security-scan`. Fix or suppress every HIGH or CRITICAL finding with an inline justification comment.
+- [x] T073 Update `.github/workflows/terraform-ci.yml` so CI runs the same gates as local validation:
   - install TFLint and terraform-docs;
   - replace the direct `terraform fmt`, `terraform validate`, `checkov`, and `go test` steps with `make check`, `make lint`, `make docs` (failing if `git diff --exit-code` shows changes), `make security-scan`, and `make test`;
   - remove the commented-out TFLint block.
   This depends on T072.
-- [ ] T074 Run `make plan-examples` and review the cost outputs:
+- [x] T074 Run `make plan-examples` and review the cost outputs:
   - defaults must be at most $5 idle;
   - complete (Production, three tenants, one HIPAA) must be at most $10 + 3 × $0.50 for the platform and tenants, plus at most $2 compliance cost for `claims`;
   - standalone-tenant reports its own estimate.
-- [ ] T075 Run `make pre-commit`, then `make validate`. Both must pass with TFLint and terraform-docs installed, and no files may be left modified.
+- [x] T075 Run `make pre-commit`, then `make validate`. Both must pass with TFLint and terraform-docs installed, and no files may be left modified.
 - [x] T076 Sandbox end-to-end (Development first, then Production configuration): run `make apply-examples` and record the plan and apply durations against the 3-minute and 15-minute targets. Then verify the spec success criteria:
   - **Fail-closed labeling and roll-up**:
     - a `sales` writer creates a table through Athena without stating encryption; the table inherits the database LF-tags and the bucket key;
