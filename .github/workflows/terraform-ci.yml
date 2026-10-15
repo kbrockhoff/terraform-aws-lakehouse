@@ -60,12 +60,18 @@ jobs:
         make docs
         git diff --exit-code -- '*.md'
 
+    # The scan runs on every matrix leg; the SARIF report comes from the latest leg only
     - name: Security scan
+      if: matrix.terraform_version != 'latest'
+      run: make security-scan
+
+    - name: Security scan with SARIF report
+      if: matrix.terraform_version == 'latest'
       run: make security-scan CHECKOV_ARGS="--output sarif --output-file-path console,checkov-report.sarif"
 
     # Fork PRs get a read-only security-events token, so skip the upload there
     - name: Upload Checkov SARIF results
-      if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+      if: always() && matrix.terraform_version == 'latest' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: checkov-report.sarif
