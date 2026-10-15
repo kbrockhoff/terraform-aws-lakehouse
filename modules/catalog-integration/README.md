@@ -50,7 +50,7 @@ Import an existing registration (`aws_lakeformation_resource.s3tables`) the same
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.69.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0, < 7.0.0 |
 
 ## Modules
 

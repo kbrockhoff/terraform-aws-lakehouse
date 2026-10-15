@@ -14,7 +14,7 @@ Estimates the monthly cost of resources provisioned by the parent module.
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.69.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0, < 7.0.0 |
 
 ## Modules
 
