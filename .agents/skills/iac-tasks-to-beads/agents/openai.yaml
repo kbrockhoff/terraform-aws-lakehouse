@@ -1,0 +1,4 @@
+interface:
+  display_name: "iac tasks.md to Beads"
+  short_description: "Convert or sync an iac-spec-kit tasks.md into a beads epic"
+  default_prompt: "Use $iac-tasks-to-beads to convert the current feature's tasks.md into beads issues."

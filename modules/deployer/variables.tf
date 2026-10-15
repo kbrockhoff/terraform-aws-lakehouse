@@ -46,3 +46,31 @@ variable "account_id" {
   description = "AWS account ID"
   type        = string
 }
+
+variable "scope" {
+  description = "Which deployment the policy is for: \"platform\" (the root module, including the account-level catalog integration) or \"tenant\" (a standalone tenant provisioning pipeline)."
+  type        = string
+  default     = "platform"
+
+  validation {
+    condition     = contains(["platform", "tenant"], var.scope)
+    error_message = "scope must be \"platform\" or \"tenant\"."
+  }
+}
+
+variable "cost_estimation_enabled" {
+  description = "Allow the AWS Price List API calls used by cost estimation."
+  type        = bool
+  default     = true
+}
+
+variable "platform_contract_parameter_arn" {
+  description = "ARN of the SSM parameter holding the platform contract, when tenant pipelines read it from SSM. Adds ssm:GetParameter on exactly that parameter. Empty adds nothing."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.platform_contract_parameter_arn == "" || can(regex("^arn:aws[a-z-]*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+$", var.platform_contract_parameter_arn))
+    error_message = "platform_contract_parameter_arn must be empty or an SSM parameter ARN."
+  }
+}
