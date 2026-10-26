@@ -1,17 +1,50 @@
-# CLOUD XXX Terraform Module Guide for AI Agents
+# AWS Lakehouse Terraform Module Guide for AI Agents
 
-What the goal of this module is.
+Provisions a multi-tenant, Apache Iceberg-based lakehouse platform on AWS for analytics workloads, with governed access,
+compliance-ready defaults (SOC 2, HIPAA, PCI DSS, GDPR), and cost-efficient serverless querying. Configuration
+defaults derive from `environment_type`. Design principles are in `.specify/memory/principles.md`; they take
+precedence over this guide when the two conflict.
 
 ## Components
 
-### Component 1
-- Requirement
-- Requirement
+### Tenancy
+- Each tenant is one S3 Tables namespace (Lake Formation database) per zone it uses
+- `modules/tenant` provisions everything tenant-scoped; the root applies it per `tenants` map entry, or a tenant pipeline calls it standalone with its own state (`git::...//modules/tenant`)
+- The tenant submodule depends on the platform only through the typed `platform_contract` output and never modifies platform-owned resources; tenant validation lives only in the submodule
+- Tenants are isolated: data, query results, and (for designated tenants) keys, table buckets, and results buckets are tenant-scoped
+- Tenant provisioning pipelines are platform-operated Lake Formation admins (FR-001a)
 
-### Component 2
-- Requirement
-- Requirement
+### Storage Layers
+- Raw, curated, and consumption (gold) data zones; one shared, KMS-encrypted table bucket per zone with a deny-only TLS and key policy
+- Dedicated per-zone table buckets when `dedicated_storage = true` or the tenant is compliance-designated (designated tenants also get their own key and results bucket)
+- Unreferenced-file removal per bucket from environment defaults; compaction and snapshot management use the S3 Tables per-table defaults
+- Shared Athena results bucket: public access blocked, SSE-KMS with bucket keys, expiring and unversioned, no per-tenant policy statements
 
+### Account Integration
+- `modules/catalog-integration` (one owner per account and Region): the Lake Formation data-access role, the `bucket/*` registration with federation, the federated `s3tablescatalog`, and authoritative data-lake settings
+- Secondary deployments set `catalog_integration_config.enabled = false`, pass the owner's data-access role, and are guarded by `terraform_data.secondary_admin_guard`
+- One-time CLI grants the provider cannot express yet (README, "Required one-time grants"): bucket catalog `DESCRIBE`, and platform tag permissions for non-creator admins
+
+### Governed Access
+- LF-tags: per-tenant `<prefix>-tenant-<name>` (owned by the tenant submodule), and platform-owned `<prefix>-sensitivity`, `<prefix>-reg-<regulation>` (yes/no per regulation), `<prefix>-domain`, and `<prefix>-zone`
+- Tenant databases carry the tenant's most restrictive labels plus their zone (fail closed); writer pipelines and stewards label tables and columns with roll-up (pipeline contract)
+- Grants are account-level `lf_tag_policy` grants, one per persona and resource type; every expression includes the tenant and zone terms (Lake Formation rejects grants scoped to a bucket catalog)
+- Column-level control through those tags; domain is an optional reader filter; row filters (data cells filters) are the only named-resource grants
+- Only platform admins can ASSOCIATE the tenant and zone keys; stewards and writers label within `L(T)`; stewards grant within their tenant
+- Persona IAM policy documents are outputs; the module never attaches them
+
+### Query Engine Setup
+- One Athena workgroup per tenant with enforced configuration, encrypted tenant-prefixed results (or the designated tenant's results bucket), and a scan cutoff overridable per tenant
+- `query_failures` and `scanned_bytes` alarms per tenant when alarms are enabled, routed to the platform SNS topic
+
+### Operations
+- `modules/cost-estimation`: idle fixed monthly estimates for the platform and each tenant, compliance cost, and usage rates from the AWS Price List
+- `modules/deployer`: least-privilege `platform` or `tenant` scope policies (split into two managed policies) attached to an existing role; never called by the root
+
+### Module Files
+- Root: `variables.tf`, `locals.tf` (environment defaults, effective config, `platform_contract`), `dependencies.tf`, `main.tf` (catalog integration, guards, `module.tenant`), `kms.tf`, `lf-tags.tf`, `table-buckets.tf`, `query.tf`, `alarms.tf`, `cost-estimation.tf`, `outputs.tf`
+- `modules/tenant`: `variables.tf` (all tenant validation), `locals.tf`, `kms.tf`, `storage.tf`, `lf-tags.tf`, `permissions.tf`, `query.tf`, `iam-documents.tf`, `alarms.tf`, `main.tf`, `outputs.tf`
+- Examples: `defaults`, `complete`, `secondary`, `standalone-tenant`, `deployer`; tests in `test/` are plan-only (`make test`)
 
 ## Terraform Module Guide
 
@@ -211,7 +244,7 @@ func TestModuleExample(t *testing.T) {
 **Shared helpers:**
 
 ```go
-func generateTestName(prefix string) string { /* unique Brockhoff Terrafom module names */ }
+func generateTestName(prefix string) string { /* unique Brockhoff Terraform module names */ }
 func getBaseTerraformOptions(dir string) *terraform.Options { /* common options */ }
 func getRetryableErrors() map[string]string { /* retry logic for transient errors */ }
 ```
@@ -254,3 +287,83 @@ func getRetryableErrors() map[string]string { /* retry logic for transient error
 ---
 
 **Goal:** Simple, essential, and maintainable contract tests for Terraform modules.
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:46cd31e7 -->
+## Beads Issue Tracker
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+
+### Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+### Rules
+
+- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `bd prime` for detailed command reference and session close protocol
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md for details and anti-patterns.
+
+## Agent Context Profiles
+
+The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
+
+- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
+- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
+- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
+
+## Session Completion
+
+This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
+
+1. **File issues for remaining work** - Create beads for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **Handle git/sync by active profile**:
+   ```bash
+   # Conservative/minimal/default: report status and proposed commands; wait for approval.
+   git status
+
+   # Team-maintainer opt-in only, unless current instructions forbid it:
+   git pull --rebase
+   bd dolt push
+   git push
+   git status
+   ```
+5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
+
+**Critical rules:**
+- Explicit user or orchestrator instructions override this Beads block.
+- Do not commit or push without clear authority from the active profile or the current user request.
+- If a required sync or push is blocked, stop and report the exact command and error.
+<!-- END BEADS INTEGRATION -->
+
+<!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
+## Beads Issue Tracker
+
+Use Beads (`bd`) for durable task tracking in repositories that include it. Use the `beads` skill at `.agents/skills/beads/SKILL.md` (project install) or `~/.agents/skills/beads/SKILL.md` (global install) for Beads workflow guidance, then use the `bd` CLI for issue operations.
+
+### Quick Reference
+
+```bash
+bd ready                # Find available work
+bd show <id>            # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>           # Complete work
+bd prime                # Refresh Beads context
+```
+
+### Rules
+
+- Use `bd` for all task tracking; do not create markdown TODO lists.
+- Run `bd prime` when Beads context is missing or stale. Codex 0.129.0+ can load Beads context automatically through native hooks; use `/hooks` to inspect or toggle them.
+- Keep persistent project memory in Beads via `bd remember`; do not create ad hoc memory files.
+
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md for details and anti-patterns.
+<!-- END BEADS CODEX SETUP -->

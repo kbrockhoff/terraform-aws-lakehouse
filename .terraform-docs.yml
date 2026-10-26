@@ -27,6 +27,7 @@ settings:
   default: true
   escape: true
   indent: 2
+  lockfile: false
   required: true
   sensitive: true
   type: true

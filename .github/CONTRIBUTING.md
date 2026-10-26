@@ -44,8 +44,8 @@ all interactions.
 1. Clone your fork:
 
    ```bash
-   git clone https://github.com/YOUR-USERNAME/terraform-replace-me.git
-   cd terraform-replace-me
+   git clone https://github.com/YOUR-USERNAME/terraform-aws-lakehouse.git
+   cd terraform-aws-lakehouse
    ```
 
 2. Create a new branch:

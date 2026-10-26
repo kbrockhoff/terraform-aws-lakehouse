@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check plan-examples destroy-examples
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation
 
 # Default target
 .DEFAULT_GOAL := help
@@ -15,7 +15,7 @@ RESET := \033[0m
 
 ##@ Help
 help: ## Display this help message
-	@echo "$(CYAN)Terraform AWS S3 Backend Module$(RESET)"
+	@echo "$(CYAN)Terraform AWS Lakehouse Module$(RESET)"
 	@echo "$(CYAN)AI-optimized Makefile for efficient development$(RESET)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make $(CYAN)<target>$(RESET)\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  $(CYAN)%-15s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -29,11 +29,12 @@ pre-commit: ## Run lightweight validation before commit without push (format, va
 	@$(MAKE) docs
 	@echo "$(GREEN)✓ Pre-commit checks passed$(RESET)"
 
-validate: ## Run complete validation pipeline before commit with push (format, validate, lint, test, docs)
+validate: ## Run complete validation pipeline before commit with push (format, validate, lint, security scan, test, docs)
 	@echo "$(CYAN)Running complete validation pipeline...$(RESET)"
 	@$(MAKE) format
 	@$(MAKE) check
 	@$(MAKE) lint
+	@$(MAKE) security-scan
 	@$(MAKE) test
 	@$(MAKE) docs
 	@echo "$(GREEN)✓ All validations passed$(RESET)"
@@ -43,7 +44,9 @@ check: ## Run Terraform validation on all modules and examples
 	@terraform fmt -check -recursive || (echo "$(RED)✗ Code formatting issues found$(RESET)" && exit 1)
 	@echo "$(GREEN)✓ Code formatting OK$(RESET)"
 	@for dir in modules/*/; do \
-		if [ -f "$$dir/main.tf" ] || [ -f "$$dir/variables.tf" ] || [ -f "$$dir/outputs.tf" ]; then \
+		if grep -qs configuration_aliases "$$dir/versions.tf"; then \
+			echo "$(YELLOW)↷ $$dir needs provider aliases; validated through the examples$(RESET)"; \
+		elif [ -f "$$dir/main.tf" ] || [ -f "$$dir/variables.tf" ] || [ -f "$$dir/outputs.tf" ]; then \
 			echo "$(CYAN)Validating $$dir...$(RESET)"; \
 			(cd "$$dir" && terraform init -backend=false && terraform validate) || exit 1; \
 			echo "$(GREEN)✓ $$dir validation passed$(RESET)"; \
@@ -63,10 +66,21 @@ format: ## Format all Terraform files
 lint: ## Run TFLint on all Terraform files
 	@echo "$(CYAN)Running TFLint...$(RESET)"
 	@if command -v tflint >/dev/null 2>&1; then \
-		tflint --recursive; \
+		tflint --init >/dev/null || exit 1; \
+		tflint --recursive --minimum-failure-severity=error || { echo "$(RED)✗ TFLint found errors$(RESET)"; exit 1; }; \
 		echo "$(GREEN)✓ TFLint passed$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ TFLint not installed, skipping$(RESET)"; \
+	fi
+
+security-scan: ## Run the Checkov security scan with the same flags as CI (extra flags: CHECKOV_ARGS=...)
+	@echo "$(CYAN)Running Checkov...$(RESET)"
+	@if command -v checkov >/dev/null 2>&1; then \
+		checkov --framework terraform --directory . --output cli --skip-check CKV_AWS_144 --quiet --compact $(CHECKOV_ARGS) \
+			|| { echo "$(RED)✗ Checkov found failing checks$(RESET)"; exit 1; }; \
+		echo "$(GREEN)✓ Checkov passed$(RESET)"; \
+	else \
+		echo "$(RED)✗ checkov not installed (pip install checkov or uv tool install checkov)$(RESET)"; exit 1; \
 	fi
 
 ##@ Testing
@@ -76,20 +90,45 @@ test: check-aws ## Run all tests
 	@cd test && go test -v -timeout 30m -parallel 4
 	@echo "$(GREEN)✓ All tests passed$(RESET)"
 
-test-defaults: check-aws ## Run only defaults example test
+test-defaults: check-aws ## Run only defaults example tests
 	@echo "$(CYAN)Running defaults test...$(RESET)"
-	@cd test && go test -v -timeout 15m -run TestTerraformDefaultsExample
+	@cd test && go test -v -timeout 15m -run 'TestTerraformDefaultsExample|TestCostEstimationDisabled'
 	@echo "$(GREEN)✓ Defaults test passed$(RESET)"
 
-test-complete: check-aws ## Run only complete example test
+test-complete: check-aws ## Run only complete example tests
 	@echo "$(CYAN)Running complete test...$(RESET)"
-	@cd test && go test -v -timeout 15m -run TestTerraformCompleteExample
+	@cd test && go test -v -timeout 30m -run 'TestTerraformCompleteExample|TestCompleteExampleSecurityControls|TestComplianceDesignationGatesTenantKeys'
 	@echo "$(GREEN)✓ Complete test passed$(RESET)"
 
 test-enabled-false: check-aws ## Run only enabled=false test
 	@echo "$(CYAN)Running enabled=false test...$(RESET)"
 	@cd test && go test -v -timeout 15m -run TestEnabledFalse
 	@echo "$(GREEN)✓ Enabled=false test passed$(RESET)"
+
+test-tenancy: check-aws ## Run only tenancy tests (tenant isolation, type sync, zone override)
+	@echo "$(CYAN)Running tenancy tests (tenant isolation, type sync, zone override)...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestAddingTenantTouchesOnlyThatTenant|TestTenantTypeInSync|TestZoneOverrideWithoutConsumption'
+	@echo "$(GREEN)✓ test-tenancy passed$(RESET)"
+
+test-standalone: check-aws ## Run only standalone tenant tests
+	@echo "$(CYAN)Running standalone tenant tests...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestStandaloneTenant'
+	@echo "$(GREEN)✓ test-standalone passed$(RESET)"
+
+test-deployer: check-aws ## Run only deployer policy tests
+	@echo "$(CYAN)Running deployer policy tests...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestDeployerPolicies'
+	@echo "$(GREEN)✓ test-deployer passed$(RESET)"
+
+test-secondary: check-aws ## Run only secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)
+	@echo "$(CYAN)Running secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestSecondaryExampleSkipsAccountIntegration'
+	@echo "$(GREEN)✓ test-secondary passed$(RESET)"
+
+test-validation: check-aws ## Run only input validation tests
+	@echo "$(CYAN)Running input validation tests...$(RESET)"
+	@cd test && go test -v -timeout 30m -run 'TestInvalidInputsFailPlan|TestRegulatedDataInBaselineWarns'
+	@echo "$(GREEN)✓ test-validation passed$(RESET)"
 
 ##@ Documentation
 docs: ## Generate documentation
@@ -104,13 +143,21 @@ docs: ## Generate documentation
 ##@ Examples
 plan-examples: check-aws ## Plan all examples (useful for verification)
 	@echo "$(CYAN)Planning all examples...$(RESET)"
+	@# secondary and standalone-tenant need the caller to already be a Lake Formation data-lake
+	@# admin; set LAKEHOUSE_TEST_LF_ADMIN=true in such an account (see test/README.md)
 	@for dir in examples/*/; do \
+		vars=""; \
+		grep -qs 'variable "name_prefix"' "$$dir/variables.tf" && vars="-var=name_prefix=make-$$(date +%s)"; \
+		if [ "$${LAKEHOUSE_TEST_LF_ADMIN:-}" != "true" ]; then \
+			case "$$dir" in \
+				examples/secondary/) echo "$(YELLOW)↷ $$dir skipped (needs LAKEHOUSE_TEST_LF_ADMIN=true)$(RESET)"; continue ;; \
+				examples/standalone-tenant/) vars="$$vars -var=verify_deployer_admin=false" ;; \
+			esac; \
+		fi; \
 		echo "$(CYAN)Planning $$dir...$(RESET)"; \
 		(cd "$$dir" && \
 			terraform init && \
-			terraform plan \
-				-var="name_prefix=make-$$(date +%s)" \
-				-out=makefile.tfplan) || exit 1; \
+			terraform plan $$vars -out=makefile.tfplan) || exit 1; \
 		echo "$(GREEN)✓ $$dir plan successful$(RESET)"; \
 	done
 

@@ -87,3 +87,40 @@ data "aws_pricing_product" "sns_requests" {
     value = local.pricing_location
   }
 }
+
+# ----
+# Usage-based rates (S3 Tables, S3, Athena)
+# ----
+
+# S3 and S3 Tables usage types carry no region prefix in us-east-1; Athena's always do
+data "aws_pricing_product" "s3" {
+  for_each = local.pricing_enabled ? local.s3_usage_types : {}
+
+  service_code = "AmazonS3"
+
+  filters {
+    field = "regionCode"
+    value = var.region
+  }
+
+  filters {
+    field = "usagetype"
+    value = "${local.s3_usagetype_prefix}${each.value}"
+  }
+}
+
+data "aws_pricing_product" "athena_scanned" {
+  count = local.pricing_enabled ? 1 : 0
+
+  service_code = "AmazonAthena"
+
+  filters {
+    field = "regionCode"
+    value = var.region
+  }
+
+  filters {
+    field = "usagetype"
+    value = "${local.usagetype_region}-DataScannedInTB"
+  }
+}

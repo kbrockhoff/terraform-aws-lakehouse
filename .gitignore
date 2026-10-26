@@ -47,3 +47,4 @@ terraform.rc
 # AI agents
 .claude/settings.local.json
 
+makefile.tfplan
