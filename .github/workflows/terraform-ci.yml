@@ -69,6 +69,14 @@ jobs:
       if: matrix.terraform_version == 'latest'
       run: make security-scan CHECKOV_ARGS="--output sarif --output-file-path console,checkov-report.sarif"
 
+    # Checkov reports inline checkov:skip results as SARIF suppressions, which code scanning
+    # ignores and raises as alerts; the justified skip in source is the decision of record
+    - name: Drop suppressed results from SARIF report
+      if: always() && matrix.terraform_version == 'latest' && hashFiles('checkov-report.sarif') != ''
+      run: |
+        jq '.runs[].results |= map(select((.suppressions // []) | length == 0))' checkov-report.sarif > checkov-report.filtered.sarif
+        mv checkov-report.filtered.sarif checkov-report.sarif
+
     # Fork PRs get a read-only security-events token, so skip the upload there
     - name: Upload Checkov SARIF results
       if: always() && matrix.terraform_version == 'latest' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
