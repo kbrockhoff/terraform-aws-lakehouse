@@ -48,3 +48,6 @@ terraform.rc
 .claude/settings.local.json
 
 makefile.tfplan
+
+.beads.gate.lock
+
