@@ -26,7 +26,7 @@ precedence over this guide when the two conflict.
 - One-time CLI grants the provider cannot express yet (README, "Required one-time grants"): bucket catalog `DESCRIBE`, and platform tag permissions for non-creator admins
 
 ### Governed Access
-- LF-tags: per-tenant `<prefix>-tenant-<name>` (owned by the tenant submodule), and platform-owned `<prefix>-sensitivity`, `<prefix>-reg-<regulation>` (yes/no per regulation), `<prefix>-domain`, and `<prefix>-zone`
+- LF-tags: per-tenant `<prefix>-tenant-<name>` and, per row-filtered reader, `<prefix>-tenant-<name>-rf-<reader>` (no/yes; both owned by the tenant submodule), and platform-owned `<prefix>-sensitivity`, `<prefix>-reg-<regulation>` (yes/no per regulation), `<prefix>-domain`, and `<prefix>-zone`
 - Tenant databases carry the tenant's most restrictive labels plus their zone (fail closed); writer pipelines and stewards label tables and columns with roll-up (pipeline contract)
 - Grants are account-level `lf_tag_policy` grants, one per persona and resource type; every expression includes the tenant and zone terms (Lake Formation rejects grants scoped to a bucket catalog)
 - Column-level control through those tags; domain is an optional reader filter; row filters (data cells filters) are the only named-resource grants

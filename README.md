@@ -142,6 +142,7 @@ Override the zones with `zones_config`.
 | `<prefix>-sensitivity` | `governance_config.sensitivity_values`, least to most sensitive | Databases (tenant ceiling), then pipelines and stewards |
 | `<prefix>-reg-<regulation>` | `no`, `yes` | One key per `regulation_values` entry |
 | `<prefix>-domain` | `governance_config.domain_values` | Databases (tenant domain), optionally tables |
+| `<prefix>-tenant-<tenant>-rf-<reader>` | `no`, `yes` | The tenant submodule, one key per reader with `row_filters`: `no` on its databases, `yes` on the filtered tables. No persona can ASSOCIATE it |
 
 The `lf_tag_vocabulary` output lists the keys and values for pipelines.
 
@@ -163,7 +164,11 @@ Grants are account-level LF-tag policies; every expression includes `tenant = T`
 
 Column-level control is built in: a reader sees only the columns whose labels fall within its expression. A
 reader's `domains` list is an optional filter. Row filters (`row_filters`) are the only named-resource grants; they
-need the table to exist, so add them after writers create it. The module outputs least-privilege IAM policy
+need the table to exist, so add them after writers create it. Lake Formation combines a principal's grants, so a
+filtered reader that also held its tag grant on the table would see every row. The module therefore labels each
+filtered table `<prefix>-tenant-<tenant>-rf-<reader> = yes` and limits that reader's tag grant to tables labeled `no`
+(the database default): the reader reaches a filtered table only through its filter, and other readers are
+unaffected. The module outputs least-privilege IAM policy
 documents per persona (`persona_policy_json`) but never attaches them.
 
 ### Steward runbook

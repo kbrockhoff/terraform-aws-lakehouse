@@ -132,6 +132,28 @@ func TestTerraformCompleteExample(t *testing.T) {
 	}
 	assert.Equal(t, 4, semanticGrants, "database and table grants in sales and finance")
 
+	// Row filters (awslkhs-fysh): the filtered reader's tag grant requires its tenant-owned
+	// row-filter key to be "no", the filtered table carries "yes", and databases carry "no", so the
+	// data cells filter is that reader's only access to the table. Other readers are unaffected.
+	rfKey := key("tenant-sales-rf-gdpranalyst")
+	assert.Equal(t, []string{"no"}, gdpr[rfKey], "the filtered reader's grant skips row-filtered tables")
+	_, semanticHasRF := semantic[rfKey]
+	assert.False(t, semanticHasRF, "readers without filters keep their grants")
+	rfTag := changes[tenantPrefix("sales")+`aws_lakeformation_lf_tag.row_filter["gdpranalyst"]`]
+	require.NotNil(t, rfTag)
+	assert.Equal(t, []string{"no", "yes"}, strs(after(rfTag)["values"]))
+	filtered := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.row_filtered_table["gdpranalyst/curated/orders"]`])
+	require.NotNil(t, filtered)
+	assert.Equal(t, "orders", block(filtered, "table")["name"])
+	assert.Equal(t, "yes", list(filtered["lf_tag"])[0].(map[string]interface{})["value"])
+	salesDB := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.database["curated"]`])
+	dbLabels := map[string]string{}
+	for _, l := range list(salesDB["lf_tag"]) {
+		lm := l.(map[string]interface{})
+		dbLabels[lm["key"].(string)] = lm["value"].(string)
+	}
+	assert.Equal(t, "no", dbLabels[rfKey], "databases default every table to unfiltered")
+
 	// Databases carry their zone, which only platform admins can associate
 	for _, z := range []string{"raw", "curated", "consumption"} {
 		db := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.database["`+z+`"]`])

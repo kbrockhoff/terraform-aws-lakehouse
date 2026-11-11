@@ -36,9 +36,26 @@ locals {
     prefix      = "${var.name}/"
   }
 
+  # A reader with a row filter must not also hold the tag-based table grant on the filtered
+  # table: Lake Formation unions a principal's grants, so the all-rows tag grant would prevail
+  # over the filter (awslkhs-fysh). Expressions cannot exclude, so each such reader gets a
+  # tenant-owned key: databases carry "no" (inherited by every table), filtered tables carry
+  # "yes", and the reader's table grant requires "no".
+  row_filter_tag_key = {
+    for r in distinct([for f in values(var.tenant.row_filters) : f.reader]) : r => "${local.tenant_tag_key}-rf-${r}"
+  }
+  row_filtered_tables = {
+    for k in distinct([for f in values(var.tenant.row_filters) : "${f.reader}/${f.zone}/${f.table}"]) : k => {
+      reader = split("/", k)[0]
+      zone   = split("/", k)[1]
+      table  = split("/", k)[2]
+    }
+  }
+
   # Database labels: the tenant's most restrictive values, so unlabeled tables fail closed
   database_labels = merge(
     { (local.tenant_tag_key) = "member" },
+    { for r, key in local.row_filter_tag_key : key => "no" },
     { (var.platform.lf_tags.sensitivity.key) = var.tenant.sensitivity },
     { for r, key in var.platform.lf_tags.regulations : key => contains(var.tenant.regulations, r) ? "yes" : "no" },
     { (var.platform.lf_tags.domain.key) = local.domain },

@@ -29,5 +29,42 @@ resource "aws_lakeformation_resource_lf_tags" "database" {
     }
   }
 
-  depends_on = [aws_s3tables_namespace.this, aws_lakeformation_lf_tag.tenant]
+  depends_on = [aws_s3tables_namespace.this, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter]
+}
+
+# Row-filter exclusion keys (see local.row_filter_tag_key). Owned by this tenant like its tenant
+# key; no persona can associate them, so only this submodule decides which tables are filtered.
+resource "aws_lakeformation_lf_tag" "row_filter" {
+  for_each = local.row_filter_tag_key
+
+  key    = each.value
+  values = ["no", "yes"]
+
+  lifecycle {
+    precondition {
+      condition     = length(each.value) <= 128
+      error_message = "Tenant ${var.name}: LF-tag key ${each.value} exceeds 128 characters; shorten the reader key ${each.key}."
+    }
+  }
+
+  depends_on = [terraform_data.admin_guard]
+}
+
+# Marks each row-filtered table for its reader, so the reader's tag grant skips it and the data
+# cells filter is the reader's only access. Like row filters, it needs the table to exist.
+resource "aws_lakeformation_resource_lf_tags" "row_filtered_table" {
+  for_each = local.row_filtered_tables
+
+  table {
+    catalog_id    = local.catalog_id[each.value.zone]
+    database_name = var.name
+    name          = each.value.table
+  }
+
+  lf_tag {
+    key   = aws_lakeformation_lf_tag.row_filter[each.value.reader].key
+    value = "yes"
+  }
+
+  depends_on = [aws_lakeformation_resource_lf_tags.database, terraform_data.admin_guard]
 }
