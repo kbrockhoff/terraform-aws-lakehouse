@@ -14,6 +14,7 @@ module "catalog_integration" {
   region                                = local.region
   tags                                  = local.common_tags
   admin_principal_arns                  = var.governance_config.admin_principal_arns
+  read_only_admin_principal_arns        = var.governance_config.read_only_admin_principal_arns
   deployer_role_arn                     = local.deployer_role_arn
   allow_full_table_external_data_access = var.catalog_integration_config.allow_full_table_external_data_access
 }

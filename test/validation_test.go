@@ -110,6 +110,14 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 			"must be STANDARD or INTELLIGENT_TIERING"},
 		{"None without required tag enforcement", map[string]interface{}{"environment_type": "None"},
 			"required_tags_config.enforced is required"},
+		{"invalid read-only admin ARN", map[string]interface{}{"governance_config": map[string]interface{}{
+			"read_only_admin_principal_arns": []string{"not-an-arn"}}},
+			"Every read_only_admin_principal_arns entry must be an IAM role or user ARN"},
+		{"principal both admin and read-only admin", map[string]interface{}{
+			"admin_principal_arns": []string{"arn:aws:iam::123456789012:role/lakehouse-admin"},
+			"governance_config": map[string]interface{}{
+				"read_only_admin_principal_arns": []string{"arn:aws:iam::123456789012:role/lakehouse-admin"}}},
+			"cannot be both a data-lake admin and a read-only admin"},
 	}
 
 	for _, c := range cases {

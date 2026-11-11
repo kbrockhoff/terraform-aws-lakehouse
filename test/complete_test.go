@@ -154,6 +154,10 @@ func TestTerraformCompleteExample(t *testing.T) {
 	}
 	assert.Equal(t, "no", dbLabels[rfKey], "databases default every table to unfiltered")
 
+	// Read-only admins are authoritative like admins, so applies no longer erase them
+	settings := after(changes[shared+`module.catalog_integration[0].aws_lakeformation_data_lake_settings.this`])
+	assert.Equal(t, []string{"arn:aws:iam::123456789012:role/lakehouse-auditor"}, strs(settings["read_only_admins"]))
+
 	// Databases carry their zone, which only platform admins can associate
 	for _, z := range []string{"raw", "curated", "consumption"} {
 		db := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.database["`+z+`"]`])
