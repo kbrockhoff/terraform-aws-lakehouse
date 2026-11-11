@@ -1,0 +1,71 @@
+# Probe-mode matrix template (spec 002, FR-027 to FR-031). Copy it, replace the identifiers with
+# your deployment's, and run `make verify-probe MATRIX=<your file>`.
+#
+# Probe mode never changes the target:
+# - The runner must be read-only in IAM (lfverify preflight simulates ~40 mutating actions and
+#   aborts if any is allowed) and listed in the deployment's
+#   governance_config.read_only_admin_principal_arns.
+# - Each persona role must already trust the runner role, for session names lfverify-*; the
+#   harness never edits trust policies.
+# - Every persona session carries a read-only session policy, so even a writer persona cannot
+#   write. Set LFVERIFY_PROBE_RESULTS_BUCKETS and LFVERIFY_PROBE_KMS_KEYS to the workgroups'
+#   result buckets and keys so queries can store results.
+# - Write, alter, drop, and grant expectations use `expect: inspect`: the runner compares the
+#   persona's effective permissions with expect_permissions instead of attempting them.
+# - Reports never contain data values. Row checks use a structured row_predicate evaluated in
+#   memory, and max_rows instead of expected key values.
+mode: probe
+defaults:
+  query_row_limit: 10
+  scan_cap_bytes: 1073741824 # 1 GB per run (FR-031)
+
+personas:
+  - key: sales_eu_analyst
+    role_arn: arn:aws:iam::123456789012:role/sales-eu-analyst
+    cases:
+      - id: eu-analyst-rows
+        style: label
+        op: select
+        resource:
+          catalog_id: "123456789012:s3tablescatalog/prod-curated"
+          database: sales
+          table: orders
+          workgroup: prod-sales
+        expect: allowed
+        row_predicate: { column: region, op: eq, values: [EU] }
+        rule: Row filter limits the analyst to EU orders
+      - id: eu-analyst-no-finance
+        style: label
+        op: get_database
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-curated", database: finance }
+        expect: denied
+        rule: Tenant isolation
+
+  - key: semantic_layer
+    role_arn: arn:aws:iam::123456789012:role/semantic-layer
+    cases:
+      - id: semantic-schema
+        style: label
+        op: get_table
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-consumption", database: sales, table: revenue }
+        expect: allowed
+        expect_columns: [day, region, revenue]
+        rule: Confidential and regulated columns are hidden
+      - id: semantic-row-cap
+        style: label
+        op: count
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-consumption", database: sales, table: revenue, workgroup: prod-sales }
+        expect: allowed
+        max_rows: 100000000
+        rule: Count only; no values leave the query engine
+
+  - key: sales_ingest
+    role_arn: arn:aws:iam::123456789012:role/sales-ingest
+    cases:
+      - id: ingest-writes-by-inspection
+        style: label
+        op: insert
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-curated", database: sales, table: orders }
+        expect: inspect
+        expect_permissions: [ALTER, DELETE, DESCRIBE, INSERT, SELECT]
+        rule: Writers hold SELECT, INSERT, DELETE, ALTER, and DESCRIBE, and no DROP in Enhanced

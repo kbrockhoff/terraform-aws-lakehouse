@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -36,6 +36,7 @@ validate: ## Run complete validation pipeline before commit with push (format, v
 	@$(MAKE) lint
 	@$(MAKE) security-scan
 	@$(MAKE) test
+	@$(MAKE) test-verify
 	@$(MAKE) docs
 	@echo "$(GREEN)✓ All validations passed$(RESET)"
 
@@ -57,6 +58,9 @@ check: ## Run Terraform validation on all modules and examples
 		(cd "$$dir" && terraform init -backend=false && terraform validate) || exit 1; \
 		echo "$(GREEN)✓ $$dir validation passed$(RESET)"; \
 	done
+	@echo "$(CYAN)Validating verify/fixture/...$(RESET)"
+	@(cd verify/fixture && terraform init -backend=false && terraform validate) || exit 1
+	@echo "$(GREEN)✓ verify/fixture/ validation passed$(RESET)"
 
 format: ## Format all Terraform files
 	@echo "$(CYAN)Formatting Terraform files...$(RESET)"
@@ -129,6 +133,104 @@ test-validation: check-aws ## Run only input validation tests
 	@echo "$(CYAN)Running input validation tests...$(RESET)"
 	@cd test && go test -v -timeout 30m -run 'TestInvalidInputsFailPlan|TestRegulatedDataInBaselineWarns'
 	@echo "$(GREEN)✓ test-validation passed$(RESET)"
+
+test-verify: ## Run lfverify vet and unit tests (offline, no AWS credentials)
+	@echo "$(CYAN)Running lfverify unit tests...$(RESET)"
+	@cd verify && go vet ./... && go test ./...
+	@echo "$(GREEN)✓ test-verify passed$(RESET)"
+
+test-verify-fixture: check-aws ## Run only the plan-only access-verification fixture tests
+	@echo "$(CYAN)Running access-verification fixture tests...$(RESET)"
+	@cd test && go test -v -timeout 20m -run TestVerifyFixture
+	@echo "$(GREEN)✓ test-verify-fixture passed$(RESET)"
+
+##@ Access verification (live AWS runs; never part of validate or test)
+# Full mode deploys verify/fixture into an allow-listed sandbox (verify/sandbox-accounts.txt),
+# runs the persona matrix, and destroys everything. Probe mode observes an existing deployment
+# without changing it. See verify/README.md.
+VERIFY_RUN_FILE := verify/out/.last-run-id
+RUN_ID ?= $(shell cat $(VERIFY_RUN_FILE) 2>/dev/null)
+VERIFY_OUT = $(CURDIR)/verify/out/$(RUN_ID)
+LFVERIFY := $(CURDIR)/verify/out/lfverify
+VERIFY_TF = cd verify/fixture && TF_DATA_DIR=$(VERIFY_OUT)/.terraform terraform
+VERIFY_VARS = -var run_id=$(RUN_ID) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
+VERIFY_MANIFEST = $(VERIFY_OUT)/manifest.json
+INJECT ?=
+INJECT_PERSONA ?=
+
+verify-build: ## Build the lfverify CLI into verify/out/lfverify
+	@cd verify && go build -o out/lfverify ./cmd/lfverify
+
+verify-new-run: ## Start a new run ID (six hex characters) and remember it
+	@mkdir -p verify/out && openssl rand -hex 3 > $(VERIFY_RUN_FILE) && echo "$(CYAN)Run ID: $$(cat $(VERIFY_RUN_FILE))$(RESET)"
+
+verify-init:
+	@test -n "$(RUN_ID)" || { echo "$(RED)✗ RUN_ID is not set; run make verify-new-run$(RESET)"; exit 1; }
+	@mkdir -p $(VERIFY_OUT)
+	@$(VERIFY_TF) init -input=false -reconfigure -backend-config=path=$(VERIFY_OUT)/terraform.tfstate >/dev/null
+
+verify-up: check-aws verify-build verify-init ## Preflight, then apply fixture stage 1
+	@$(LFVERIFY) preflight --mode full --run-id $(RUN_ID) --out $(VERIFY_OUT) --allow-list $(CURDIR)/verify/sandbox-accounts.txt
+	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=1
+	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
+	@echo "$(GREEN)✓ Fixture stage 1 applied (run $(RUN_ID))$(RESET)"
+
+verify-seed: check-aws verify-build verify-init ## Seed fixture tables, then apply stage 2
+	@$(LFVERIFY) seed --manifest $(VERIFY_MANIFEST) --out $(VERIFY_OUT)
+	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=2
+	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
+	@$(LFVERIFY) preflight --mode full --run-id $(RUN_ID) --out $(VERIFY_OUT) --manifest $(VERIFY_MANIFEST) --allow-list $(CURDIR)/verify/sandbox-accounts.txt
+	@echo "$(GREEN)✓ Fixture seeded and stage 2 applied (run $(RUN_ID))$(RESET)"
+
+verify-run: check-aws verify-build ## Run the full-mode matrix against the applied fixture
+	@$(LFVERIFY) run --mode full --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(VERIFY_MANIFEST) --out $(VERIFY_OUT)
+
+verify-apply: verify-init ## Re-apply stage 2 with an overlay (INJECT, INJECT_PERSONA); used by detect
+	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=2 -var inject=$(INJECT) -var inject_persona=$(INJECT_PERSONA)
+	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
+
+verify-down: check-aws verify-build verify-init ## Destroy the fixture, sweep leftovers, restore data-lake settings
+	@# Stage 1 removes the table-level labels, grants, and filters while their tables exist; then
+	@# the seeded tables are dropped, because namespaces holding tables cannot be destroyed
+	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=1 || echo "$(YELLOW)⚠ stage 1 apply failed; continuing teardown$(RESET)"
+	@$(LFVERIFY) cleanup --tables-only --run-id $(RUN_ID) --out $(VERIFY_OUT)
+	@$(VERIFY_TF) destroy -input=false -auto-approve $(VERIFY_VARS) -var stage=2 || echo "$(YELLOW)⚠ terraform destroy failed; cleanup sweeps by prefix$(RESET)"
+	@$(LFVERIFY) cleanup --run-id $(RUN_ID) --out $(VERIFY_OUT)
+	@echo "$(GREEN)✓ Run $(RUN_ID) torn down$(RESET)"
+
+verify-full: check-aws ## Full mode: new run, deploy, seed, run, and always tear down
+	@$(MAKE) -s verify-new-run
+	@run=$$(cat $(VERIFY_RUN_FILE)); start=$$(date +%s); \
+	  $(MAKE) verify-up RUN_ID=$$run && $(MAKE) verify-seed RUN_ID=$$run && $(MAKE) verify-run RUN_ID=$$run; status=$$?; \
+	  $(MAKE) verify-down RUN_ID=$$run; \
+	  echo "$(CYAN)Run $$run finished in $$(( $$(date +%s) - start ))s with status $$status$(RESET)"; exit $$status
+
+verify-detect: check-aws ## Full mode: apply each misconfiguration overlay and require a failing case
+	@$(MAKE) -s verify-new-run
+	@run=$$(cat $(VERIFY_RUN_FILE)); \
+	  $(MAKE) verify-up RUN_ID=$$run && $(MAKE) verify-seed RUN_ID=$$run && \
+	  $(LFVERIFY) detect --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(CURDIR)/verify/out/$$run/manifest.json --out $(CURDIR)/verify/out/$$run \
+	    --apply-cmd "$(MAKE) -s -C $(CURDIR) verify-apply RUN_ID={run} INJECT={inject} INJECT_PERSONA={persona}"; status=$$?; \
+	  $(MAKE) verify-down RUN_ID=$$run; exit $$status
+
+verify-cleanup: check-aws verify-build ## Sweep an interrupted run by prefix and restore settings (RUN_ID=...)
+	@test -n "$(RUN_ID)" || { echo "$(RED)✗ RUN_ID is required$(RESET)"; exit 1; }
+	@$(LFVERIFY) cleanup --run-id $(RUN_ID) --out $(VERIFY_OUT)
+
+verify-probe: check-aws verify-build ## Probe mode against an existing deployment (MATRIX=...); read-only
+	@test -n "$(MATRIX)" || { echo "$(RED)✗ MATRIX is required$(RESET)"; exit 1; }
+	@$(MAKE) -s verify-new-run
+	@run=$$(cat $(VERIFY_RUN_FILE)); out=$(CURDIR)/verify/out/$$run; \
+	  $(LFVERIFY) preflight --mode probe --matrix $(abspath $(MATRIX)) || exit $$?; \
+	  $(LFVERIFY) snapshot --matrix $(abspath $(MATRIX)) --name before --run-id $$run --out $$out || exit $$?; \
+	  $(LFVERIFY) run --mode probe --matrix $(abspath $(MATRIX)) --run-id $$run --out $$out; status=$$?; \
+	  $(LFVERIFY) snapshot --matrix $(abspath $(MATRIX)) --name after --run-id $$run --out $$out && \
+	  $(LFVERIFY) diff --run-id $$run --out $$out || status=1; \
+	  echo "$(CYAN)Probe run $$run: audit with make verify-probe-audit RUN_ID=$$run after 15 minutes$(RESET)"; exit $$status
+
+verify-probe-audit: check-aws verify-build ## List change events from a probe run's sessions (RUN_ID=...)
+	@test -n "$(RUN_ID)" || { echo "$(RED)✗ RUN_ID is required$(RESET)"; exit 1; }
+	@$(LFVERIFY) audit --run-id $(RUN_ID) $(if $(SINCE),--since $(SINCE),)
 
 ##@ Documentation
 docs: ## Generate documentation

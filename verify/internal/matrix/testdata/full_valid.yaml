@@ -1,0 +1,20 @@
+mode: full
+personas:
+  - key: reader_single
+    cases:
+      - id: rs-select-orders
+        op: count
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 200 }
+        rule: SELECT on a table allows queries
+      - id: rs-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+      - id: rs-relabel
+        style: label
+        phase: scenario
+        op: get_table
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
