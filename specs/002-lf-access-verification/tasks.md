@@ -715,7 +715,7 @@ SLOs.
 
   Update the root `README.md` with a short "Access verification" section that links to
   `verify/README.md`.
-- [ ] T057 [P] Record deviations from plan.md found during implementation, such as an iceberg-go
+- [x] T057 [P] Record deviations from plan.md found during implementation, such as an iceberg-go
   fallback or classifier strings, in `specs/002-lf-access-verification/plan.md` under Complexity
   Tracking.
 - [ ] T058 Update beads:

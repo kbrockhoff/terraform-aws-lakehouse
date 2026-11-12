@@ -483,3 +483,75 @@ module and Terraform root.
 4. The Athena error text for column-level denial. The documented behavior is that excluded columns
    are absent from the schema, so `SELECT *` omits them and a named column fails with
    `COLUMN_NOT_FOUND`. `classify` treats both as satisfying "denied or omitted" (FR-017).
+
+**Risk outcomes**, observed in dev-green runs `36ea41` through `513eb0` (2026-11-11 to 2026-11-12):
+
+1. Read-only administrators see the bucket catalogs, as documented.
+2. The `admin` persona can `DESCRIBE` tables it did not create but cannot query them. The
+   documented expectation of no implicit access was half right; the matrix records both.
+3. iceberg-go appends work through the S3 Tables Iceberg REST endpoint with Lake Formation
+   integration enabled. No fallback was needed.
+4. A named excluded column fails with `COLUMN_NOT_FOUND: Column 'ssn' cannot be resolved or
+   requester is not authorized to access requested resources`, and `SELECT *` omits it.
+
+### Deviations found during implementation
+
+Recorded for T057 (2026-11-12). The plan text above is unchanged. Where they disagree, this
+section and `verify/README.md` describe what was built.
+
+**Module**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D1 | One module change (item 1) | A second change: each reader with row filters gets a tenant-owned LF-tag key `<prefix>-tenant-<tenant>-rf-<reader>` (`no`/`yes`). Databases carry `no`, filtered tables `yes`, and that reader's tag grant requires `no`. Spec 001 FR-012 is amended. Commit `bca2b33`, `awslkhs-fysh`. | Run `36ea41` showed module `row_filters` restricted nothing: the reader's tag-based table grant also covered the filtered table, and Lake Formation unions grants. A row-filtered reader saw all 200 rows. |
+
+**Dependencies**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D2 | `aws-sdk-go-v2` at `test/go.mod`'s minor versions (core v1.42.0) | Core v1.48.0 and current service clients; adds `arrow-go/v18` v18.8.0 and the `kms` client | iceberg-go v0.7.0 requires core >= v1.45.1. Arrow builds the record batches iceberg-go appends; `kms` serves the cleanup sweep (D11). |
+| D3 | `gosec` through `make lint-verify` | Not built. `make test-verify` runs `go vet` and the unit tests. | Deferred to `awslkhs-46y5`. |
+
+**Fixture**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D4 | `environment_type = "Testing"` | `"Ephemeral"` | Gives the results bucket `force_destroy` and short retention, which a disposable fixture needs. |
+| D5 | Role ARNs passed from `aws_iam_role` attributes | Role ARNs derived from fixture-assigned names (`local.role_arn`); `module.lakehouse` depends on the roles, and every fixture `aws_lakeformation_*` resource depends on `module.lakehouse` | The module keys steward resources by principal ARN, and `for_each` keys cannot be unknown at plan time. Run `92eafa` created a fixture LF-tag before the runner became an admin. |
+| D6 | The fixture owner, as data-lake admin, creates tables | New `grants-owner.tf` grants the runner `ALL` with grant option on each database and its tables | Admins get no implicit permissions on databases they did not create. Run `c39bc9` failed with no `CREATE_TABLE`. |
+| D7 | Not planned | `seed` grants `DESCRIBE` on each bucket catalog to `<account>:IAMPrincipals` | It is the module README's one-time grant, which the provider cannot express (`awslkhs-qrp`). Without it every Athena query fails with `CATALOG_NOT_FOUND`. |
+| D8 | Metadata personas: one LF-tag grant over `tenant ∈ {alpha, beta}` | One grant per tenant | Each tenant has its own tag key, and keys in one expression are AND-ed. |
+| D9 | `customers` and `scratch` inherit the tenant's `restricted` label | Labeled `internal` | Relabeling a table that was already restricted to `restricted` changed nothing, so the scenario proved nothing. |
+| D10 | Persona roles trust only the runner | An extra `ProbeRunners` statement trusts `var.read_only_runner_arns` for session names `lfverify-*` | Needed for the full/probe cross-check (T051). |
+
+**Teardown and safety**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D11 | Destroy at `stage = 2`, then `cleanup`. The sweep covers filters, grants, LF-tags, tables, namespaces, buckets, workgroups, results, and roles. | `verify-down`: apply `stage = 1`, `cleanup --tables-only`, `terraform destroy`, then `cleanup`. The sweep adds the account integration (only when the registration role carries the run prefix) and KMS keys tagged with the run, and revokes wildcard table grants without the `ALL_TABLES` name. | Namespaces that still hold tables cannot be destroyed (run `36ea41`). Refresh failed on tag assignments of tables already dropped, and revoking a wildcard grant listed with a name failed (run `24b160`). |
+| D12 | Not planned | The runner re-creates and re-seeds `scratch` after the drop cases | Run `790b58`: a dropped `scratch` broke the teardown refresh. |
+| D13 | `verify-full` always runs destroy and cleanup | Teardown is skipped when preflight refused: `verify-down` requires `settings.before.json` | T053: after a refused preflight, the `stage = 1` apply would have deployed into the refused account (FR-003). |
+| D14 | Preflight refuses any admin outside `{runner}` | Also allows the fixture's own `admin` persona when rerun with a manifest | Preflight reruns after stage 2, when the fixture's admin is already listed. |
+
+**Classification**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D15 | Denial strings listed under Outcome classification | Adds `insufficient permissions to execute`, `does not have any privilege`, `CATALOG_NOT_FOUND`, `(table\|schema\|database) … does not exist\|not found`, and `column … cannot be resolved` | The first sandbox runs left real denials unclassified. These are the phrasings observed. |
+
+**Probe mode**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D16 | Inspection calls `ListPermissions(Principal = persona)` | Inspection combines the unfiltered listing, filtered by principal on the client, with `ListPermissions` per table resource. A `TableWithColumns` named `ALL_TABLES` counts as a wildcard. | A principal filter requires a resource. The unfiltered listing omits table-level grants in federated S3 Tables catalogs. |
+| D17 | Runner: `ReadOnlyAccess` + `AssumeRole` + `SimulatePrincipalPolicy` | Also `lakeformation:GetDataAccess` | Lake Formation requires it to list permissions on federated databases; `ReadOnlyAccess` lacks it. |
+| D18 | Snapshot compares settings as returned | Sorts admins, read-only admins, and trusted owners first, and adds per-table permission listings | Lake Formation returns the principal lists in no stable order, which made unchanged settings differ. Per-table listings close the gap from D16. |
+| D19 | The audit expects zero `readOnly = false` events | `StartQueryExecution` and `StopQueryExecution` are counted separately as query starts | CloudTrail marks Athena query starts as not read-only; probe mode runs read-only queries by design. |
+| D20 | Subcommands as listed | Adds `lfverify probe-matrix`, which derives a probe matrix from `full.yaml` and a manifest | Needed for the full/probe cross-check (T051). |
+
+**Matrix and coverage**
+
+| # | Planned | Built | Why |
+|---|---------|-------|-----|
+| D21 | Documented expectations | Changed with dated notes: `admin-add-lf-tags` is denied (admins cannot associate LF-tags another principal created), `admin-exclude-partition` is allowed (the rule applies to Hive partition keys, not Iceberg partition columns), and revoke cases target `scratch`. Gamma-denied cases were added for the writers and the column, row, and cell readers; the matrix has 211 cases. | Observed in run `36ea41`. The revoke and grant cases raced on one target. |
+| D22 | Gamma-denied cases prove Lake Formation denial in both styles | In the label style, gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style still shows the Lake Formation denial. | The module's persona policies scope Athena to the tenant's workgroups. The label-style cases still pass, but they prove the IAM boundary, not the Lake Formation one. |
