@@ -122,12 +122,15 @@ func (s *Sweeper) filters(ctx context.Context) error {
 	return nil
 }
 
+// grants revokes every grant to a run role. A failed revoke does not stop the step, so one bad
+// grant cannot leave the rest in place (observed in T052).
 func (s *Sweeper) grants(ctx context.Context) error {
+	var errs []error
 	p := lakeformation.NewListPermissionsPaginator(s.LF, &lakeformation.ListPermissionsInput{})
 	for p.HasMorePages() {
 		page, err := p.NextPage(ctx)
 		if err != nil {
-			return err
+			return errors.Join(append(errs, err)...)
 		}
 		for _, g := range page.PrincipalResourcePermissions {
 			id := aws.ToString(g.Principal.DataLakePrincipalIdentifier)
@@ -139,16 +142,25 @@ func (s *Sweeper) grants(ctx context.Context) error {
 				Principal: g.Principal, Resource: revocable(g.Resource), Permissions: g.Permissions,
 				PermissionsWithGrantOption: g.PermissionsWithGrantOption,
 			}); err != nil && !notFound(err) {
-				return err
+				errs = append(errs, fmt.Errorf("revoke %v from %s: %w", g.Permissions, id, err))
 			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
-// revocable adapts a listed resource for RevokePermissions: ListPermissions reports all-tables
-// grants with both a table name and a wildcard, which RevokePermissions rejects.
+// revocable adapts a listed resource for RevokePermissions, which rejects all-tables grants in
+// the forms ListPermissions reports them:
+//   - a Table with both a name and a wildcard;
+//   - a TableWithColumns on the table name ALL_TABLES with a column wildcard, which is how
+//     all-tables SELECT is listed ("Table not found" otherwise, observed in T052).
 func revocable(r *lftypes.Resource) *lftypes.Resource {
+	if r != nil && r.TableWithColumns != nil && aws.ToString(r.TableWithColumns.Name) == "ALL_TABLES" {
+		t := r.TableWithColumns
+		return &lftypes.Resource{Table: &lftypes.TableResource{
+			CatalogId: t.CatalogId, DatabaseName: t.DatabaseName, TableWildcard: &lftypes.TableWildcard{},
+		}}
+	}
 	if r == nil || r.Table == nil || r.Table.TableWildcard == nil {
 		return r
 	}

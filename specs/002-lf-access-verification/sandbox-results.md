@@ -16,8 +16,8 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 |-------|--------|----------|
 | Writer `INSERT`, `UPDATE`, and `DELETE` (11 cases) | Athena DML into S3 Tables fails with `INTERNAL_ERROR_QUERY_ENGINE`, so the cases report not run | awslkhs-cdq |
 | Reader `UPDATE` and `DELETE` are denied (`rm-update`, `rm-delete`, both styles) | Same engine error; a denial cannot be told apart from the engine fault | awslkhs-cdq |
-| Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22) | — |
-| Missing-grant detection in the label style | The label-style grants belong to the module, so `missing_grant` overlays remove only named grants. Label detection is covered by `drop_column_restriction`, `drop_row_filter`, and `open_default` | — |
+| Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22) | awslkhs-ptos |
+| Missing-grant detection in the label style | The label-style grants belong to the module, so `missing_grant` overlays remove only named grants. Label detection is covered by `drop_column_restriction`, `drop_row_filter`, and `open_default` | awslkhs-sr2a |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |

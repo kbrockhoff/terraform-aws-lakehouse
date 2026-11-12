@@ -725,10 +725,19 @@ SLOs.
 - [x] T057 [P] Record deviations from plan.md found during implementation, such as an iceberg-go
   fallback or classifier strings, in `specs/002-lf-access-verification/plan.md` under Complexity
   Tracking.
-- [ ] T058 Update beads:
+- [x] T058 Update beads:
   - close `awslkhs-t7d` after T007–T011 merge;
   - add a note to `awslkhs-lfj` with the metadata-persona findings from T048;
   - file new beads for any not-run or failed case that the harness exposed in the module.
+  - Result (2026-11-12):
+    - `awslkhs-t7d` and `awslkhs-fysh` were closed with their fixes (`aab5dc5`, `bca2b33`).
+    - `awslkhs-lfj` has the metadata-persona findings, including that a metadata writer that
+      creates a table receives SELECT on it as its creator.
+    - The only not-run cases are the 14 DML cases; `awslkhs-cdq` notes them, including that reader
+      DML denials cannot be verified while it is open. `awslkhs-92h` notes that row filters are
+      verified for reads. No case failed, and no new module bug was found.
+    - New harness coverage beads: `awslkhs-ptos` (label-style Lake Formation denial on gamma),
+      `awslkhs-sr2a` (label-style missing-grant detection), and `awslkhs-46y5` (gosec).
 - [ ] T059 Final review against spec success criteria. Tick each box in `spec.md` Success
   Criteria only with evidence from `sandbox-results.md` or the `make validate` output.
 

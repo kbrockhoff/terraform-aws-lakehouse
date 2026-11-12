@@ -191,3 +191,21 @@ func TestRevocableDropsNameFromWildcard(t *testing.T) {
 		t.Error("named table grants pass through")
 	}
 }
+
+func TestRevocableAllTablesColumnGrant(t *testing.T) {
+	r := &lftypes.Resource{TableWithColumns: &lftypes.TableWithColumnsResource{
+		CatalogId: aws.String("123:s3tablescatalog/b"), DatabaseName: aws.String("n_alpha"),
+		Name: aws.String("ALL_TABLES"), ColumnWildcard: &lftypes.ColumnWildcard{},
+	}}
+	got := revocable(r)
+	if got.TableWithColumns != nil || got.Table == nil || got.Table.TableWildcard == nil || got.Table.Name != nil {
+		t.Fatalf("want a table wildcard, got %+v", got)
+	}
+	if aws.ToString(got.Table.CatalogId) != "123:s3tablescatalog/b" || aws.ToString(got.Table.DatabaseName) != "n_alpha" {
+		t.Errorf("catalog or database lost: %+v", got.Table)
+	}
+	cols := &lftypes.Resource{TableWithColumns: &lftypes.TableWithColumnsResource{Name: aws.String("orders")}}
+	if revocable(cols) != cols {
+		t.Error("column grants on a named table pass through")
+	}
+}
