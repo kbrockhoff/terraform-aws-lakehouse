@@ -706,9 +706,13 @@ SLOs.
 
 ## Phase 6: Polish & Validation
 
-- [ ] T055 Run `make validate` (format, check, lint, security-scan, test, test-verify, docs). All
+- [x] T055 Run `make validate` (format, check, lint, security-scan, test, test-verify, docs). All
   steps must run and pass; a target skipped for a missing tool does not count.
-- [ ] T056 [P] Update `AGENTS.md` and `CLAUDE.md` together:
+  - Result (2026-11-12): every step ran and passed, with no tool skipped. Checkov: 773 passed,
+    0 failed. `test`: all plan-only tests pass in 827 s, including the 5 `TestVerifyFixture`
+    subtests. `TestSecondaryExampleSkipsAccountIntegration` skips by design unless
+    `LAKEHOUSE_TEST_LF_ADMIN=true`. `format` and `docs` changed no files.
+- [x] T056 [P] Update `AGENTS.md` and `CLAUDE.md` together:
   - add the `verify/` directory to the layout;
   - add the rule that live `verify-*` targets never run from `make validate`;
   - add the persona key list.

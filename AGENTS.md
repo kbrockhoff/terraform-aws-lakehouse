@@ -46,6 +46,16 @@ precedence over this guide when the two conflict.
 - `modules/tenant`: `variables.tf` (all tenant validation), `locals.tf`, `kms.tf`, `storage.tf`, `lf-tags.tf`, `permissions.tf`, `query.tf`, `iam-documents.tf`, `alarms.tf`, `main.tf`, `outputs.tf`
 - Examples: `defaults`, `complete`, `secondary`, `standalone-tenant`, `deployer`; tests in `test/` are plan-only (`make test`)
 
+### Access Verification Harness
+- `verify/` holds `lfverify`, a Go CLI in its own Go module that proves the Lake Formation grants give each persona exactly the intended access by assuming persona roles and attempting real calls (spec `specs/002-lf-access-verification`, guide `verify/README.md`)
+  - `cmd/lfverify` (subcommands `preflight`, `seed`, `run`, `detect`, `snapshot`, `diff`, `audit`, `cleanup`, `probe-matrix`); `internal/` packages `matrix`, `classify`, `identity`, `ops`, `predicate`, `runner`, `seed`, `inspect`, `snapshot`, `preflight`, `manifest`, `report`
+  - `matrix/full.yaml` (full-mode expectations) and `matrix/probe.example.yaml`; change an expectation only deliberately, with a dated `note:`, never to make a run pass
+  - `fixture/`: a Terraform root that calls this module (`source = "../.."`) plus a named-resource baseline, applied in two stages (`stage` 1, then 2 after `seed`), with `inject` overlays for detection
+  - `sandbox-accounts.txt`: the full-mode allow-list
+- Persona keys, shared by the fixture, the manifest, matrix files, and session names: `admin`, `roadmin`, `meta_reader`, `meta_writer`, `reader_multi`, `reader_single`, `writer_multi`, `writer_single`, `reader_cols`, `reader_rows`, `reader_cells`, `control`, `steward` (held in reserve; not in the matrix)
+- `make test-verify` (offline unit tests) runs in `make validate`; `make test-verify-fixture` (plan-only) runs in `make test`
+- Live `verify-*` targets (`verify-full`, `verify-detect`, `verify-probe`, and the step targets) deploy into or read from real accounts and never run from `make validate` or `make test`. Full mode runs only in allow-listed sandbox accounts and refuses production
+
 ## Terraform Module Guide
 
 ### Core Principles
@@ -97,6 +107,7 @@ module "monolith" { create_vpc = true; create_db = true; create_lb = true; ... }
 /examples/         # Usage demos
 /modules/          # Optional submodules
 /test/             # Automated tests
+/verify/           # Access verification harness (lfverify)
 ```
 
 ### AWS Best Practices
@@ -211,6 +222,7 @@ Favor small, focused modules with clear interfaces and strong defaults. Compose 
 * **modules/**: Terraform modules
 * **examples/**: Minimal (`defaults/`), full (`complete/`) and other common usage examples
 * **test/**: Terratest Go tests for examples
+* **verify/**: Access verification harness, with its own Go module and Terraform fixture; live runs only through `verify-*` make targets
 
 Each example needs: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`
 

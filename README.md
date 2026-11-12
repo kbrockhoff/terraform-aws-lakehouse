@@ -323,6 +323,24 @@ done
 
 Both grants are outside Terraform only because AWS provider 6.x cannot manage them correctly yet.
 
+## Access Verification
+
+`lfverify`, in [`verify/`](verify/README.md), checks that the Lake Formation grants give each persona
+exactly the intended access. It assumes each persona's role and attempts real catalog, query,
+write, and grant calls, then compares every outcome with a declared expectation matrix. It covers
+administrators, read-only administrators, metadata-only readers and writers, readers and writers
+of one or several namespaces, and column-, row-, and cell-restricted readers, in both the LF-tag
+grant style this module uses and named-resource grants.
+
+- **Full mode** (`make verify-full`) deploys this module into a disposable fixture in an
+  allow-listed sandbox account, runs the matrix, and destroys everything. It refuses production.
+- **Probe mode** (`make verify-probe MATRIX=…`) checks an existing deployment, production included,
+  without changing it. The runner must be read-only and listed in
+  `governance_config.read_only_admin_principal_arns`.
+
+Live `verify-*` targets never run from `make validate` or `make test`. Sandbox results are in
+[`specs/002-lf-access-verification/sandbox-results.md`](specs/002-lf-access-verification/sandbox-results.md).
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
