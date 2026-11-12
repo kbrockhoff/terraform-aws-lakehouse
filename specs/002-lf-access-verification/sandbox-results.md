@@ -23,7 +23,6 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
 | Bucket-catalog `DESCRIBE` grant from Terraform | `lfverify seed` makes it, because the provider cannot | awslkhs-qrp |
 | Static analysis of the Go code (`gosec`) | The planned `make lint-verify` target was not built | awslkhs-46y5 |
-| Interrupted-run recovery | Pending (T052), after T049 | — |
 
 ## Runs
 
@@ -39,6 +38,9 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `513eb0` | full | 11-11 | 211 | 197 | 0 | 14 | — | Cross-check run; matrix with gamma-denied cases added |
 | `77dc1f` | full | 11-12 | 211 | 197 | 0 | 14 | — | T049 run 1; reference run |
 | `d66355`, `3aebc6`, `3215bf`, `166f1f`, `14f318`, `623dbd`, `71a0ea`, `4b3990`, `ddc587` | full | 11-12 | 211 each | 197 | 0 | 14 | — | T049 runs 2–10 |
+
+| `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
+| `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |
 
 Runs `c39bc9` and `92eafa` failed during fixture apply and produced no report; plan.md D5 and D6
 record the fixes.
@@ -176,8 +178,24 @@ requires the settings snapshot that only a passing preflight writes (commit `a3d
 
 ## Interrupted-run recovery (T052, Cleanup SLO)
 
-Pending. It runs after T049, because a second fixture cannot share the account's data-lake
-settings and S3 Tables catalog integration with a run in progress.
+**Met** (run `86aeab`). The script ran `make verify-up` and `make verify-seed`, then stopped as
+if killed, so there was no run and no `verify-down`. It deleted the run's `terraform.tfstate` and
+ran `make verify-cleanup RUN_ID=86aeab`. Cleanup took 57 s and exited 0. Fifteen minutes later:
+
+- no IAM role, LF-tag, table bucket, workgroup, S3 bucket, data cells filter, or Lake Formation
+  grant with the run prefix remained;
+- the `bucket/*` registration and the `s3tablescatalog` federated catalog were gone;
+- the only resource still tagged `LfverifyRun=86aeab` was the platform KMS key, pending deletion
+  with the 7-day minimum window;
+- the data-lake settings equalled `settings.before.json`.
+
+The first attempt, `67009c`, also ended with nothing left and the settings restored, but cleanup
+exited 1. With no `terraform destroy` before the sweep, the sweep met grants that earlier runs
+never left for it. Lake Formation lists the named style's all-tables SELECT as a column grant on
+the table name `ALL_TABLES`, and revoking that form fails with `Table not found`. The grant step
+then stopped, skipping the remaining grants; they went away only because their buckets were
+deleted. The sweep now revokes that form as a table wildcard and keeps going after a failed
+revoke (commit `c90110a`). In `86aeab` every grant was revoked, all-tables SELECT included.
 
 ## Settings restore
 
