@@ -677,9 +677,16 @@ SLOs.
   kill it after `verify-seed`, delete `$(OUT)/terraform.tfstate`, then run
   `make verify-cleanup RUN_ID=…`. Confirm that, 15 minutes later, no resource with the prefix or
   tag remains (Cleanup SLO), and that the data-lake settings equal `settings.before.json`.
-- [ ] T053 Confirm that full-mode preflight refuses a non-allow-listed account and
+- [x] T053 Confirm that full-mode preflight refuses a non-allow-listed account and
   `LFVERIFY_ENV=Production` (FR-003), by running `lfverify preflight` with a temporary empty
   allow-list.
+  - Result (2026-11-12, dev-green): exit 2 with the reason for an empty allow-list, an
+    allow-listed account in another Region, `LFVERIFY_ENV=Production`, `MissionCritical`, and
+    `Production` with the account allowed through `LFVERIFY_SANDBOX_ACCOUNTS`. No settings file
+    was written.
+  - Found and fixed: `verify-full` and `verify-detect` ran `verify-down` after a refused
+    preflight, and its stage 1 apply would have deployed into the refused account. `verify-down`
+    now requires `settings.before.json`.
 - [ ] T054 Write `specs/002-lf-access-verification/sandbox-results.md` in the T076 results style.
   Include:
   - the run IDs and durations;

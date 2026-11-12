@@ -40,7 +40,9 @@ It covers these personas:
 - **Settings are restored.** Preflight saves the data-lake settings to
   `out/<run-id>/settings.before.json`. Teardown writes them back and verifies them.
   Destroying the settings resource does not restore earlier values.
-- **Teardown always runs.** `verify-full` tears down even when the run fails.
+- **Teardown always runs.** `verify-full` tears down even when the run fails. The exception is a
+  run that preflight refused: nothing was deployed, so `verify-down` stops without touching
+  Terraform. It requires the `settings.before.json` that only a passing preflight writes.
 - **Prefixed names.** Every fixture name starts with `lfv-<run-id>`, and every fixture resource
   carries the `LfverifyRun` tag.
 
@@ -179,15 +181,13 @@ authorization, such as `INTERNAL_ERROR_QUERY_ENGINE`, so an engine fault never c
 4. table buckets, with their tables and namespaces;
 5. workgroups;
 6. results buckets;
-7. persona roles.
+7. the account integration (the `bucket/*` registration and the `s3tablescatalog` federated
+   catalog), but only when the registration's role carries the run prefix, so another
+   deployment's integration is never touched;
+8. persona roles;
+9. KMS keys tagged `LfverifyRun=<id>`, scheduled for deletion with the 7-day minimum window.
 
-It then restores the data-lake settings.
-
-It does not remove the account-level `s3tablescatalog` federated catalog, the `bucket/*`
-registration, the data-access role's registration, or the platform KMS key, because those
-names do not carry the run prefix. `terraform destroy` removes them. If the state is lost too,
-remove them by hand, or with `terraform import` into a fresh fixture state followed by
-`make verify-down`.
+It then restores the data-lake settings from `settings.before.json`.
 
 ## Behavior confirmed in the first sandbox run
 

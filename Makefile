@@ -190,6 +190,9 @@ verify-apply: verify-init ## Re-apply stage 2 with an overlay (INJECT, INJECT_PE
 	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
 
 verify-down: check-aws verify-build verify-init ## Destroy the fixture, sweep leftovers, restore data-lake settings
+	@# Preflight writes settings.before.json only when it passes. Without it nothing was deployed,
+	@# and the stage 1 apply below would deploy into an account preflight refused (FR-003).
+	@test -f $(VERIFY_OUT)/settings.before.json || { echo "$(RED)✗ No settings.before.json for run $(RUN_ID): preflight never passed, so there is nothing to tear down. Use make verify-cleanup to sweep by prefix.$(RESET)"; exit 1; }
 	@# Stage 1 removes the table-level labels, grants, and filters while their tables exist; then
 	@# the seeded tables are dropped, because namespaces holding tables cannot be destroyed
 	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=1 || echo "$(YELLOW)⚠ stage 1 apply failed; continuing teardown$(RESET)"
