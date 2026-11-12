@@ -39,6 +39,7 @@ func TestEvaluate(t *testing.T) {
 		{"absent column leaked", matrix.Case{Expect: matrix.Absent, AbsentColumns: []string{"ssn"}}, allowed(func(r *ops.Result) { r.Columns = []string{"order_id", "SSN"} }), Observation{}, report.Fail, "ssn"},
 		{"absent via denial", matrix.Case{Expect: matrix.Absent, AbsentColumns: []string{"ssn"}}, ops.Result{Outcome: classify.Denied}, Observation{}, report.Pass, "denied"},
 		{"absent from list", matrix.Case{Expect: matrix.Absent}, allowed(func(r *ops.Result) { r.Names = []string{"alpha"} }), Observation{Name: "gamma"}, report.Pass, ""},
+		{"absent on a rejected request", matrix.Case{Expect: matrix.Absent, AbsentColumns: []string{"ssn"}}, ops.Result{Outcome: classify.Rejected, Evidence: classify.Evidence{Code: "InvalidInputException"}}, Observation{Name: "gamma"}, report.NotRun, "absence was not shown"},
 		{"listed when absent expected", matrix.Case{Expect: matrix.Absent}, allowed(func(r *ops.Result) { r.Names = []string{"gamma"} }), Observation{Name: "gamma"}, report.Fail, "listed"},
 		{"count matches", matrix.Case{Expect: matrix.Allowed, ExpectRows: &matrix.Rows{Count: n(150)}}, allowed(func(r *ops.Result) { r.RowCount = n(150) }), Observation{}, report.Pass, ""},
 		{"row filter not applied", matrix.Case{Expect: matrix.Allowed, ExpectRows: &matrix.Rows{Count: n(150)}}, allowed(func(r *ops.Result) { r.RowCount = n(200) }), Observation{}, report.Fail, "200 rows, want 150"},
@@ -82,5 +83,18 @@ func TestRowKey(t *testing.T) {
 	a, b := rowKey("abc123", "writer_multi/label/x"), rowKey("abc123", "writer_multi/named/x")
 	if a == b || a < 900000 || a >= 990000 || rowKey("abc123", "writer_multi/label/x") != a {
 		t.Errorf("row keys must be deterministic, distinct, and outside the seeded range: %d %d", a, b)
+	}
+}
+
+// TestRedactQueryEvidence: probe query evidence keeps the code and request ID only (PR #3
+// review, awslkhs-o5bm)
+func TestRedactQueryEvidence(t *testing.T) {
+	ev := RedactQueryEvidence(classify.Evidence{Code: "INVALID_CAST_ARGUMENT", RequestID: "r1", Message: "Value cannot be cast: '900-00-0001'"})
+	if ev.Code != "INVALID_CAST_ARGUMENT" || ev.RequestID != "r1" || strings.Contains(ev.Message, "900-00") {
+		t.Errorf("got %+v", ev)
+	}
+	status, why := Evaluate(matrix.Case{Expect: matrix.Allowed}, ops.Result{Outcome: classify.Error, Evidence: ev}, Observation{})
+	if status != report.NotRun || strings.Contains(why, "900-00") || !strings.Contains(why, "INVALID_CAST_ARGUMENT") {
+		t.Errorf("reason leaks or loses the code: %s %q", status, why)
 	}
 }

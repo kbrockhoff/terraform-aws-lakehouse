@@ -26,7 +26,8 @@ func SessionName(runID, persona string) string {
 	return n
 }
 
-// Assumer assumes persona roles and caches their credentials until shortly before expiry.
+// Assumer assumes persona roles. Each persona gets one aws.Config whose credentials re-assume the
+// role shortly before they expire, so clients built once stay valid for runs of any length.
 type Assumer struct {
 	STS   STSAPI
 	Base  aws.Config
@@ -36,31 +37,22 @@ type Assumer struct {
 	Policy string
 
 	mu    sync.Mutex
-	cache map[string]cached
-	now   func() time.Time
-}
-
-type cached struct {
-	cfg     aws.Config
-	expires time.Time
+	cache map[string]aws.Config
 }
 
 // refreshBefore renews credentials this long before they expire.
 const refreshBefore = 5 * time.Minute
 
-// Config returns an aws.Config that acts as the persona's role.
+// Config returns an aws.Config that acts as the persona's role. The first call assumes the role,
+// so a persona that cannot be assumed fails here rather than on its first API call.
 func (a *Assumer) Config(ctx context.Context, persona, roleARN string) (aws.Config, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cache == nil {
-		a.cache = map[string]cached{}
+		a.cache = map[string]aws.Config{}
 	}
-	now := time.Now
-	if a.now != nil {
-		now = a.now
-	}
-	if c, ok := a.cache[persona]; ok && now().Add(refreshBefore).Before(c.expires) {
-		return c.cfg, nil
+	if cfg, ok := a.cache[persona]; ok {
+		return cfg, nil
 	}
 	in := &sts.AssumeRoleInput{
 		RoleArn:         aws.String(roleARN),
@@ -70,13 +62,14 @@ func (a *Assumer) Config(ctx context.Context, persona, roleARN string) (aws.Conf
 	if a.Policy != "" {
 		in.Policy = aws.String(a.Policy)
 	}
-	out, err := a.STS.AssumeRole(ctx, in)
-	if err != nil {
-		return aws.Config{}, fmt.Errorf("assume %s (%s): %w", persona, roleARN, err)
-	}
-	cr := out.Credentials
-	cfg := a.Base.Copy()
-	cfg.Credentials = aws.NewCredentialsCache(aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+	// The provider assumes the role on every refresh; a provider that returned one fixed
+	// AssumeRole response would leave clients with expired credentials after an hour
+	provider := aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+		out, err := a.STS.AssumeRole(ctx, in)
+		if err != nil {
+			return aws.Credentials{}, fmt.Errorf("assume %s (%s): %w", persona, roleARN, err)
+		}
+		cr := out.Credentials
 		return aws.Credentials{
 			AccessKeyID:     aws.ToString(cr.AccessKeyId),
 			SecretAccessKey: aws.ToString(cr.SecretAccessKey),
@@ -85,8 +78,14 @@ func (a *Assumer) Config(ctx context.Context, persona, roleARN string) (aws.Conf
 			CanExpire:       true,
 			Expires:         aws.ToTime(cr.Expiration),
 		}, nil
-	}))
-	a.cache[persona] = cached{cfg: cfg, expires: aws.ToTime(cr.Expiration)}
+	})
+	creds := aws.NewCredentialsCache(provider, func(o *aws.CredentialsCacheOptions) { o.ExpiryWindow = refreshBefore })
+	if _, err := creds.Retrieve(ctx); err != nil {
+		return aws.Config{}, err
+	}
+	cfg := a.Base.Copy()
+	cfg.Credentials = creds
+	a.cache[persona] = cfg
 	return cfg, nil
 }
 

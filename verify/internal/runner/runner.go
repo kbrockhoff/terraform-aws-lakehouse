@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/classify"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/identity"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/inspect"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/manifest"
@@ -256,11 +257,25 @@ func (r *Runner) execute(ctx context.Context, inst matrix.Instance) (res report.
 		delay = min(delay*2, 30*time.Second)
 	}
 	r.scanned.Add(out.ScanBytes)
+	if r.Matrix.Mode == matrix.Probe && slicesContainsOp(matrix.QueryOps, c.Op) {
+		out.Evidence = RedactQueryEvidence(out.Evidence)
+	}
 	res.Observed = report.Observed{Outcome: out.Outcome, Columns: out.Columns, RowCount: out.RowCount, ScanBytes: out.ScanBytes}
 	res.Evidence = out.Evidence
 	res.Status, res.Reason = Evaluate(c, out, obs)
 	r.logf("%-10s %s", res.Status, inst.ID)
 	return res
+}
+
+// RedactQueryEvidence keeps only the error code and request ID of a query result. Query engine
+// errors can quote field values (cast and parse failures), and probe reports must carry no data
+// values (FR-030), so in probe mode the message text never reaches a report or a reason. The
+// outcome was already classified from the full text.
+func RedactQueryEvidence(ev classify.Evidence) classify.Evidence {
+	if ev.Message != "" {
+		ev.Message = "(query error text withheld in probe mode)"
+	}
+	return ev
 }
 
 func slicesContainsOp(ops []matrix.Op, op matrix.Op) bool {

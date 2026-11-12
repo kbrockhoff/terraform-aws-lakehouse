@@ -43,8 +43,9 @@ locals {
         }
       ],
       r.domains == null ? [] : [{ key = var.platform.lf_tags.domain.key, values = r.domains }],
-      # Row-filtered tables are reached only through the filter (local.row_filter_tag_key)
-      contains(keys(local.row_filter_tag_key), k) ? [{ key = local.row_filter_tag_key[k], values = ["no"] }] : [],
+      # Row-filtered tables are reached only through the filter (local.row_filter_tag_key), for
+      # every reader entry of a row-filtered principal
+      [for key in local.reader_row_filter_keys[k] : { key = key, values = ["no"] }],
     )
   }
 }

@@ -46,6 +46,10 @@ func Evaluate(c matrix.Case, res ops.Result, obs Observation) (report.Status, st
 		if res.Outcome == classify.Denied {
 			return report.Pass, "denied"
 		}
+		// A rejected request returns nothing, which proves nothing about what is hidden
+		if res.Outcome != classify.Allowed {
+			return report.NotRun, fmt.Sprintf("request %s, so absence was not shown: %s", res.Outcome, firstLine(res.Evidence.Code+" "+res.Evidence.Message))
+		}
 		if obs.Name != "" && slices.Contains(res.Names, obs.Name) {
 			return report.Fail, fmt.Sprintf("%s is listed", obs.Name)
 		}

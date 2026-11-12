@@ -199,6 +199,16 @@ variable "tenant" {
     error_message = "Tenant ${var.name}: each row filter's reader must be a declared reader and its zone one of the tenant's zones."
   }
 
+  # Writers and stewards hold SELECT on every table they reach, and Lake Formation unions grants
+  # per principal, so a row-filtered principal in either role would bypass the filter
+  validation {
+    condition = length(setintersection(
+      toset([for f in values(var.tenant.row_filters) : try(var.tenant.readers[f.reader].principal_arn, "")]),
+      toset(concat(var.tenant.stewards, [for w in values(var.tenant.writers) : w.principal_arn])),
+    )) == 0
+    error_message = "Tenant ${var.name}: a row-filtered reader's principal must not also be a writer or steward of the tenant, because their unfiltered SELECT would bypass the filter."
+  }
+
   validation {
     condition     = length(setsubtract(var.tenant.compliance_frameworks, ["SOC2", "HIPAA", "PCI_DSS"])) == 0
     error_message = "Tenant ${var.name}: compliance_frameworks may contain only SOC2, HIPAA, and PCI_DSS."

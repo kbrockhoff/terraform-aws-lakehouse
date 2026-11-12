@@ -34,29 +34,43 @@ func TestSessionName(t *testing.T) {
 }
 
 func TestConfigCachesAndRefreshes(t *testing.T) {
-	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
-	f := &fakeSTS{exp: now.Add(time.Hour)}
-	a := &Assumer{STS: f, RunID: "abc123", Policy: `{"x":1}`, now: func() time.Time { return now }}
+	f := &fakeSTS{exp: time.Now().Add(time.Hour)}
+	a := &Assumer{STS: f, RunID: "abc123", Policy: `{"x":1}`}
 	ctx := context.Background()
-	if _, err := a.Config(ctx, "admin", "arn:aws:iam::1:role/a"); err != nil {
+	cfg, err := a.Config(ctx, "admin", "arn:aws:iam::1:role/a")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Config(ctx, "admin", "arn:aws:iam::1:role/a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cfg.Credentials.Retrieve(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.calls) != 1 {
-		t.Fatalf("second call must hit the cache, got %d AssumeRole calls", len(f.calls))
+		t.Fatalf("valid credentials must be reused, got %d AssumeRole calls", len(f.calls))
 	}
 	in := f.calls[0]
 	if aws.ToString(in.RoleSessionName) != "lfverify-abc123-admin" || aws.ToString(in.Policy) != `{"x":1}` || aws.ToInt32(in.DurationSeconds) != 3600 {
 		t.Errorf("assume input: %+v", in)
 	}
-	now = now.Add(56 * time.Minute) // inside the refresh window
-	if _, err := a.Config(ctx, "admin", "arn:aws:iam::1:role/a"); err != nil {
+}
+
+// TestConfigReassumesNearExpiry: the persona's config, built once, must keep working past the
+// first session's expiry (PR #3 review, awslkhs-l135)
+func TestConfigReassumesNearExpiry(t *testing.T) {
+	f := &fakeSTS{exp: time.Now().Add(2 * time.Minute)} // inside the refresh window
+	a := &Assumer{STS: f, RunID: "abc123"}
+	ctx := context.Background()
+	cfg, err := a.Config(ctx, "admin", "arn:aws:iam::1:role/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cfg.Credentials.Retrieve(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.calls) != 2 {
-		t.Errorf("credentials near expiry must refresh, got %d calls", len(f.calls))
+		t.Errorf("credentials near expiry must re-assume the role, got %d AssumeRole calls", len(f.calls))
 	}
 }
 

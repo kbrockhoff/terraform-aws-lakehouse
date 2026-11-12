@@ -46,12 +46,39 @@ func TestEffective(t *testing.T) {
 		{"filter grant", []lftypes.PrincipalResourcePermissions{{Permissions: sel,
 			Resource: &lftypes.Resource{DataCellsFilter: &lftypes.DataCellsFilterResource{TableCatalogId: aws.String(ref.CatalogID), DatabaseName: aws.String("alpha"), TableName: aws.String("orders"), Name: aws.String("f")}}}},
 			[]string{"SELECT"}},
+		// PR #3 review (awslkhs-fgml): a default-catalog grant is on a different table
+		{"named table in the default catalog", []lftypes.PrincipalResourcePermissions{{Permissions: sel,
+			Resource: &lftypes.Resource{Table: &lftypes.TableResource{CatalogId: aws.String("111"), DatabaseName: aws.String("alpha"), Name: aws.String("orders")}}}},
+			[]string{}},
+		{"column grant with no catalog ID", []lftypes.PrincipalResourcePermissions{{Permissions: sel,
+			Resource: &lftypes.Resource{TableWithColumns: &lftypes.TableWithColumnsResource{DatabaseName: aws.String("alpha"), Name: aws.String("orders"), ColumnNames: []string{"region"}}}}},
+			[]string{}},
+		{"filter in another catalog", []lftypes.PrincipalResourcePermissions{{Permissions: sel,
+			Resource: &lftypes.Resource{DataCellsFilter: &lftypes.DataCellsFilterResource{TableCatalogId: aws.String("111:s3tablescatalog/raw"), DatabaseName: aws.String("alpha"), TableName: aws.String("orders"), Name: aws.String("f")}}}},
+			[]string{}},
 	}
 	for _, c := range cases {
-		got := Effective(c.grants, ref, tags)
+		got := Effective(c.grants, ref, Tags{Table: tags})
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestEffectiveColumnTags: a grant that matches only some columns still gives the permission on
+// the table, as for a column-restricted reader of a restricted table (PR #3 review, awslkhs-vo0z)
+func TestEffectiveColumnTags(t *testing.T) {
+	grant := tagGrant([]lftypes.Permission{lftypes.PermissionSelect}, map[string][]string{"sensitivity": {"public", "internal"}})
+	tags := Tags{
+		Table:   map[string]string{"sensitivity": "restricted"},
+		Columns: map[string]map[string]string{"order_id": {"sensitivity": "internal"}, "ssn": {"sensitivity": "restricted"}},
+	}
+	if got := Effective([]lftypes.PrincipalResourcePermissions{grant}, ref, tags); !slices.Equal(got, []string{"SELECT"}) {
+		t.Errorf("column match: got %v, want [SELECT]", got)
+	}
+	tags.Columns = map[string]map[string]string{"ssn": {"sensitivity": "restricted"}}
+	if got := Effective([]lftypes.PrincipalResourcePermissions{grant}, ref, tags); len(got) != 0 {
+		t.Errorf("no column matches: got %v, want none", got)
 	}
 }
 

@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"strings"
 
@@ -18,12 +19,21 @@ type TableRef struct {
 	Table     string
 }
 
-// Effective returns the table-level permissions that grants give on ref, given the table's
-// effective LF-tags (inherited ones included). Named table, all-tables (wildcard), column, and
-// data cells filter grants count, and so do LF-tag policy grants on TABLE whose every
-// expression term matches a tag on the table. A resource that lacks a key in an expression
-// never matches. Database-level permissions are not table permissions and are ignored.
-func Effective(grants []lftypes.PrincipalResourcePermissions, ref TableRef, tags map[string]string) []string {
+// Tags are a table's effective LF-tags (inherited ones included) and, per column, the tags
+// assigned to that column, which override the table's for the same key.
+type Tags struct {
+	Table   map[string]string
+	Columns map[string]map[string]string
+}
+
+// Effective returns the table-level permissions that grants give on ref. Named table,
+// all-tables (wildcard), column, and data cells filter grants in ref's own catalog count. So do
+// LF-tag policy grants on TABLE whose every expression term matches the table's tags or one
+// column's effective tags: Lake Formation then grants the permission on the matching columns,
+// so a column-restricted reader still holds SELECT. A resource that lacks a key in an
+// expression never matches. Database-level permissions are not table permissions and are
+// ignored.
+func Effective(grants []lftypes.PrincipalResourcePermissions, ref TableRef, tags Tags) []string {
 	set := map[string]bool{}
 	add := func(ps []lftypes.Permission) {
 		for _, p := range ps {
@@ -56,7 +66,7 @@ func Effective(grants []lftypes.PrincipalResourcePermissions, ref TableRef, tags
 			}
 		case r.LFTagPolicy != nil:
 			p := r.LFTagPolicy
-			if p.ResourceType == lftypes.ResourceTypeTable && sameCatalog(aws.ToString(p.CatalogId), ref) && matches(p.Expression, tags) {
+			if p.ResourceType == lftypes.ResourceTypeTable && tagPolicyCatalog(aws.ToString(p.CatalogId), ref) && tags.match(p.Expression) {
 				add(g.Permissions)
 			}
 		}
@@ -69,13 +79,42 @@ func Effective(grants []lftypes.PrincipalResourcePermissions, ref TableRef, tags
 	return out
 }
 
-// sameCatalog accepts an exact catalog match, and account-level catalog IDs, which LF-tag policy
-// grants use and which cover every S3 Tables catalog in the account.
+// sameCatalog is for named table, column, and filter grants: the catalogs must be the same,
+// with an empty ID meaning the account's default catalog. A default-catalog alpha.orders is a
+// different table from alpha.orders in an S3 Tables catalog.
 func sameCatalog(grant string, ref TableRef) bool {
-	if grant == "" || grant == ref.CatalogID {
+	resolve := func(id string) string {
+		if id == "" {
+			return ref.AccountID
+		}
+		return id
+	}
+	return resolve(grant) == resolve(ref.CatalogID)
+}
+
+// tagPolicyCatalog is for LF-tag policy grants, which use the account-level catalog ID and cover
+// every catalog in the account, S3 Tables catalogs included.
+func tagPolicyCatalog(grant string, ref TableRef) bool {
+	return grant == "" || grant == ref.CatalogID ||
+		(grant == ref.AccountID && strings.HasPrefix(ref.CatalogID, ref.AccountID))
+}
+
+// match reports whether expr matches the table or any one column.
+func (t Tags) match(expr []lftypes.LFTag) bool {
+	if matches(expr, t.Table) {
 		return true
 	}
-	return grant == ref.AccountID && strings.HasPrefix(ref.CatalogID, ref.AccountID)
+	for _, col := range t.Columns {
+		eff := maps.Clone(t.Table)
+		if eff == nil {
+			eff = map[string]string{}
+		}
+		maps.Copy(eff, col)
+		if matches(expr, eff) {
+			return true
+		}
+	}
+	return false
 }
 
 func matches(expr []lftypes.LFTag, tags map[string]string) bool {
@@ -152,11 +191,20 @@ func (i Inspector) Permissions(ctx context.Context, principal string, ref TableR
 	if err != nil {
 		return nil, err
 	}
-	tags := map[string]string{}
+	tags := Tags{Table: map[string]string{}, Columns: map[string]map[string]string{}}
 	for _, t := range append(out.LFTagOnDatabase, out.LFTagsOnTable...) {
 		if len(t.TagValues) > 0 {
-			tags[aws.ToString(t.TagKey)] = t.TagValues[0]
+			tags.Table[aws.ToString(t.TagKey)] = t.TagValues[0]
 		}
+	}
+	for _, c := range out.LFTagsOnColumns {
+		col := map[string]string{}
+		for _, t := range c.LFTags {
+			if len(t.TagValues) > 0 {
+				col[aws.ToString(t.TagKey)] = t.TagValues[0]
+			}
+		}
+		tags.Columns[aws.ToString(c.Name)] = col
 	}
 	return Effective(grants, ref, tags), nil
 }

@@ -25,7 +25,7 @@ It covers these personas:
 | Target | A disposable fixture in an allow-listed sandbox account | An existing deployment, production included |
 | Changes | Deploys and destroys the fixture; temporarily owns the data-lake settings | None, by construction |
 | Writes, grants, drops | Attempted | Verified by inspecting effective permissions |
-| Data in reports | Synthetic fixture data, column names and counts only | Column names and counts only |
+| Data in reports | Synthetic fixture data, column names and counts only | Column names and counts only; query error text is withheld, keeping only the error code and request ID |
 | Command | `make verify-full` | `make verify-probe MATRIX=…` |
 
 ### Full-mode safety rules
@@ -40,16 +40,25 @@ It covers these personas:
 - **Settings are restored.** Preflight saves the data-lake settings to
   `out/<run-id>/settings.before.json`. Teardown writes them back and verifies them.
   Destroying the settings resource does not restore earlier values.
-- **Teardown always runs.** `verify-full` tears down even when the run fails. The exception is a
+- **Teardown always runs.** `verify-full` tears down even when the run fails, and it exits
+  non-zero when the run passed but teardown or the settings restore failed. The exception is a
   run that preflight refused: nothing was deployed, so `verify-down` stops without touching
-  Terraform. It requires the `settings.before.json` that only a passing preflight writes.
+  Terraform.
+- **Teardown stays in the checked account.** A passing preflight records the account and Region
+  it checked in `out/<run-id>/target.json`. `verify-down` (through `lfverify check-target`) and
+  `lfverify cleanup` refuse unless the current credentials point at that account and Region, so
+  a teardown run with other credentials can neither deploy elsewhere nor restore the saved
+  settings into another account.
 - **Prefixed names.** Every fixture name starts with `lfv-<run-id>`, and every fixture resource
   carries the `LfverifyRun` tag.
 
 ### Probe-mode safety rules
 
-- **Read-only runner.** The runner must be read-only in IAM. Preflight simulates about 40
-  mutating actions and aborts if any is allowed. The runner must also be listed in the target
+- **Read-only runner.** The runner must be read-only in IAM. Preflight simulates about 50
+  mutating actions, each against `*` and against the target's own resources of that service (persona
+  roles, Glue catalogs, databases, and tables, table buckets, workgroups, results buckets, and keys,
+  taken from the matrix and the variables below), and aborts if any is allowed, or if the
+  simulation returns no result for an action. The runner must also be listed in the target
   deployment's `governance_config.read_only_admin_principal_arns`.
 - **Existing trust only.** Persona roles must already trust the runner for session names
   `lfverify-*`. The harness never edits trust policies.

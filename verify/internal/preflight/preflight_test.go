@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,16 +112,40 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-type fakeIAM struct{ allow map[string]bool }
+// fakeIAM allows an action on every resource (allow) or on one named resource (allowOn). It
+// answers in the real shape: IAM rejects "*" mixed with ARNs, and with ARNs it returns one
+// result per action with per-resource decisions in ResourceSpecificResults.
+type fakeIAM struct {
+	allow   map[string]bool
+	allowOn map[string]string // action -> the one resource ARN it is allowed on
+	inputs  []*iam.SimulatePrincipalPolicyInput
+}
 
 func (f *fakeIAM) SimulatePrincipalPolicy(_ context.Context, in *iam.SimulatePrincipalPolicyInput, _ ...func(*iam.Options)) (*iam.SimulatePrincipalPolicyOutput, error) {
+	f.inputs = append(f.inputs, in)
+	if slices.Contains(in.ResourceArns, "*") && len(in.ResourceArns) > 1 {
+		return nil, errors.New("InvalidInput: you cannot include both * and individual resources")
+	}
+	decide := func(ok bool) iamtypes.PolicyEvaluationDecisionType {
+		if ok {
+			return iamtypes.PolicyEvaluationDecisionTypeAllowed
+		}
+		return iamtypes.PolicyEvaluationDecisionTypeImplicitDeny
+	}
 	out := &iam.SimulatePrincipalPolicyOutput{}
 	for _, a := range in.ActionNames {
-		d := iamtypes.PolicyEvaluationDecisionTypeImplicitDeny
-		if f.allow[a] {
-			d = iamtypes.PolicyEvaluationDecisionTypeAllowed
+		r := iamtypes.EvaluationResult{EvalActionName: aws.String(a), EvalResourceName: aws.String("*"), EvalDecision: decide(f.allow[a])}
+		if len(in.ResourceArns) > 0 {
+			r.EvalResourceName = aws.String("arn:aws:svc:${Region}:${Account}:${ResourceType}")
+			for _, arn := range in.ResourceArns {
+				ok := f.allow[a] || f.allowOn[a] == arn
+				r.ResourceSpecificResults = append(r.ResourceSpecificResults, iamtypes.ResourceSpecificResult{EvalResourceName: aws.String(arn), EvalResourceDecision: decide(ok)})
+				if ok {
+					r.EvalDecision = iamtypes.PolicyEvaluationDecisionTypeAllowed
+				}
+			}
 		}
-		out.EvaluationResults = append(out.EvaluationResults, iamtypes.EvaluationResult{EvalActionName: aws.String(a), EvalDecision: d})
+		out.EvaluationResults = append(out.EvaluationResults, r)
 	}
 	return out, nil
 }
@@ -139,6 +164,54 @@ func TestProbe(t *testing.T) {
 	if err := Probe(ctx, &fakeIAM{}, notRO, ProbeInput{Runner: runner}); !errors.Is(err, ErrRefused) {
 		t.Errorf("runner outside ReadOnlyAdmins must be refused, got %v", err)
 	}
+}
+
+// TestProbeResourceScopedWrites: a write allowed only on a target resource is an implicit deny
+// for "*", so preflight must simulate the target's own ARNs (PR #3 review, awslkhs-0hq8), and
+// UpdateTableMetadataLocation counts as a write (awslkhs-krs9)
+func TestProbeResourceScopedWrites(t *testing.T) {
+	ctx := context.Background()
+	readOnly := &fakeLF{settings: &lftypes.DataLakeSettings{ReadOnlyAdmins: principals(runner)}}
+	bucket := "arn:aws:s3tables:us-east-1:1:bucket/b"
+	results := "arn:aws:s3:::results-bucket"
+	resources := []string{bucket, results, "arn:aws:iam::1:role/persona"}
+	for action, arn := range map[string]string{
+		"s3tables:UpdateTableMetadataLocation": bucket,
+		"s3:DeleteObject":                      results,
+		"iam:PutRolePolicy":                    "arn:aws:iam::1:role/persona",
+	} {
+		f := &fakeIAM{allowOn: map[string]string{action: arn}}
+		err := Probe(ctx, f, readOnly, ProbeInput{Runner: runner, Resources: resources})
+		if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), action+" on "+arn) {
+			t.Errorf("%s allowed only on %s must be refused, got %v", action, arn, err)
+		}
+	}
+	f := &fakeIAM{}
+	if err := Probe(ctx, f, readOnly, ProbeInput{Runner: runner, Resources: resources}); err != nil {
+		t.Fatalf("read-only runner must pass: %v", err)
+	}
+	for _, in := range f.inputs {
+		for _, r := range in.ResourceArns {
+			svc, _, _ := strings.Cut(in.ActionNames[0], ":")
+			if !strings.HasPrefix(r, "arn:aws:"+svc+":") {
+				t.Errorf("%s simulated against another service's resource %s", in.ActionNames[0], r)
+			}
+		}
+	}
+}
+
+func TestProbeFailsClosedWithoutResults(t *testing.T) {
+	readOnly := &fakeLF{settings: &lftypes.DataLakeSettings{ReadOnlyAdmins: principals(runner)}}
+	err := Probe(context.Background(), emptyIAM{}, readOnly, ProbeInput{Runner: runner})
+	if err == nil || !strings.Contains(err.Error(), "not established") {
+		t.Errorf("a simulation with no results must fail, got %v", err)
+	}
+}
+
+type emptyIAM struct{}
+
+func (emptyIAM) SimulatePrincipalPolicy(context.Context, *iam.SimulatePrincipalPolicyInput, ...func(*iam.Options)) (*iam.SimulatePrincipalPolicyOutput, error) {
+	return &iam.SimulatePrincipalPolicyOutput{}, nil
 }
 
 func TestNoOpenDefaults(t *testing.T) {
@@ -207,5 +280,29 @@ func TestRevocableAllTablesColumnGrant(t *testing.T) {
 	cols := &lftypes.Resource{TableWithColumns: &lftypes.TableWithColumnsResource{Name: aws.String("orders")}}
 	if revocable(cols) != cols {
 		t.Error("column grants on a named table pass through")
+	}
+}
+
+// TestTargetRecord: teardown is refused without a record and in another account or Region (PR #3
+// review, awslkhs-nahm)
+func TestTargetRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "target.json")
+	here := Target{Account: "111", Region: "us-east-1"}
+	if err := CheckTarget(path, here); !errors.Is(err, ErrRefused) {
+		t.Errorf("missing record must refuse, got %v", err)
+	}
+	if err := RecordTarget(path, here); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckTarget(path, here); err != nil {
+		t.Errorf("same target must pass: %v", err)
+	}
+	for _, other := range []Target{{"222", "us-east-1"}, {"111", "us-west-2"}} {
+		if err := CheckTarget(path, other); !errors.Is(err, ErrRefused) {
+			t.Errorf("%+v must refuse, got %v", other, err)
+		}
+		if err := RecordTarget(path, other); !errors.Is(err, ErrRefused) {
+			t.Errorf("a later preflight in %+v must refuse, got %v", other, err)
+		}
 	}
 }

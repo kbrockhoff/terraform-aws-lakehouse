@@ -168,7 +168,9 @@ need the table to exist, so add them after writers create it. Lake Formation com
 filtered reader that also held its tag grant on the table would see every row. The module therefore labels each
 filtered table `<prefix>-tenant-<tenant>-rf-<reader> = yes` and limits that reader's tag grant to tables labeled `no`
 (the database default): the reader reaches a filtered table only through its filter, and other readers are
-unaffected. The module outputs least-privilege IAM policy
+unaffected. Because grants combine per principal, every reader entry that shares the filtered reader's
+`principal_arn` gets the same limit, and a filtered reader's principal may not also be a writer or steward of the
+tenant (their unfiltered SELECT would bypass the filter; validation rejects it). The module outputs least-privilege IAM policy
 documents per persona (`persona_policy_json`) but never attaches them.
 
 ### Steward runbook

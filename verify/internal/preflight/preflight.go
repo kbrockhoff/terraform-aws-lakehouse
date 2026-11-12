@@ -2,10 +2,12 @@ package preflight
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -115,6 +117,43 @@ func Full(ctx context.Context, lf LFAPI, in FullInput) (*lftypes.DataLakeSetting
 	return out.DataLakeSettings, nil
 }
 
+// Target is the account and Region a full-mode preflight checked. Teardown and cleanup compare
+// it with the current credentials, because a settings snapshot alone does not say which account
+// it belongs to: restoring it elsewhere would replace that account's data-lake admins.
+type Target struct {
+	Account string `json:"account"`
+	Region  string `json:"region"`
+}
+
+// RecordTarget writes the checked target on the first preflight of a run. Later preflights of the
+// same run must see the same target.
+func RecordTarget(path string, t Target) error {
+	if _, err := os.Stat(path); err == nil { // #nosec G703 -- the run's own output directory
+		return CheckTarget(path, t)
+	}
+	b, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600) // #nosec G703 -- the run's own output directory
+}
+
+// CheckTarget refuses unless the run's recorded target equals current.
+func CheckTarget(path string, current Target) error {
+	b, err := os.ReadFile(path) // #nosec G304 -- reads the run's own target record
+	if err != nil {
+		return refuse("no target record (%s): preflight never passed for this run, so nothing may be torn down or restored", path)
+	}
+	var t Target
+	if err := json.Unmarshal(b, &t); err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	if t != current {
+		return refuse("run belongs to account %s in %s, but the credentials point at account %s in %s", t.Account, t.Region, current.Account, current.Region)
+	}
+	return nil
+}
+
 // SaveSettings writes settings as JSON for cleanup.
 func SaveSettings(path string, s *lftypes.DataLakeSettings) error {
 	b, err := json.MarshalIndent(s, "", "  ")
@@ -143,36 +182,52 @@ var MutatingActions = []string{
 	"lakeformation:BatchRevokePermissions", "lakeformation:PutDataLakeSettings", "lakeformation:AddLFTagsToResource",
 	"lakeformation:RemoveLFTagsFromResource", "lakeformation:CreateLFTag", "lakeformation:UpdateLFTag",
 	"lakeformation:DeleteLFTag", "lakeformation:CreateDataCellsFilter", "lakeformation:DeleteDataCellsFilter",
-	"lakeformation:RegisterResource", "lakeformation:DeregisterResource",
-	"glue:CreateTable", "glue:UpdateTable", "glue:DeleteTable", "glue:CreateDatabase", "glue:UpdateDatabase",
-	"glue:DeleteDatabase", "glue:UpdateCatalog", "glue:DeleteCatalog",
-	"s3tables:PutTableData", "s3tables:CreateTable", "s3tables:DeleteTable", "s3tables:CreateNamespace",
-	"s3tables:DeleteNamespace", "s3tables:PutTableBucketPolicy",
+	"lakeformation:RegisterResource", "lakeformation:DeregisterResource", "lakeformation:UpdateDataCellsFilter",
+	"lakeformation:CreateLFTagExpression", "lakeformation:UpdateLFTagExpression", "lakeformation:DeleteLFTagExpression",
+	"glue:CreateTable", "glue:UpdateTable", "glue:DeleteTable", "glue:BatchDeleteTable", "glue:CreateDatabase",
+	"glue:UpdateDatabase", "glue:DeleteDatabase", "glue:CreateCatalog", "glue:UpdateCatalog", "glue:DeleteCatalog",
+	// UpdateTableMetadataLocation commits Iceberg metadata; the module's data-access role uses it
+	"s3tables:PutTableData", "s3tables:UpdateTableMetadataLocation", "s3tables:CreateTable", "s3tables:DeleteTable",
+	"s3tables:RenameTable", "s3tables:CreateNamespace", "s3tables:DeleteNamespace", "s3tables:DeleteTableBucket",
+	"s3tables:PutTableBucketPolicy", "s3tables:DeleteTableBucketPolicy", "s3tables:PutTablePolicy",
+	"s3tables:DeleteTablePolicy", "s3tables:PutTableMaintenanceConfiguration",
 	"iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:CreateRole", "iam:DeleteRole",
 	"athena:UpdateWorkGroup", "athena:DeleteWorkGroup",
 	"s3:PutBucketPolicy", "s3:DeleteObject", "s3:DeleteBucket",
-	"kms:ScheduleKeyDeletion", "kms:PutKeyPolicy",
+	"kms:ScheduleKeyDeletion", "kms:PutKeyPolicy", "kms:DisableKey",
 }
 
 // ProbeInput is what probe-mode preflight checks.
 type ProbeInput struct {
 	Runner string // role ARN of the runner
+	// Resources are the target's ARNs: persona roles, catalogs, databases, tables, table
+	// buckets, workgroups, results buckets, and keys. Each mutating action is simulated against
+	// "*" and, separately (IAM rejects a list mixing both), the ARNs of its own service, because
+	// a write allowed only on a named resource is an implicit deny for "*".
+	Resources []string
 }
 
 // Probe checks that the runner is read-only by construction: IAM simulation denies every
-// mutating action, and the runner is a Lake Formation read-only admin.
+// mutating action on every target resource, and the runner is a Lake Formation read-only admin.
 func Probe(ctx context.Context, iamc IAMAPI, lf LFAPI, in ProbeInput) error {
 	var allowed []string
-	for chunk := range slices.Chunk(MutatingActions, 20) {
-		out, err := iamc.SimulatePrincipalPolicy(ctx, &iam.SimulatePrincipalPolicyInput{
-			PolicySourceArn: aws.String(in.Runner), ActionNames: chunk,
-		})
-		if err != nil {
-			return fmt.Errorf("simulate runner policy: %w", err)
+	byService := map[string][]string{}
+	for _, a := range MutatingActions {
+		svc, _, _ := strings.Cut(a, ":")
+		byService[svc] = append(byService[svc], a)
+	}
+	for _, svc := range slices.Sorted(maps.Keys(byService)) {
+		sets := [][]string{nil} // nil simulates "*"
+		if arns := serviceARNs(svc, in.Resources); len(arns) > 0 {
+			sets = append(sets, arns)
 		}
-		for _, r := range out.EvaluationResults {
-			if r.EvalDecision == iamtypes.PolicyEvaluationDecisionTypeAllowed {
-				allowed = append(allowed, aws.ToString(r.EvalActionName))
+		for chunk := range slices.Chunk(byService[svc], 20) {
+			for _, resources := range sets {
+				found, err := simulate(ctx, iamc, in.Runner, chunk, resources)
+				if err != nil {
+					return err
+				}
+				allowed = append(allowed, found...)
 			}
 		}
 	}
@@ -189,6 +244,59 @@ func Probe(ctx context.Context, iamc IAMAPI, lf LFAPI, in ProbeInput) error {
 		}
 	}
 	return refuse("probe runner %s is not a Lake Formation read-only admin (governance_config.read_only_admin_principal_arns)", in.Runner)
+}
+
+// simulate returns "action on resource" for every allowed pair. It fails closed: an action the
+// simulation returns no result for is an error, not a pass.
+func simulate(ctx context.Context, iamc IAMAPI, runner string, actions, resources []string) ([]string, error) {
+	var allowed []string
+	seen := map[string]bool{}
+	in := &iam.SimulatePrincipalPolicyInput{PolicySourceArn: aws.String(runner), ActionNames: actions, ResourceArns: resources}
+	for {
+		out, err := iamc.SimulatePrincipalPolicy(ctx, in)
+		if err != nil {
+			return nil, fmt.Errorf("simulate runner policy: %w", err)
+		}
+		// With resource ARNs, IAM returns one result per action, with a decision per resource
+		// in ResourceSpecificResults and a resource-name template at the top level
+		for _, r := range out.EvaluationResults {
+			action := aws.ToString(r.EvalActionName)
+			seen[action] = true
+			if len(r.ResourceSpecificResults) == 0 {
+				if r.EvalDecision == iamtypes.PolicyEvaluationDecisionTypeAllowed {
+					allowed = append(allowed, action+" on "+cmp.Or(strings.Join(resources, ", "), "*"))
+				}
+				continue
+			}
+			for _, rs := range r.ResourceSpecificResults {
+				if rs.EvalResourceDecision == iamtypes.PolicyEvaluationDecisionTypeAllowed {
+					allowed = append(allowed, action+" on "+aws.ToString(rs.EvalResourceName))
+				}
+			}
+		}
+		if !out.IsTruncated {
+			break
+		}
+		in.Marker = out.Marker
+	}
+	for _, a := range actions {
+		if !seen[a] {
+			return nil, fmt.Errorf("simulate runner policy: no result for %s, so read-only access is not established", a)
+		}
+	}
+	return slices.Compact(slices.Sorted(slices.Values(allowed))), nil
+}
+
+// serviceARNs returns the ARNs that belong to an IAM service prefix (s3 ARNs have no region or
+// account, so arn:<partition>:s3::: matches only S3).
+func serviceARNs(service string, arns []string) []string {
+	var out []string
+	for _, a := range arns {
+		if parts := strings.SplitN(a, ":", 4); len(parts) == 4 && parts[2] == service {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // Database is a catalog and database pair checked for open defaults.

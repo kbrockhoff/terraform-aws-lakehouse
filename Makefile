@@ -111,7 +111,7 @@ test-defaults: check-aws ## Run only defaults example tests
 
 test-complete: check-aws ## Run only complete example tests
 	@echo "$(CYAN)Running complete test...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestTerraformCompleteExample|TestCompleteExampleSecurityControls|TestComplianceDesignationGatesTenantKeys'
+	@cd test && go test -v -timeout 30m -run 'TestTerraformCompleteExample|TestCompleteExampleSecurityControls|TestComplianceDesignationGatesTenantKeys|TestRowFilterExclusionFollowsPrincipal'
 	@echo "$(GREEN)✓ Complete test passed$(RESET)"
 
 test-enabled-false: check-aws ## Run only enabled=false test
@@ -200,9 +200,10 @@ verify-apply: verify-init ## Re-apply stage 2 with an overlay (INJECT, INJECT_PE
 	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
 
 verify-down: check-aws verify-build verify-init ## Destroy the fixture, sweep leftovers, restore data-lake settings
-	@# Preflight writes settings.before.json only when it passes. Without it nothing was deployed,
-	@# and the stage 1 apply below would deploy into an account preflight refused (FR-003).
-	@test -f $(VERIFY_OUT)/settings.before.json || { echo "$(RED)✗ No settings.before.json for run $(RUN_ID): preflight never passed, so there is nothing to tear down. Use make verify-cleanup to sweep by prefix.$(RESET)"; exit 1; }
+	@# A passing preflight records the account and Region it checked. Without that record nothing
+	@# was deployed, and with other credentials the stage 1 apply below would deploy into an
+	@# unchecked account (FR-003) and cleanup would restore settings into it
+	@$(LFVERIFY) check-target --run-id $(RUN_ID) --out $(VERIFY_OUT) || { echo "$(RED)✗ Not tearing down run $(RUN_ID) with these credentials$(RESET)"; exit 1; }
 	@# Stage 1 removes the table-level labels, grants, and filters while their tables exist; then
 	@# the seeded tables are dropped, because namespaces holding tables cannot be destroyed
 	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=1 || echo "$(YELLOW)⚠ stage 1 apply failed; continuing teardown$(RESET)"
@@ -215,8 +216,9 @@ verify-full: check-aws ## Full mode: new run, deploy, seed, run, and always tear
 	@$(MAKE) -s verify-new-run
 	@run=$$(cat $(VERIFY_RUN_FILE)); start=$$(date +%s); \
 	  $(MAKE) verify-up RUN_ID=$$run && $(MAKE) verify-seed RUN_ID=$$run && $(MAKE) verify-run RUN_ID=$$run; status=$$?; \
-	  $(MAKE) verify-down RUN_ID=$$run; \
-	  echo "$(CYAN)Run $$run finished in $$(( $$(date +%s) - start ))s with status $$status$(RESET)"; exit $$status
+	  $(MAKE) verify-down RUN_ID=$$run; down=$$?; \
+	  [ $$status -eq 0 ] && status=$$down; \
+	  echo "$(CYAN)Run $$run finished in $$(( $$(date +%s) - start ))s with status $$status (teardown $$down)$(RESET)"; exit $$status
 
 verify-detect: check-aws ## Full mode: apply each misconfiguration overlay and require a failing case
 	@$(MAKE) -s verify-new-run
@@ -224,7 +226,8 @@ verify-detect: check-aws ## Full mode: apply each misconfiguration overlay and r
 	  $(MAKE) verify-up RUN_ID=$$run && $(MAKE) verify-seed RUN_ID=$$run && \
 	  $(LFVERIFY) detect --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(CURDIR)/verify/out/$$run/manifest.json --out $(CURDIR)/verify/out/$$run \
 	    --apply-cmd "$(MAKE) -s -C $(CURDIR) verify-apply RUN_ID={run} INJECT={inject} INJECT_PERSONA={persona}"; status=$$?; \
-	  $(MAKE) verify-down RUN_ID=$$run; exit $$status
+	  $(MAKE) verify-down RUN_ID=$$run; down=$$?; \
+	  [ $$status -eq 0 ] && status=$$down; exit $$status
 
 verify-cleanup: check-aws verify-build ## Sweep an interrupted run by prefix and restore settings (RUN_ID=...)
 	@test -n "$(RUN_ID)" || { echo "$(RED)✗ RUN_ID is required$(RESET)"; exit 1; }

@@ -42,6 +42,17 @@ func Capture(ctx context.Context, g *glue.Client, lf *lakeformation.Client, cata
 				return nil, fmt.Errorf("database %s/%s: %w", c.CatalogID, db, err)
 			}
 			s.Databases = append(s.Databases, c.CatalogID+"/"+aws.ToString(d.Database.Name)+" "+canon(d.Database.Parameters))
+			// The database's own labels and grants: a relabel or grant on a database with no
+			// tables would otherwise go unseen
+			dbRes := &lftypes.Resource{Database: &lftypes.DatabaseResource{CatalogId: aws.String(c.CatalogID), Name: aws.String(db)}}
+			dbTags, err := lf.GetResourceLFTags(ctx, &lakeformation.GetResourceLFTagsInput{Resource: dbRes, ShowAssignedLFTags: aws.Bool(true)})
+			if err != nil {
+				return nil, fmt.Errorf("database %s/%s labels: %w", c.CatalogID, db, err)
+			}
+			s.Assignments = append(s.Assignments, fmt.Sprintf("%s/%s %s", c.CatalogID, db, canon(normalTags(dbTags))))
+			if err := s.addPermissions(ctx, lf, dbRes); err != nil {
+				return nil, err
+			}
 			p := glue.NewGetTablesPaginator(g, &glue.GetTablesInput{CatalogId: aws.String(c.CatalogID), DatabaseName: aws.String(db)})
 			for p.HasMorePages() {
 				page, err := p.NextPage(ctx)
@@ -67,22 +78,12 @@ func Capture(ctx context.Context, g *glue.Client, lf *lakeformation.Client, cata
 					if err != nil {
 						return nil, err
 					}
-					s.Assignments = append(s.Assignments, fmt.Sprintf("%s/%s.%s %s", c.CatalogID, db, aws.ToString(t.Name), canon(tags)))
+					s.Assignments = append(s.Assignments, fmt.Sprintf("%s/%s.%s %s", c.CatalogID, db, aws.ToString(t.Name), canon(normalTags(tags))))
 					// The unfiltered listing below omits table grants in federated catalogs
-					tp := lakeformation.NewListPermissionsPaginator(lf, &lakeformation.ListPermissionsInput{
-						Resource: &lftypes.Resource{Table: &lftypes.TableResource{
-							CatalogId: aws.String(c.CatalogID), DatabaseName: aws.String(db), Name: t.Name,
-						}},
-					})
-					for tp.HasMorePages() {
-						page, err := tp.NextPage(ctx)
-						if err != nil {
-							return nil, err
-						}
-						for _, p := range page.PrincipalResourcePermissions {
-							p.LastUpdated, p.LastUpdatedBy = nil, nil
-							s.Permissions = append(s.Permissions, canon(p))
-						}
+					if err := s.addPermissions(ctx, lf, &lftypes.Resource{Table: &lftypes.TableResource{
+						CatalogId: aws.String(c.CatalogID), DatabaseName: aws.String(db), Name: t.Name,
+					}}); err != nil {
+						return nil, err
 					}
 				}
 			}
@@ -95,6 +96,7 @@ func Capture(ctx context.Context, g *glue.Client, lf *lakeformation.Client, cata
 			return nil, err
 		}
 		for _, t := range page.LFTags {
+			t.TagValues = sortedStrings(t.TagValues)
 			s.LFTags = append(s.LFTags, canon(t))
 		}
 	}
@@ -105,19 +107,15 @@ func Capture(ctx context.Context, g *glue.Client, lf *lakeformation.Client, cata
 			return nil, err
 		}
 		for _, f := range page.DataCellsFilters {
+			f.ColumnNames = sortedStrings(f.ColumnNames)
+			if f.ColumnWildcard != nil {
+				f.ColumnWildcard = &lftypes.ColumnWildcard{ExcludedColumnNames: sortedStrings(f.ColumnWildcard.ExcludedColumnNames)}
+			}
 			s.Filters = append(s.Filters, canon(f))
 		}
 	}
-	pp := lakeformation.NewListPermissionsPaginator(lf, &lakeformation.ListPermissionsInput{})
-	for pp.HasMorePages() {
-		page, err := pp.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range page.PrincipalResourcePermissions {
-			p.LastUpdated, p.LastUpdatedBy = nil, nil
-			s.Permissions = append(s.Permissions, canon(p))
-		}
+	if err := s.addPermissions(ctx, lf, nil); err != nil {
+		return nil, err
 	}
 	set, err := lf.GetDataLakeSettings(ctx, &lakeformation.GetDataLakeSettingsInput{})
 	if err != nil {
@@ -146,6 +144,107 @@ func sortedSettings(in *lftypes.DataLakeSettings) *lftypes.DataLakeSettings {
 	out.ReadOnlyAdmins = byID(in.ReadOnlyAdmins)
 	out.TrustedResourceOwners = slices.Sorted(slices.Values(in.TrustedResourceOwners))
 	return &out
+}
+
+// addPermissions lists the grants on resource (every grant when nil) in canonical form.
+func (s *State) addPermissions(ctx context.Context, lf *lakeformation.Client, resource *lftypes.Resource) error {
+	p := lakeformation.NewListPermissionsPaginator(lf, &lakeformation.ListPermissionsInput{Resource: resource})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		for _, g := range page.PrincipalResourcePermissions {
+			s.Permissions = append(s.Permissions, canon(NormalGrant(g)))
+		}
+	}
+	return nil
+}
+
+// NormalGrant puts a grant in canonical form: no timestamps, and every set-valued list sorted
+// (permissions, tag expressions and values, column sets), so the same grant returned in another
+// order is not a change. Nothing order-sensitive is touched.
+func NormalGrant(g lftypes.PrincipalResourcePermissions) lftypes.PrincipalResourcePermissions {
+	g.LastUpdated, g.LastUpdatedBy = nil, nil
+	g.Permissions = sortedPerms(g.Permissions)
+	g.PermissionsWithGrantOption = sortedPerms(g.PermissionsWithGrantOption)
+	if g.Resource == nil {
+		return g
+	}
+	r := *g.Resource
+	if r.LFTagPolicy != nil {
+		p := *r.LFTagPolicy
+		p.Expression = normalExpression(p.Expression)
+		r.LFTagPolicy = &p
+	}
+	if r.LFTag != nil {
+		t := *r.LFTag
+		t.TagValues = sortedStrings(t.TagValues)
+		r.LFTag = &t
+	}
+	if r.TableWithColumns != nil {
+		t := *r.TableWithColumns
+		t.ColumnNames = sortedStrings(t.ColumnNames)
+		if t.ColumnWildcard != nil {
+			t.ColumnWildcard = &lftypes.ColumnWildcard{ExcludedColumnNames: sortedStrings(t.ColumnWildcard.ExcludedColumnNames)}
+		}
+		r.TableWithColumns = &t
+	}
+	g.Resource = &r
+	return g
+}
+
+// normalTags sorts a GetResourceLFTags result: tags by key, values, and columns by name.
+func normalTags(o *lakeformation.GetResourceLFTagsOutput) *lakeformation.GetResourceLFTagsOutput {
+	if o == nil {
+		return nil
+	}
+	out := *o
+	out.LFTagOnDatabase = normalPairs(o.LFTagOnDatabase)
+	out.LFTagsOnTable = normalPairs(o.LFTagsOnTable)
+	out.LFTagsOnColumns = nil
+	for _, c := range o.LFTagsOnColumns {
+		c.LFTags = normalPairs(c.LFTags)
+		out.LFTagsOnColumns = append(out.LFTagsOnColumns, c)
+	}
+	sort.Slice(out.LFTagsOnColumns, func(i, j int) bool {
+		return aws.ToString(out.LFTagsOnColumns[i].Name) < aws.ToString(out.LFTagsOnColumns[j].Name)
+	})
+	return &out
+}
+
+func normalPairs(in []lftypes.LFTagPair) []lftypes.LFTagPair {
+	out := make([]lftypes.LFTagPair, 0, len(in))
+	for _, t := range in {
+		t.TagValues = sortedStrings(t.TagValues)
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return aws.ToString(out[i].TagKey) < aws.ToString(out[j].TagKey) })
+	return out
+}
+
+func normalExpression(in []lftypes.LFTag) []lftypes.LFTag {
+	out := make([]lftypes.LFTag, 0, len(in))
+	for _, t := range in {
+		t.TagValues = sortedStrings(t.TagValues)
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return aws.ToString(out[i].TagKey) < aws.ToString(out[j].TagKey) })
+	return out
+}
+
+func sortedStrings(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	return slices.Sorted(slices.Values(in))
+}
+
+func sortedPerms(in []lftypes.Permission) []lftypes.Permission {
+	if in == nil {
+		return nil
+	}
+	return slices.Sorted(slices.Values(in))
 }
 
 func canon(v any) string {

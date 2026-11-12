@@ -56,6 +56,7 @@ commands:
   diff       compare the before and after snapshots; fails on any difference
   audit      list non-read-only CloudTrail events from the run's sessions (probe mode)
   cleanup    sweep a run's resources by prefix and restore the data-lake settings
+  check-target  refuse unless the credentials point at the account and Region the run's preflight checked
   probe-matrix  derive a probe matrix from --matrix (full) and --manifest, written to --out
 `
 
@@ -164,6 +165,10 @@ type env struct {
 	role    string
 }
 
+func (e *env) target() preflight.Target {
+	return preflight.Target{Account: e.account, Region: e.cfg.Region}
+}
+
 func load(ctx context.Context) (*env, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -207,6 +212,8 @@ func dispatch(ctx context.Context, cmd string, args []string) error {
 		return cmdAudit(ctx, f)
 	case "cleanup":
 		return cmdCleanup(ctx, f)
+	case "check-target":
+		return cmdCheckTarget(ctx, f)
 	case "probe-matrix":
 		return cmdProbeMatrix(f)
 	}
@@ -220,11 +227,12 @@ func cmdPreflight(ctx context.Context, f *flags) error {
 	}
 	lf := lakeformation.NewFromConfig(e.cfg)
 	if f.mode == "probe" {
-		if err := preflight.Probe(ctx, iam.NewFromConfig(e.cfg), lf, preflight.ProbeInput{Runner: e.role}); err != nil {
-			return err
-		}
 		m, err := matrix.Load(f.matrix)
 		if err != nil {
+			return err
+		}
+		in := preflight.ProbeInput{Runner: e.role, Resources: probeResources(m, e)}
+		if err := preflight.Probe(ctx, iam.NewFromConfig(e.cfg), lf, in); err != nil {
 			return err
 		}
 		if err := preflight.NoOpenDefaults(ctx, lf, probeDatabases(m)); err != nil {
@@ -259,6 +267,9 @@ func cmdPreflight(ctx context.Context, f *flags) error {
 		AllowList: allow, FixtureAdmins: fixtureAdmins,
 	})
 	if err != nil {
+		return err
+	}
+	if err := preflight.RecordTarget(filepath.Join(dir, "target.json"), e.target()); err != nil {
 		return err
 	}
 	if _, err := os.Stat(saved); errors.Is(err, os.ErrNotExist) { // #nosec G703 -- operator-chosen output path (--out or out/<run-id>, run ID validated); the CLI runs with the operator's own rights
@@ -345,6 +356,67 @@ func newRunner(ctx context.Context, f *flags, e *env, m *matrix.Matrix, man *man
 // probePolicy scopes probe sessions to read-only calls plus result writes in the matrix's
 // workgroups' result locations. Athena results go to the workgroup's enforced location, which
 // probe matrices do not name, so writes are limited to buckets by name pattern instead.
+// probeResources lists the target's ARNs for the read-only simulation: persona roles, Glue
+// catalogs, databases, and tables, S3 Tables buckets (and a table in each), workgroups, results
+// buckets (and an object in each), and keys.
+func probeResources(m *matrix.Matrix, e *env) []string {
+	part := "aws"
+	if p := strings.SplitN(e.role, ":", 3); len(p) == 3 {
+		part = p[1]
+	}
+	region, acct := e.cfg.Region, e.account
+	arn := func(svc, res string) string { return fmt.Sprintf("arn:%s:%s:%s:%s:%s", part, svc, region, acct, res) }
+	seen := map[string]bool{}
+	var out []string
+	add := func(a string) {
+		if a != "" && !seen[a] {
+			seen[a] = true
+			out = append(out, a)
+		}
+	}
+	add(arn("glue", "catalog"))
+	for _, p := range m.Personas {
+		add(p.RoleARN)
+		for _, c := range p.Cases {
+			r := c.Resource
+			if r.Workgroup != "" {
+				add(arn("athena", "workgroup/"+r.Workgroup))
+			}
+			if r.Database == "" {
+				continue
+			}
+			// "<account>:s3tablescatalog/<bucket>" names a federated catalog; Glue ARNs drop the account
+			cat := ""
+			if _, sub, ok := strings.Cut(r.CatalogID, ":"); ok {
+				cat = sub + "/"
+				add(arn("glue", "catalog/"+sub))
+				if b, ok := strings.CutPrefix(sub, "s3tablescatalog/"); ok {
+					add(arn("s3tables", "bucket/"+b))
+					add(arn("s3tables", "bucket/"+b+"/table/lfverify-probe"))
+				}
+			}
+			add(arn("glue", "database/"+cat+r.Database))
+			if r.Table != "" {
+				add(arn("glue", "table/"+cat+r.Database+"/"+r.Table))
+			}
+		}
+	}
+	for _, b := range strings.Split(os.Getenv("LFVERIFY_PROBE_RESULTS_BUCKETS"), ",") {
+		if b = strings.TrimSpace(b); b != "" {
+			add("arn:" + part + ":s3:::" + b)
+			add("arn:" + part + ":s3:::" + b + "/lfverify-probe")
+		}
+	}
+	for _, k := range strings.Split(os.Getenv("LFVERIFY_PROBE_KMS_KEYS"), ",") {
+		if k = strings.TrimSpace(k); strings.HasPrefix(k, "arn:") {
+			add(k)
+		} else if k != "" {
+			add(arn("kms", "key/"+k))
+		}
+	}
+	return out
+}
+
 func probePolicy(m *matrix.Matrix) (string, error) {
 	var buckets, objects []string
 	for _, b := range strings.Split(os.Getenv("LFVERIFY_PROBE_RESULTS_BUCKETS"), ",") {
@@ -638,6 +710,10 @@ func cmdCleanup(ctx context.Context, f *flags) error {
 	if err != nil {
 		return err
 	}
+	// Sweeping and restoring settings are only safe in the account the run was checked in
+	if err := preflight.CheckTarget(filepath.Join(dir, "target.json"), e.target()); err != nil {
+		return err
+	}
 	sw := &preflight.Sweeper{
 		LF: lakeformation.NewFromConfig(e.cfg), S3Tables: s3tables.NewFromConfig(e.cfg), Athena: athena.NewFromConfig(e.cfg),
 		S3: s3.NewFromConfig(e.cfg), IAM: iam.NewFromConfig(e.cfg), Glue: glue.NewFromConfig(e.cfg), KMS: kms.NewFromConfig(e.cfg),
@@ -657,6 +733,21 @@ func cmdCleanup(ctx context.Context, f *flags) error {
 	}
 	logf("data-lake settings restored from %s", saved)
 	return sweepErr
+}
+
+func cmdCheckTarget(ctx context.Context, f *flags) error {
+	if f.runID == "" {
+		return fmt.Errorf("%w: --run-id is required", errUsage)
+	}
+	dir, err := f.outDir()
+	if err != nil {
+		return err
+	}
+	e, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	return preflight.CheckTarget(filepath.Join(dir, "target.json"), e.target())
 }
 
 func cmdProbeMatrix(f *flags) error {

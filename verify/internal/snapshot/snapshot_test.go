@@ -54,3 +54,31 @@ func TestSettingsOrderIgnored(t *testing.T) {
 		t.Error("a removed admin must still differ")
 	}
 }
+
+// TestNormalGrantIgnoresSetOrder: the same grant listed in another order is not a change, while
+// the grant itself is kept (PR #3 review, awslkhs-etbr)
+func TestNormalGrantIgnoresSetOrder(t *testing.T) {
+	grant := func(perms []lftypes.Permission, values []string, cols []string) lftypes.PrincipalResourcePermissions {
+		return lftypes.PrincipalResourcePermissions{
+			Permissions: perms,
+			Resource: &lftypes.Resource{
+				LFTagPolicy: &lftypes.LFTagPolicyResource{Expression: []lftypes.LFTag{
+					{TagKey: aws.String("zone"), TagValues: values}, {TagKey: aws.String("t"), TagValues: []string{"member"}},
+				}},
+				TableWithColumns: &lftypes.TableWithColumnsResource{ColumnNames: cols},
+			},
+		}
+	}
+	a := grant([]lftypes.Permission{"SELECT", "DESCRIBE"}, []string{"raw", "curated"}, []string{"b", "a"})
+	b := grant([]lftypes.Permission{"DESCRIBE", "SELECT"}, []string{"curated", "raw"}, []string{"a", "b"})
+	if canon(NormalGrant(a)) != canon(NormalGrant(b)) {
+		t.Errorf("order differences remain:\n%s\n%s", canon(NormalGrant(a)), canon(NormalGrant(b)))
+	}
+	if aws.ToString(a.Resource.LFTagPolicy.Expression[0].TagKey) != "zone" || a.Permissions[0] != "SELECT" {
+		t.Error("the listed grant must not be modified")
+	}
+	c := grant([]lftypes.Permission{"SELECT"}, []string{"raw", "curated"}, []string{"a", "b"})
+	if canon(NormalGrant(a)) == canon(NormalGrant(c)) {
+		t.Error("a real permission change must still differ")
+	}
+}

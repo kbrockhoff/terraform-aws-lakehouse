@@ -44,12 +44,18 @@ locals {
   row_filter_tag_key = {
     for r in distinct([for f in values(var.tenant.row_filters) : f.reader]) : r => "${local.tenant_tag_key}-rf-${r}"
   }
+  # Fields come from each filter, not from parsing the key: reader keys may contain "/"
   row_filtered_tables = {
-    for k in distinct([for f in values(var.tenant.row_filters) : "${f.reader}/${f.zone}/${f.table}"]) : k => {
-      reader = split("/", k)[0]
-      zone   = split("/", k)[1]
-      table  = split("/", k)[2]
-    }
+    for k, fs in {
+      for f in values(var.tenant.row_filters) : "${f.reader}/${f.zone}/${f.table}" => { reader = f.reader, zone = f.zone, table = f.table }...
+    } : k => fs[0]
+  }
+  # Grants are unioned per principal, so every reader entry of a principal carries the exclusion
+  # keys of all row-filtered entries of that principal
+  reader_row_filter_keys = {
+    for k, r in var.tenant.readers : k => [
+      for fr, key in local.row_filter_tag_key : key if var.tenant.readers[fr].principal_arn == r.principal_arn
+    ]
   }
 
   # Database labels: the tenant's most restrictive values, so unlabeled tables fail closed

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/matrix"
@@ -49,5 +50,31 @@ func TestParseRunID(t *testing.T) {
 func TestParseRejectsBadMode(t *testing.T) {
 	if _, err := parse("run", []string{"--mode", "chaos"}); !errors.Is(err, errUsage) {
 		t.Errorf("got %v", err)
+	}
+}
+
+func TestProbeResources(t *testing.T) {
+	t.Setenv("LFVERIFY_PROBE_RESULTS_BUCKETS", "results")
+	t.Setenv("LFVERIFY_PROBE_KMS_KEYS", "k1")
+	m := &matrix.Matrix{Mode: matrix.Probe, Personas: []matrix.Persona{{
+		Key: "reader", RoleARN: "arn:aws:iam::111:role/reader",
+		Cases: []matrix.Case{{Resource: matrix.Resource{CatalogID: "111:s3tablescatalog/curated", Database: "sales", Table: "orders", Workgroup: "wg"}}},
+	}}}
+	e := &env{account: "111", role: "arn:aws:iam::111:role/runner"}
+	e.cfg.Region = "us-east-1"
+	got := probeResources(m, e)
+	for _, want := range []string{
+		"arn:aws:iam::111:role/reader",
+		"arn:aws:glue:us-east-1:111:catalog/s3tablescatalog/curated",
+		"arn:aws:glue:us-east-1:111:database/s3tablescatalog/curated/sales",
+		"arn:aws:glue:us-east-1:111:table/s3tablescatalog/curated/sales/orders",
+		"arn:aws:s3tables:us-east-1:111:bucket/curated",
+		"arn:aws:athena:us-east-1:111:workgroup/wg",
+		"arn:aws:s3:::results",
+		"arn:aws:kms:us-east-1:111:key/k1",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("missing %s in %v", want, got)
+		}
 	}
 }
