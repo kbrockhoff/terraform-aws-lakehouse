@@ -651,12 +651,15 @@ SLOs.
   - interrupted-run cleanup;
   - the "confirm in first run" risks from plan.md;
   - how to update expectations deliberately when AWS behavior changes (spec Assumptions).
-- [ ] T048 Sandbox: run `make verify-full` in dev-green.
+- [x] T048 Sandbox: run `make verify-full` in dev-green.
   - Record the run ID and duration (the target is 30 minutes or less), and the case totals.
   - Resolve plan Risks 1–4 by updating `verify/matrix/full.yaml`. Each changed expectation gets a
     `note:` citing the observation and date.
   - Writer DML cases are expected to be `not-run: engine error` while `awslkhs-cdq` is open.
     Record them; do not change their expectation.
+  - Result (2026-11-11): first run `36ea41`, then `24b160` and `790b58`; risks 1–4 resolved with
+    dated `note:` entries in `full.yaml`; the 14 DML cases are not run, as expected. Runs, totals,
+    and durations are in `sandbox-results.md`.
 - [x] T049 Sandbox: run `make verify-full` 10 consecutive times against an unchanged
   configuration (Determinism SLO). Compare `report.json` pass/fail per case ID across the runs.
   Any flaky case is fixed in the runner's retry and settle logic, not by loosening expectations.
@@ -741,8 +744,11 @@ SLOs.
       verified for reads. No case failed, and no new module bug was found.
     - New harness coverage beads: `awslkhs-ptos` (label-style Lake Formation denial on gamma),
       `awslkhs-sr2a` (label-style missing-grant detection), and `awslkhs-46y5` (gosec).
-- [ ] T059 Final review against spec success criteria. Tick each box in `spec.md` Success
+- [x] T059 Final review against spec success criteria. Tick each box in `spec.md` Success
   Criteria only with evidence from `sandbox-results.md` or the `make validate` output.
+  - Result (2026-11-12): 16 of 17 success criteria ticked with evidence (`sandbox-results.md`,
+    Success criteria review). Static analysis stays open: the Go code is not scanned
+    (`awslkhs-46y5`).
 
 ---
 

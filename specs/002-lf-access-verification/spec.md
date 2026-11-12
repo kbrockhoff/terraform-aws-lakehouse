@@ -384,40 +384,42 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
 
 ### Code Validation
 
-- [ ] All harness infrastructure passes the repository's validation gates (`make pre-commit`,
+- [x] All harness infrastructure passes the repository's validation gates (`make pre-commit`,
       `make validate`).
-- [ ] The expected-access matrix is declared as data and covers every persona in FR-009 to FR-020
+- [x] The expected-access matrix is declared as data and covers every persona in FR-009 to FR-020
       in both grant styles, with the documented row-filter exception.
-- [ ] Every fixture and identity name includes the run identifier.
+- [x] Every fixture and identity name includes the run identifier.
 
 ### Security Validation
 
 - [ ] No HIGH or CRITICAL static-analysis findings, or each one is suppressed with a justification.
-- [ ] Test identity policies grant API reachability only. A review confirms that no identity policy
+      Open: Terraform passes (Checkov 0 failed, every suppression justified), but the Go code has
+      not been scanned; `awslkhs-46y5` adds `gosec`. See `sandbox-results.md`, Success criteria review.
+- [x] Test identity policies grant API reachability only. A review confirms that no identity policy
       grants direct data access, except the fixture owner's.
-- [ ] After teardown, the administrator and read-only administrator lists equal their pre-run
+- [x] After teardown, the administrator and read-only administrator lists equal their pre-run
       values.
-- [ ] The storage-bypass checks (FR-022) pass for every persona.
-- [ ] Probe mode aborts when its runner identity holds any permission that can change the target
+- [x] The storage-bypass checks (FR-022) pass for every persona.
+- [x] Probe mode aborts when its runner identity holds any permission that can change the target
       (FR-027).
-- [ ] Probe reports contain no data values (FR-030).
+- [x] Probe reports contain no data values (FR-030).
 
 ### Performance Validation
 
-- [ ] A full run completes in 30 minutes or less.
-- [ ] Ten consecutive runs against an unchanged configuration produce identical results.
+- [x] A full run completes in 30 minutes or less.
+- [x] Ten consecutive runs against an unchanged configuration produce identical results.
 
 ### Operational Validation
 
-- [ ] Each injected misconfiguration listed under Detection makes at least one case fail, with
+- [x] Each injected misconfiguration listed under Detection makes at least one case fail, with
       evidence that identifies it.
-- [ ] Running teardown after an interrupted run removes every resource that carries the run
+- [x] Running teardown after an interrupted run removes every resource that carries the run
       identifier.
-- [ ] The row-filter cases previously blocked in T076 (`awslkhs-cdq`) execute and pass.
-- [ ] A probe-mode run against the full-mode deployment, with the same expectation matrix, produces
+- [x] The row-filter cases previously blocked in T076 (`awslkhs-cdq`) execute and pass.
+- [x] A probe-mode run against the full-mode deployment, with the same expectation matrix, produces
       the same pass/fail outcome for every case that both modes can verify.
-- [ ] A before-and-after comparison of a probe-mode target shows no change (Non-interference SLO).
-- [ ] Full mode refuses to start against a target marked as production (FR-003).
+- [x] A before-and-after comparison of a probe-mode target shows no change (Non-interference SLO).
+- [x] Full mode refuses to start against a target marked as production (FR-003).
 
 ## Assumptions *(include if making assumptions)*
 

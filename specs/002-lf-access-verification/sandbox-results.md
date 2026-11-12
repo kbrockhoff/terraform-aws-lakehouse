@@ -218,3 +218,30 @@ That covers every run in the Runs table plus the two failed applies, so a run co
 plan's USD 0.10 estimate. The largest single query scanned 16.7 KB; each query bills the 10 MB
 minimum. Other cost is KMS: one platform key per run at USD 1 per month, prorated until its
 7-day deletion window ends.
+
+## Success criteria review (T059)
+
+Reviewed 2026-11-12. A criterion is ticked in `spec.md` only where this file or the `make validate`
+output shows the evidence.
+
+| Criterion | Met | Evidence |
+|-----------|-----|----------|
+| Validation gates pass | Yes | T055 `make validate`: every step ran, no tool skipped. After the later Go and docs commits, `make pre-commit` and `make test-verify` pass; no `.tf` file changed since T055. |
+| Matrix declared as data, covering FR-009 to FR-020 in both styles | Yes | `verify/matrix/full.yaml`; Results by persona lists all 12 matrix personas in both styles. Row filters in the label style are named-resource grants, the documented exception. |
+| Every fixture and identity name includes the run ID | Yes | T052: the sweep found every resource by the `lfv-<run-id>` prefix or the `LfverifyRun` tag, and nothing was left. Persona sessions are named `lfverify-<run-id>-<persona>` (visible in denial messages). |
+| No HIGH or CRITICAL static-analysis findings | **Partly** | Terraform: Checkov 773 passed, 0 failed; every inline suppression carries a justification. Go: the planned `gosec` scan was not built, so the Go code has no static-analysis evidence (`awslkhs-46y5`). Not ticked. |
+| Identity policies grant API reachability only | Yes | Review of `verify/fixture/personas.tf` and the module's persona documents: `s3:GetObject` and `s3:PutObject` are limited to the query results bucket; no persona allows `s3tables:GetTableData`, `GetTableMetadataLocation`, or `PutTableData`. The fixture's only `s3tables:*` statement is a Deny on insecure transport. |
+| Admin and read-only admin lists restored after teardown | Yes | Settings restore section; T052 settings match; both lists empty after T049, as before. |
+| Storage-bypass checks pass for every persona | Yes | Run `ddc587`: `storage_read` is DENIED and passes for all 12 personas in both styles. |
+| Probe aborts when its runner can change the target | Yes | Probe mode: preflight exit 2 naming `lakeformation:GrantPermissions`. |
+| Probe reports contain no data values | Yes | `c9cea7/report.json` holds outcomes, column names, row counts, scan bytes, permissions, and error evidence only; none of the seeded region values or `900-00-` SSNs appear. |
+| A full run completes in 30 minutes or less | Yes | Determinism: 873–937 s per run. |
+| Ten consecutive runs produce identical results | Yes | Determinism: all 211 cases identical across 10 runs. |
+| Each injected misconfiguration fails at least one case | Yes | Detection: 17 of 17. |
+| Teardown after an interrupted run removes every run resource | Yes | T052 (`86aeab`). The KMS key is scheduled for deletion with the 7-day minimum AWS allows; it cannot be removed sooner. |
+| Row-filter cases blocked in T076 execute and pass | Yes | Row filters section: they pass for reads from `790b58` on. |
+| Probe and full mode agree on every shared case | Yes | Probe mode: 101 of 101. |
+| A probe leaves its target unchanged | Yes | Probe mode: `c9cea7` snapshots identical; CloudTrail audit 0 change events. |
+| Full mode refuses a production target | Yes | Production refusal (T053). |
+
+16 of 17 criteria are met. The open one is static analysis of the Go code (`awslkhs-46y5`).
