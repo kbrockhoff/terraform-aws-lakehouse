@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -67,7 +67,7 @@ format: ## Format all Terraform files
 	@terraform fmt -recursive
 	@echo "$(GREEN)✓ Formatting complete$(RESET)"
 
-lint: ## Run TFLint on all Terraform files
+lint: ## Run TFLint on all Terraform files and gosec on verify/
 	@echo "$(CYAN)Running TFLint...$(RESET)"
 	@if command -v tflint >/dev/null 2>&1; then \
 		tflint --init >/dev/null || exit 1; \
@@ -76,6 +76,16 @@ lint: ## Run TFLint on all Terraform files
 	else \
 		echo "$(YELLOW)⚠ TFLint not installed, skipping$(RESET)"; \
 	fi
+	@$(MAKE) -s lint-verify
+
+# gosec runs pinned through go run, so it needs only Go and can never be skipped as not installed.
+# Every finding fails; a suppression needs a #nosec comment with a justification.
+GOSEC_VERSION := v2.30.0
+
+lint-verify: ## Run gosec on the lfverify Go code
+	@echo "$(CYAN)Running gosec $(GOSEC_VERSION) on verify/...$(RESET)"
+	@cd verify && go run github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION) -quiet ./... || { echo "$(RED)✗ gosec found issues$(RESET)"; exit 1; }
+	@echo "$(GREEN)✓ gosec passed$(RESET)"
 
 security-scan: ## Run the Checkov security scan with the same flags as CI (extra flags: CHECKOV_ARGS=...)
 	@echo "$(CYAN)Running Checkov...$(RESET)"

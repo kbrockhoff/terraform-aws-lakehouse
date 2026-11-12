@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/predicate"
@@ -201,7 +202,7 @@ type Matrix struct {
 // Load reads, defaults, and validates a matrix file. Unknown fields are errors, so a typo never
 // silently drops an expectation.
 func Load(path string) (*Matrix, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- reads a file the operator names on the command line
 	if err != nil {
 		return nil, err
 	}
@@ -256,6 +257,10 @@ func (m *Matrix) applyDefaults() {
 	}
 }
 
+// keyPattern limits persona keys to characters that are safe in STS session names, file names,
+// and the detect overlay command
+var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+
 // Validate checks every rule that keeps a matrix meaningful and, in probe mode, harmless.
 func (m *Matrix) Validate() error {
 	var errs []error
@@ -270,6 +275,8 @@ func (m *Matrix) Validate() error {
 	for _, p := range m.Personas {
 		if p.Key == "" {
 			errs = append(errs, errors.New("persona with empty key"))
+		} else if !keyPattern.MatchString(p.Key) {
+			errs = append(errs, fmt.Errorf("persona key %q must match %s", p.Key, keyPattern))
 		}
 		if keys[p.Key] {
 			errs = append(errs, fmt.Errorf("duplicate persona %q", p.Key))

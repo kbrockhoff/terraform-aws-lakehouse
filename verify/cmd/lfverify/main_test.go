@@ -34,6 +34,18 @@ func TestProbeDatabasesDeduplicates(t *testing.T) {
 	}
 }
 
+// The run ID reaches output paths and the detect overlay command, so only the fixture's form passes
+func TestParseRunID(t *testing.T) {
+	for _, id := range []string{"../etc", "abc12", "ABC123", "abc123; rm -rf ~", "abcdefg"} {
+		if _, err := parse("run", []string{"--run-id", id}); !errors.Is(err, errUsage) {
+			t.Errorf("run ID %q: got %v, want a usage error", id, err)
+		}
+	}
+	if _, err := parse("run", []string{"--run-id", "0a1b2c"}); err != nil {
+		t.Errorf("valid run ID rejected: %v", err)
+	}
+}
+
 func TestParseRejectsBadMode(t *testing.T) {
 	if _, err := parse("run", []string{"--mode", "chaos"}); !errors.Is(err, errUsage) {
 		t.Errorf("got %v", err)

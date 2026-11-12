@@ -392,9 +392,7 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
 
 ### Security Validation
 
-- [ ] No HIGH or CRITICAL static-analysis findings, or each one is suppressed with a justification.
-      Open: Terraform passes (Checkov 0 failed, every suppression justified), but the Go code has
-      not been scanned; `awslkhs-46y5` adds `gosec`. See `sandbox-results.md`, Success criteria review.
+- [x] No HIGH or CRITICAL static-analysis findings, or each one is suppressed with a justification.
 - [x] Test identity policies grant API reachability only. A review confirms that no identity policy
       grants direct data access, except the fixture owner's.
 - [x] After teardown, the administrator and read-only administrator lists equal their pre-run

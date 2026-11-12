@@ -91,12 +91,12 @@ func (r *Run) WriteAll(dir string) error {
 		"junit.xml":   r.WriteJUnit,
 		"report.md":   r.WriteMarkdown,
 	} {
-		f, err := os.Create(filepath.Join(dir, name))
+		f, err := os.Create(filepath.Join(dir, name)) // #nosec G304 -- fixed report names inside the run's output directory
 		if err != nil {
 			return err
 		}
 		if err := write(f); err != nil {
-			f.Close()
+			_ = f.Close() // the write error is the one to report
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		if err := f.Close(); err != nil {

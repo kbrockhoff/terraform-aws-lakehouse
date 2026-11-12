@@ -53,7 +53,7 @@ precedence over this guide when the two conflict.
   - `fixture/`: a Terraform root that calls this module (`source = "../.."`) plus a named-resource baseline, applied in two stages (`stage` 1, then 2 after `seed`), with `inject` overlays for detection
   - `sandbox-accounts.txt`: the full-mode allow-list
 - Persona keys, shared by the fixture, the manifest, matrix files, and session names: `admin`, `roadmin`, `meta_reader`, `meta_writer`, `reader_multi`, `reader_single`, `writer_multi`, `writer_single`, `reader_cols`, `reader_rows`, `reader_cells`, `control`, `steward` (held in reserve; not in the matrix)
-- `make test-verify` (offline unit tests) runs in `make validate`; `make test-verify-fixture` (plan-only) runs in `make test`
+- `make test-verify` (offline unit tests) runs in `make validate`; `make test-verify-fixture` (plan-only) runs in `make test`; `make lint-verify` (gosec, pinned) runs in `make lint`. A gosec suppression needs `#nosec <rule> -- <reason>`
 - Live `verify-*` targets (`verify-full`, `verify-detect`, `verify-probe`, and the step targets) deploy into or read from real accounts and never run from `make validate` or `make test`. Full mode runs only in allow-listed sandbox accounts and refuses production
 
 ## Terraform Module Guide

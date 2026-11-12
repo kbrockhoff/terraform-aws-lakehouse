@@ -200,7 +200,7 @@ func (s *State) Save(path string) error {
 
 // Load reads a snapshot written by Save.
 func Load(path string) (*State, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- reads a file the operator names on the command line
 	if err != nil {
 		return nil, err
 	}

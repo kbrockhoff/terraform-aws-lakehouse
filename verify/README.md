@@ -86,6 +86,7 @@ It covers these personas:
 | Target | Does |
 |---|---|
 | `make test-verify` | Offline vet and unit tests. Part of `make validate` |
+| `make lint-verify` | gosec, pinned and run through `go run`. Part of `make lint`. Every finding fails; a suppression needs `#nosec <rule> -- <reason>` |
 | `make test-verify-fixture` | Plan-only Terratest of the fixture at both stages and with overlays. Part of `make test` |
 | `make verify-full` | New run ID → preflight → apply stage 1 → seed → apply stage 2 → run → destroy → cleanup |
 | `make verify-up`, `verify-seed`, `verify-run`, `verify-down` | The same steps one at a time. They use the last run ID, or `RUN_ID=…` |

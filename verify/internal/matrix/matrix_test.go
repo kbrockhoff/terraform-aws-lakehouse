@@ -57,6 +57,8 @@ func TestInvalid(t *testing.T) {
 		{"bad predicate", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: alpha, table: t}, expect: allowed, row_predicate: {column: r, op: like, values: [a]}}\n", "unknown predicate op"},
 		{"absent without columns", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: alpha, table: t}, expect: absent}\n", "needs absent_columns"},
 		{"bad mode", "mode: chaos\npersonas:\n  - key: a\n    cases: []\n", "mode must be full or probe"},
+		{"unsafe persona key", "mode: full\npersonas:\n  - key: \"a; rm -rf x\"\n    cases: []\n", "must match"},
+		{"path in persona key", "mode: full\npersonas:\n  - key: ../a\n    cases: []\n", "must match"},
 	}
 	for _, c := range cases {
 		_, err := Parse([]byte(c.yaml))

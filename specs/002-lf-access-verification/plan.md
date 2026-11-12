@@ -510,7 +510,7 @@ section and `verify/README.md` describe what was built.
 | # | Planned | Built | Why |
 |---|---------|-------|-----|
 | D2 | `aws-sdk-go-v2` at `test/go.mod`'s minor versions (core v1.42.0) | Core v1.48.0 and current service clients; adds `arrow-go/v18` v18.8.0 and the `kms` client | iceberg-go v0.7.0 requires core >= v1.45.1. Arrow builds the record batches iceberg-go appends; `kms` serves the cleanup sweep (D11). |
-| D3 | `gosec` through `make lint-verify` | Not built. `make test-verify` runs `go vet` and the unit tests. | Deferred to `awslkhs-46y5`. |
+| D3 | `gosec` through `make lint-verify`, run when installed | Built later (`awslkhs-46y5`): `make lint-verify` runs gosec v2.30.0 through `go run`, so it needs only Go and is never skipped; `make lint` calls it. | The first scan found 18 issues. Run IDs and persona keys are now validated, three unchecked errors are handled, and 14 operator-path and operator-command findings carry `#nosec` justifications. |
 
 **Fixture**
 

@@ -81,7 +81,7 @@ type Manifest struct {
 
 // Load reads a manifest written by `terraform output -json manifest`.
 func Load(path string) (*Manifest, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- reads a file the operator names on the command line
 	if err != nil {
 		return nil, err
 	}

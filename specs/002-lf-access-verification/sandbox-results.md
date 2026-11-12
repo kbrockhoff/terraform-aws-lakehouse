@@ -22,7 +22,6 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
 | Bucket-catalog `DESCRIBE` grant from Terraform | `lfverify seed` makes it, because the provider cannot | awslkhs-qrp |
-| Static analysis of the Go code (`gosec`) | The planned `make lint-verify` target was not built | awslkhs-46y5 |
 
 ## Runs
 
@@ -229,7 +228,7 @@ output shows the evidence.
 | Validation gates pass | Yes | T055 `make validate`: every step ran, no tool skipped. After the later Go and docs commits, `make pre-commit` and `make test-verify` pass; no `.tf` file changed since T055. |
 | Matrix declared as data, covering FR-009 to FR-020 in both styles | Yes | `verify/matrix/full.yaml`; Results by persona lists all 12 matrix personas in both styles. Row filters in the label style are named-resource grants, the documented exception. |
 | Every fixture and identity name includes the run ID | Yes | T052: the sweep found every resource by the `lfv-<run-id>` prefix or the `LfverifyRun` tag, and nothing was left. Persona sessions are named `lfverify-<run-id>-<persona>` (visible in denial messages). |
-| No HIGH or CRITICAL static-analysis findings | **Partly** | Terraform: Checkov 773 passed, 0 failed; every inline suppression carries a justification. Go: the planned `gosec` scan was not built, so the Go code has no static-analysis evidence (`awslkhs-46y5`). Not ticked. |
+| No HIGH or CRITICAL static-analysis findings | Yes | Terraform: Checkov 773 passed, 0 failed; every inline suppression carries a justification. Go: `make lint-verify` (gosec v2.30.0) reports 0 issues. Its first scan found 8 HIGH, 7 MEDIUM, and 3 LOW. The fixes validate run IDs and persona keys and handle three unchecked errors; the 14 remaining findings are operator-supplied paths and the operator's own overlay command, each suppressed with a `#nosec` justification (`awslkhs-46y5`). |
 | Identity policies grant API reachability only | Yes | Review of `verify/fixture/personas.tf` and the module's persona documents: `s3:GetObject` and `s3:PutObject` are limited to the query results bucket; no persona allows `s3tables:GetTableData`, `GetTableMetadataLocation`, or `PutTableData`. The fixture's only `s3tables:*` statement is a Deny on insecure transport. |
 | Admin and read-only admin lists restored after teardown | Yes | Settings restore section; T052 settings match; both lists empty after T049, as before. |
 | Storage-bypass checks pass for every persona | Yes | Run `ddc587`: `storage_read` is DENIED and passes for all 12 personas in both styles. |
@@ -244,4 +243,4 @@ output shows the evidence.
 | A probe leaves its target unchanged | Yes | Probe mode: `c9cea7` snapshots identical; CloudTrail audit 0 change events. |
 | Full mode refuses a production target | Yes | Production refusal (T053). |
 
-16 of 17 criteria are met. The open one is static analysis of the Go code (`awslkhs-46y5`).
+All 17 criteria are met.

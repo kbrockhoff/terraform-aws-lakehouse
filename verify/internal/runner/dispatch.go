@@ -23,7 +23,7 @@ import (
 // touch each other's rows or the seeded ones (seeded keys are below 1000).
 func rowKey(runID, salt string) int64 {
 	h := fnv.New32a()
-	h.Write([]byte(runID + "/" + salt))
+	_, _ = h.Write([]byte(runID + "/" + salt)) // hash.Hash writes never return an error
 	return 900000 + int64(h.Sum32()%90000)
 }
 

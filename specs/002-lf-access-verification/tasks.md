@@ -746,9 +746,9 @@ SLOs.
       `awslkhs-sr2a` (label-style missing-grant detection), and `awslkhs-46y5` (gosec).
 - [x] T059 Final review against spec success criteria. Tick each box in `spec.md` Success
   Criteria only with evidence from `sandbox-results.md` or the `make validate` output.
-  - Result (2026-11-12): 16 of 17 success criteria ticked with evidence (`sandbox-results.md`,
-    Success criteria review). Static analysis stays open: the Go code is not scanned
-    (`awslkhs-46y5`).
+  - Result (2026-11-12): all 17 success criteria ticked with evidence (`sandbox-results.md`,
+    Success criteria review). Static analysis was ticked after `awslkhs-46y5` added
+    `make lint-verify` (gosec).
 
 ---
 

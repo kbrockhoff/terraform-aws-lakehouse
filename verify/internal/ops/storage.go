@@ -34,7 +34,7 @@ func (c *Clients) StorageRead(ctx context.Context, t manifest.Target) Result {
 		res.Evidence.Message = "metadata location readable, object denied: " + res.Evidence.Message
 		return res
 	}
-	out.Body.Close()
+	_ = out.Body.Close() // only reachability matters; the body is never read
 	return Result{Outcome: classify.Allowed, Evidence: classify.Evidence{Message: "table storage readable directly"}}
 }
 

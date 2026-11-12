@@ -41,7 +41,7 @@ type IAMAPI interface {
 func LoadAllowList(path string) (map[string]bool, error) {
 	out := map[string]bool{}
 	if path != "" {
-		f, err := os.Open(path)
+		f, err := os.Open(path) // #nosec G304 -- reads a file the operator names on the command line
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func SaveSettings(path string, s *lftypes.DataLakeSettings) error {
 
 // LoadSettings reads settings saved by SaveSettings.
 func LoadSettings(path string) (*lftypes.DataLakeSettings, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- reads the run's own settings snapshot
 	if err != nil {
 		return nil, err
 	}
