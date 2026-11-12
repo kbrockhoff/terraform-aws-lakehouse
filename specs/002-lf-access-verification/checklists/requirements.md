@@ -38,4 +38,9 @@
 - Iteration 2 (2026-11-10): FR-002 and FR-003 were resolved (Q1: C, Q2: C). Probe mode was added
   (FR-027 to FR-031) with matching security, SLO, cost, success-criteria, and out-of-scope entries.
   All items pass.
+- Iteration 3 (2026-11-12, amendment): standalone distribution and user documentation were added
+  (FR-032 to FR-036) with Distribution Validation success criteria, assumptions (probe mode is the
+  standalone scope; executables unsigned in v1), and out-of-scope entries. Operating systems are
+  named because they are the requirement; no build tool or hosting service is named. All items
+  pass.
 - Items marked incomplete require spec updates before `/iac.plan`

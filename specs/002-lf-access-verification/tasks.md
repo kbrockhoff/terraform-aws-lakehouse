@@ -750,6 +750,114 @@ SLOs.
     Success criteria review). Static analysis was ticked after `awslkhs-46y5` added
     `make lint-verify` (gosec).
 
+
+---
+
+## Phase 7: Standalone Distribution (amendment 2026-11-12, FR-032 to FR-036)
+
+**Purpose**: Ship `lfverify` with every release as checksummed executables for Linux, macOS, and
+Windows (amd64 and arm64), usable for probe mode without a repository checkout, with operator
+documentation. Design: plan.md, Standalone Distribution.
+
+### CLI
+
+- [ ] T060 [P] Add `lfverify version` in `verify/cmd/lfverify/main.go` (FR-033):
+  - package variables `version = "dev"` and `commit = "none"`, set by `-ldflags -X`;
+  - prints `lfverify <version> (<commit>) <go version> <os>/<arch>`;
+  - unit test in `main_test.go`.
+- [ ] T061 [P] Embed the probe matrix template and add `lfverify example-matrix [--out <file>]`
+  (FR-034):
+  - new Go package in `verify/matrix/embed.go` with `//go:embed probe.example.yaml`;
+  - writes to stdout, or to `--out` without overwriting an existing file;
+  - unit test that the embedded bytes equal the file and pass `matrix.Parse` in probe mode.
+- [ ] T062 Add `lfverify probe --matrix <file>` in `verify/cmd/lfverify/main.go` (FR-034):
+  - runs the `make verify-probe` sequence in one process: new run ID, preflight, before
+    snapshot, run, after snapshot, diff;
+  - exits non-zero on any failure, and still takes the after snapshot and diff when cases fail;
+  - prints the `lfverify audit` command to run 15 minutes later;
+  - change `make verify-probe` in `Makefile` to call it;
+  - unit test of the sequencing with fakes for the step functions.
+- [ ] T063 [P] Command help (FR-036): `lfverify help` and `lfverify <command> --help` list each
+  command's own flags with descriptions, in `verify/cmd/lfverify/main.go`. Unit test that every
+  command answers `--help` with exit 0.
+
+### Build and release
+
+- [ ] T064 Add `make verify-dist VERSION=<v>` in `Makefile` (FR-032, FR-033):
+  - builds `linux`, `darwin`, and `windows` on `amd64` and `arm64` into `verify/out/dist/`, with
+    `CGO_ENABLED=0 -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=<sha>"`;
+  - archives each as `lfverify_<v>_<os>_<arch>.tar.gz`, or `.zip` for Windows, containing the
+    executable, `LICENSE`, `verify/docs/`, and `verify/matrix/probe.example.yaml`;
+  - writes `SHA256SUMS`;
+  - add `verify-dist` to `.PHONY`.
+- [ ] T065 Run `make verify-dist VERSION=ci` in the lint job of
+  `.github/workflows/terraform-ci.yml`, so a cross-platform build break fails CI.
+- [ ] T066 Create `.github/workflows/lfverify-release.yml` (FR-032, FR-033):
+  - triggers: `workflow_call` (input `tag`) and `workflow_dispatch` (dry run, no tag);
+  - jobs:
+    - `check`: `make test-verify`, `make lint-verify`;
+    - `build`: `make verify-dist VERSION=<tag or dev-<sha>>`, then upload the artifact;
+    - `smoke`: matrix of `ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest`, `macos-13`, and
+      `windows-latest`; verify the archive against `SHA256SUMS`, extract it, run
+      `lfverify version` (must print the tag) and `lfverify example-matrix`;
+    - `publish` (tag only, needs `smoke`): `gh release upload <tag>` of every archive and
+      `SHA256SUMS`;
+  - permissions: `contents: read`, and `contents: write` on `publish` only;
+  - actions pinned by major tag, as in the existing CI.
+- [ ] T067 Wire `.github/workflows/release-please.yml`:
+  - expose `release_created` and `tag_name` as job outputs;
+  - add a job that calls `lfverify-release.yml` with `tag: ${{ needs.release-please.outputs.tag_name }}`
+    when `release_created` is true.
+
+### User documentation
+
+- [ ] T068 [P] Write `verify/docs/user-guide.md` for operators (FR-035):
+  - install per OS: download, `sha256sum` / `shasum -a 256` / `Get-FileHash` checks, PATH, the
+    macOS quarantine attribute and Windows SmartScreen prompt for unsigned executables;
+  - prerequisites;
+  - creating the read-only probe runner role and adding it to
+    `governance_config.read_only_admin_principal_arns`;
+  - persona trust for session names `lfverify-*`;
+  - `LFVERIFY_PROBE_RESULTS_BUCKETS` and `LFVERIFY_PROBE_KMS_KEYS`;
+  - `lfverify example-matrix`, then the matrix format reference with examples;
+  - `lfverify probe` and the individual steps;
+  - reports, statuses, and exit codes;
+  - `lfverify audit`;
+  - troubleshooting: `GetDataAccess`, `CATALOG_NOT_FOUND`, preflight refusals, expired sessions;
+  - probe-mode limits;
+  - full mode needs the repository.
+- [ ] T069 [P] Add `verify/docs/probe-runner-policy.json` (ReadOnlyAccess companion: `sts:AssumeRole`
+  on persona roles, `iam:SimulatePrincipalPolicy` on itself, `lakeformation:GetDataAccess`) and
+  `verify/docs/persona-trust-statement.json`, referenced from the user guide.
+- [ ] T070 Update contributor and repository docs:
+  - `verify/README.md`: link the user guide, and list `version`, `probe`, `example-matrix`, and
+    `make verify-dist`;
+  - root `README.md` Access Verification section: download from the latest release;
+  - `AGENTS.md`: `verify/docs/`, `make verify-dist`, and the release workflow.
+
+### Validation
+
+- [ ] T071 Release dry run:
+  - run `lfverify-release.yml` with `workflow_dispatch` on the branch; confirm every job passes,
+    the six archives verify against `SHA256SUMS`, and the smoke jobs print the version;
+  - after the next real release, confirm the assets are on the release page and that a failed
+    smoke test would block `publish`;
+  - record both in `sandbox-results.md`.
+- [ ] T072 Standalone acceptance in dev-green (Distribution Validation):
+  - deploy a fixture with the repository (`make verify-up`, `make verify-seed`) and a read-only
+    probe runner;
+  - in an empty directory outside the repository, using only a downloaded archive and its user
+    guide: `lfverify example-matrix`, edit the matrix (or use `lfverify probe-matrix` output
+    copied in), run `lfverify probe`, then `lfverify audit` 15 minutes later;
+  - compare the results with a probe run from the repository;
+  - tear the fixture down;
+  - record the result in `sandbox-results.md`;
+  - tick the Distribution Validation criteria in `spec.md` with evidence, and run `make validate`.
+
+**Checkpoint**: A release publishes six checksummed archives with the user guide. Smoke tests pass
+on Linux, macOS, and Windows. A probe run succeeds from a downloaded archive with no repository
+checkout.
+
 ---
 
 ## Dependencies & Execution Order
@@ -774,16 +882,26 @@ Phase 4b Ops & steps (T030–T040), Matrices (T041–T044)  ← needs T022 manif
 Phase 5 Operations (T045–T047), then sandbox runs T048 → T049 → T050 → T051 → T052 → T053 → T054
                   │
 Phase 6 Polish (T055–T059)
+                  │
+Phase 7 Standalone distribution (amendment)
+   T060, T061, T063 [P] ── T062 ── T064 ── T065, T066 ── T067 ── T071
+   T068, T069 [P] ── T070
+   T071 ── T072
 ```
 
 - The module change (T007–T011) can merge on its own ahead of the harness. It fixes
   `awslkhs-t7d` independently.
 - Live runs, in order: T048 confirms the expectations first. Determinism (T049) and Detection
   (T050) run only on the corrected matrix.
+- Phase 7: T064 needs the docs (T068, T069) in place to package them, but builds without them. T067
+  must follow T066, and T071 needs both. T072 needs a published or dry-run archive (T071).
 
 ## Parallel Execution Examples
 
 ```text
+# Phase 7:
+T060 version  |  T061 example-matrix  |  T063 help  |  T068 user guide  |  T069 example policies
+
 # Phase 1, after T001:
 T002 verify/go.mod   |  T003 verify/sandbox-accounts.txt  |  T004 verify/fixture skeleton
 

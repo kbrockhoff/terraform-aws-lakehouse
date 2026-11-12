@@ -2,7 +2,7 @@
 
 **Spec ID**: `002-lf-access-verification`
 **Created**: 2026-11-10
-**Status**: Draft (clarified 2026-11-10)
+**Status**: Draft (clarified 2026-11-10; amended 2026-11-12 for standalone distribution, FR-032 to FR-036)
 **Input**: User description: "a test application that verifies lake formation configuration by testing access. handle both with and without LF-Tags. Should test lake formation administrators, read-only administrators, catalog metadata-only readers and writers, data readers and writers with access to multiple s3table namespaces and a single namespace, readers with access to only certain columns and/or rows. use the aws mcp server to check the rules for all these"
 
 ## Executive Summary *(mandatory)*
@@ -290,6 +290,38 @@ permission service's published rules, summarized in the Notes.
   within the probe budget (Cost Constraints). A query that would exceed the cap is reported as "not
   run", never as a pass.
 
+**Distribution and documentation** (amendment 2026-11-12)
+
+- **FR-032**: Every release of this repository MUST publish the verification application as
+  standalone prebuilt executables, attached to the release, for Linux, macOS, and Windows, each on
+  64-bit x86 and 64-bit ARM. An executable MUST run with no runtime, interpreter, or library
+  installed beyond the operating system.
+- **FR-033**: Every release MUST publish a checksum file covering every published archive, and
+  each executable MUST report its release version and source commit. Executables MUST be built by
+  the release automation from the tagged commit, never by hand, after the unit tests and static
+  analysis pass. A failed build MUST be visible as a failed release job, and the release MUST NOT
+  list executables that failed to build or failed their smoke test.
+- **FR-034**: The standalone executable MUST support probe mode end to end without a checkout of
+  this repository: preflight, before snapshot, run, after snapshot, diff, and audit, given only the
+  executable, cloud credentials, and an expectation matrix. It MUST be able to write an example
+  probe matrix to start from. Full mode remains a repository workflow, because it deploys the
+  repository's fixture; the user documentation says so.
+- **FR-035**: User documentation MUST be published with every release, written for someone who
+  runs the application rather than develops it. It MUST cover:
+  - installing on each operating system, including checksum verification and first-run
+    operating-system prompts for unsigned executables;
+  - setting up the read-only runner identity and the persona identities' trust, with example
+    policies;
+  - writing an expectation matrix, as a format reference with examples;
+  - running each probe step and the whole sequence, with the exact commands;
+  - reading the reports, statuses, and exit codes;
+  - the audit check, troubleshooting of common errors, and the limits of probe mode.
+
+  The documentation MUST be versioned with the executable: each release's archives include the
+  documentation for that version.
+- **FR-036**: Each executable MUST describe its commands and flags from the command line, so the
+  basics are usable without the documentation.
+
 ### Non-Functional Requirements
 
 #### Performance
@@ -419,6 +451,17 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
 - [x] A before-and-after comparison of a probe-mode target shows no change (Non-interference SLO).
 - [x] Full mode refuses to start against a target marked as production (FR-003).
 
+### Distribution Validation (FR-032 to FR-036)
+
+- [ ] A release carries archives for all six operating-system and architecture targets, plus a
+      checksum file that every archive verifies against.
+- [ ] On a Linux, a macOS, and a Windows machine, the released executable reports the release
+      version and commit, and writes the example probe matrix.
+- [ ] Starting from an empty directory with only a released archive and its user documentation,
+      no repository checkout, an operator completes a probe run against a sandbox deployment and
+      gets the same results as a probe run from the repository.
+- [ ] A release whose build or smoke test fails publishes no executables.
+
 ## Assumptions *(include if making assumptions)*
 
 - In full mode, the target is a single sandbox or non-production account and region, in which the
@@ -437,6 +480,11 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
 - The persona definitions follow the permission service's suggested personas. Metadata-only
   personas correspond to describe-only and create/alter/drop-only grants. Data personas correspond
   to select-only (reader) and select/insert/delete/alter (writer) grants.
+- "Standalone" means probe mode (FR-034). Full mode needs the repository's fixture and its
+  build targets, so it stays a repository workflow; making full mode standalone would mean
+  shipping the fixture with the executable and is not part of this amendment.
+- Release executables are not code-signed or notarized in v1. The user documentation explains the
+  operating-system prompts this causes and how to verify an executable by its checksum instead.
 - Expected outcomes encode the permission service's published rules as of 2026-11. When the
   service's documented behavior changes, the expectation matrix is updated deliberately, not to
   make a failing run pass.
@@ -451,6 +499,8 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
 - Performance or load testing of the query engine.
 - Probe mode attempting writes, grants, or administrator-list changes, even when they are expected
   to be denied. Probe mode verifies these by inspection only (FR-029).
+- Package-manager distribution, container images, and code signing or notarization of the
+  executables.
 - Changing the `001-governed-lakehouse` module's grants. The harness reports findings, and fixes
   are made in the module.
 
@@ -503,3 +553,6 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
   - Q: Where may it run? A: Full mode runs only in sandbox or non-production environments. Probe
     mode may run in any environment, including production, and is read-only (FR-003, FR-027 to
     FR-031).
+- Amendment (2026-11-12): the verification application is distributed as standalone executables
+  for Linux, macOS, and Windows with every release, together with user documentation, so that
+  deployment owners can run probe mode without cloning the repository (FR-032 to FR-036).

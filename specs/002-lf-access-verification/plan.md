@@ -57,6 +57,12 @@ present in 6.59.0:
   (service `s3tables`) to append Arrow record batches;
 - `go.yaml.in/yaml/v3`, for the matrix files.
 
+**Release distribution** (amendment 2026-11-12, FR-032 to FR-036): `lfverify` is cross-compiled
+with plain `go build` (`CGO_ENABLED=0`, `-trimpath`) for `linux`, `darwin`, and `windows` on
+`amd64` and `arm64`. The version and commit are set with `-ldflags -X`. No GoReleaser: six
+`go build` calls and a checksum file need no extra tool or config, and they run the same way in
+`make` and CI. See Standalone Distribution below.
+
 **Module Versions**: The fixture references this repository's root module by relative path
 (`../..`), so every run verifies the working tree. It uses no external modules.
 
@@ -342,6 +348,83 @@ assumes the sandbox runner role through GitHub OIDC. The trust policy must match
 immutable subject format, `repo:kbrockhoff@1822996/terraform-aws-lakehouse@1417696478:environment:development`,
 not `repo:kbrockhoff/terraform-aws-lakehouse:*`.
 
+### Standalone Distribution (amendment 2026-11-12)
+
+Requirements FR-032 to FR-036. The standalone scope is probe mode; full mode stays a repository
+workflow (spec Assumptions).
+
+**CLI additions** (`verify/cmd/lfverify`):
+
+| Command | Does |
+|---------|------|
+| `lfverify version` | Prints the version, commit, Go version, and OS/architecture. Release builds set `main.version` and `main.commit` with `-ldflags -X`; local builds report `dev`. |
+| `lfverify probe --matrix <file>` | The whole probe sequence in one command, as `make verify-probe` runs it today: new run ID, preflight, before snapshot, run, after snapshot, diff. It prints the audit command to run 15 minutes later. `make verify-probe` calls it. |
+| `lfverify example-matrix [--out <file>]` | Writes the probe matrix template, embedded in the executable with `go:embed` from `verify/matrix/probe.example.yaml` (a small `verify/matrix` Go package, because `go:embed` cannot reach parent directories). |
+
+Each command's `--help` lists its flags, and `lfverify help` lists the commands (FR-036). Probe
+mode needs no repository file: the allow-list is full-mode only, and the output directory defaults
+to `./out/<run-id>`.
+
+**Build and packaging** (`Makefile`):
+
+- `make verify-dist VERSION=<tag>` builds the six targets into `verify/out/dist/`. It packages each
+  as `lfverify_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows) holding the executable,
+  `LICENSE`, the user guide, the example matrix, and the example policies. Then it writes
+  `SHA256SUMS`.
+- The terraform-ci lint job runs `make verify-dist VERSION=ci`, so a change that breaks the
+  Windows or macOS build fails CI before a release.
+
+**Release workflow** (`.github/workflows/lfverify-release.yml`):
+
+- Triggered by `workflow_call` with a `tag` input from `release-please.yml`, when its
+  `release_created` output is true. Also triggered by `workflow_dispatch`, with no tag, for a dry
+  run that publishes workflow artifacts only.
+- Jobs:
+  1. `check`: `make test-verify` and `make lint-verify` (gosec) on the tagged commit.
+  2. `build`: `make verify-dist VERSION=<tag>`. The archives and `SHA256SUMS` are uploaded as a
+     workflow artifact.
+  3. `smoke`: a matrix of `ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest` (arm64),
+     `macos-13` (amd64), and `windows-latest`. Each verifies its archive against `SHA256SUMS`,
+     extracts it, and runs `lfverify version` (which must print the tag) and
+     `lfverify example-matrix`. Windows arm64 is only cross-compiled, because GitHub has no
+     generally available Windows arm64 runner.
+  4. `publish`, only with a tag and only after `smoke` passes: `gh release upload <tag>` of every
+     archive and `SHA256SUMS`. A failed build or smoke test leaves the release without
+     executables (FR-033).
+- `release-please.yml` gains `outputs` for `release_created` and `tag_name`, and a job that calls
+  the workflow. That job needs `contents: write`.
+- Actions are pinned by major tag, matching the existing CI. No new secrets are needed:
+  `GITHUB_TOKEN` can upload release assets.
+
+**User documentation** (FR-035), in `verify/docs/`:
+
+- `user-guide.md`: for operators, not contributors. It covers:
+  - install per OS: download, checksum verification on each OS, PATH, the macOS quarantine
+    attribute and Windows SmartScreen prompt for unsigned executables;
+  - prerequisites;
+  - the probe runner role and persona trust;
+  - the matrix format reference;
+  - `lfverify probe` and the individual steps;
+  - reports, statuses, and exit codes;
+  - the audit;
+  - troubleshooting (`GetDataAccess`, `CATALOG_NOT_FOUND`, refusals);
+  - probe-mode limits;
+  - a pointer to the repository for full mode.
+- `probe-runner-policy.json` and `persona-trust-statement.json`: example IAM documents that the
+  guide references.
+- The archives include `verify/docs/` and `probe.example.yaml`, so each release carries the
+  documentation for its version. `verify/README.md` remains the contributor guide and links to the
+  user guide. The root README's Access Verification section links to the latest release.
+
+**Validation**:
+- unit tests for `version`, `example-matrix` (the embedded matrix validates), and `probe`
+  sequencing, with fakes;
+- the CI cross-build;
+- a `workflow_dispatch` dry run of the release workflow on the branch;
+- the first real release;
+- a standalone acceptance run: probe from an empty directory with only a downloaded archive,
+  against a sandbox fixture.
+
 ### Environment Configuration
 
 | Setting | Full mode | Probe mode |
@@ -432,7 +515,11 @@ verify/
 │   ├── grants-named.tf          # Named-resource grants and data cell filters (stage 2 for tables)
 │   ├── inject.tf                # Misconfiguration overlays for detect (inject = "" by default)
 │   └── outputs.tf               # manifest (JSON consumed by lfverify)
-└── out/                         # Run output (gitignored)
+├── docs/                        # Operator documentation shipped with releases (FR-035)
+│   ├── user-guide.md
+│   ├── probe-runner-policy.json
+│   └── persona-trust-statement.json
+└── out/                         # Run output (gitignored); out/dist holds release archives
 
 # Module change (Complexity Tracking #1)
 variables.tf                     # governance_config.read_only_admin_principal_arns
@@ -447,6 +534,8 @@ test/
 
 Makefile                         # verify-* and test-verify* targets; check validates verify/fixture
 .github/workflows/verify-access.yml  # workflow_dispatch full-mode run via OIDC (optional)
+.github/workflows/lfverify-release.yml  # Release executables: check, build, smoke, publish (FR-032, FR-033)
+.github/workflows/release-please.yml    # + release_created/tag_name outputs and the lfverify-release call
 .gitignore                       # verify/out/
 ```
 
@@ -469,6 +558,7 @@ module and Terraform root.
 | 3. Seeding through iceberg-go and the S3 Tables Iceberg REST endpoint instead of Athena `INSERT` | Athena `INSERT` into S3 Tables fails in the sandbox (`awslkhs-cdq`). Fixture rows must exist for every row, cell, and data check (FR-005, FR-018). | Seeding with Athena `INSERT` would block the whole run on the open bug. Writer personas still use Athena DML, because that is the path under test. While `awslkhs-cdq` is open, those cases report `not-run: engine error` and the run fails visibly. |
 | 4. Fixture-owned LF-tag grants for metadata-only personas | The module models only stewards, writers, and readers. The spec requires metadata-only readers and writers in both styles (FR-011, FR-012). | Adding metadata personas to the module expands its contract without a consumer request, which Compose, Don't Accumulate forbids. A follow-up bead records the gap. |
 | 5. Probe inspection resolves LF-tag expressions itself | `ListPermissions` returns `LFTagPolicy` grants as expressions, not as effective table permissions. FR-029 needs the effective set per resource. | `GetEffectivePermissionsForPath` covers only S3 locations, not catalog resources. Attempting writes in production is forbidden. |
+| 6. Release executables for six OS and architecture targets, with a release workflow (amendment 2026-11-12) | FR-032 to FR-036: deployment owners should run probe mode without cloning the repository or installing Go. | Asking users to `go install` needs a Go toolchain and gives no checksummed, versioned artifact. GoReleaser would add a tool and config for what six `go build` calls and `sha256sum` already do. |
 
 **Risks to confirm in the first sandbox run**:
 
