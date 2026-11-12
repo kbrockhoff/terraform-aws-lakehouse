@@ -660,9 +660,9 @@ SLOs.
 - [ ] T049 Sandbox: run `make verify-full` 10 consecutive times against an unchanged
   configuration (Determinism SLO). Compare `report.json` pass/fail per case ID across the runs.
   Any flaky case is fixed in the runner's retry and settle logic, not by loosening expectations.
-- [ ] T050 Sandbox: run `make verify-detect`. Every scenario must produce at least one failing
+- [x] T050 Sandbox: run `make verify-detect`. Every scenario must produce at least one failing
   case with identifying evidence (Detection SLO). Save `detect.json`.
-- [ ] T051 Sandbox: probe-mode cross-check (success criteria, Operational Validation).
+- [x] T051 Sandbox: probe-mode cross-check (success criteria, Operational Validation).
   - Apply the fixture with `read_only_runner_arns` set to a read-only probe runner role, created
     manually per `verify/README.md` with `ReadOnlyAccess`, `AssumeRole` on the personas, and
     self-simulate.

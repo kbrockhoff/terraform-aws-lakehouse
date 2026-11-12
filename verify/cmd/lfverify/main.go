@@ -570,6 +570,7 @@ func cmdAudit(ctx context.Context, f *flags) error {
 	ct := cloudtrail.NewFromConfig(e.cfg)
 	prefix := identity.SessionName(f.runID, "")
 	var changes []string
+	queries := 0
 	p := cloudtrail.NewLookupEventsPaginator(ct, &cloudtrail.LookupEventsInput{
 		StartTime:        aws.Time(since),
 		LookupAttributes: []cttypes.LookupAttribute{{AttributeKey: cttypes.LookupAttributeKeyReadOnly, AttributeValue: aws.String("false")}},
@@ -580,7 +581,14 @@ func cmdAudit(ctx context.Context, f *flags) error {
 			return err
 		}
 		for _, ev := range page.Events {
-			if strings.HasPrefix(aws.ToString(ev.Username), prefix) {
+			if !strings.HasPrefix(aws.ToString(ev.Username), prefix) {
+				continue
+			}
+			if slices.Contains(queryEvents, aws.ToString(ev.EventName)) {
+				queries++
+				continue
+			}
+			{
 				changes = append(changes, fmt.Sprintf("%s %s %s", aws.ToTime(ev.EventTime).Format(time.RFC3339), aws.ToString(ev.Username), aws.ToString(ev.EventName)))
 			}
 		}
@@ -591,9 +599,14 @@ func cmdAudit(ctx context.Context, f *flags) error {
 		}
 		return fmt.Errorf("%d change events from run %s sessions", len(changes), f.runID)
 	}
-	logf("no change events from sessions %s* since %s", prefix, since.Format(time.RFC3339))
+	logf("no change events from sessions %s* since %s (%d query starts, which probe mode runs by design)", prefix, since.Format(time.RFC3339), queries)
 	return nil
 }
+
+// queryEvents are events CloudTrail records as not read-only but that change nothing in the
+// target: probe mode runs read-only queries (FR-028), and the query engine logs each start.
+// Observed in probe run c9cea7: every flagged event was StartQueryExecution.
+var queryEvents = []string{"StartQueryExecution", "StopQueryExecution"}
 
 func cmdCleanup(ctx context.Context, f *flags) error {
 	if f.runID == "" {

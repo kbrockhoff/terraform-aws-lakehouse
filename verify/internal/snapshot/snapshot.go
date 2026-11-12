@@ -68,6 +68,22 @@ func Capture(ctx context.Context, g *glue.Client, lf *lakeformation.Client, cata
 						return nil, err
 					}
 					s.Assignments = append(s.Assignments, fmt.Sprintf("%s/%s.%s %s", c.CatalogID, db, aws.ToString(t.Name), canon(tags)))
+					// The unfiltered listing below omits table grants in federated catalogs
+					tp := lakeformation.NewListPermissionsPaginator(lf, &lakeformation.ListPermissionsInput{
+						Resource: &lftypes.Resource{Table: &lftypes.TableResource{
+							CatalogId: aws.String(c.CatalogID), DatabaseName: aws.String(db), Name: t.Name,
+						}},
+					})
+					for tp.HasMorePages() {
+						page, err := tp.NextPage(ctx)
+						if err != nil {
+							return nil, err
+						}
+						for _, p := range page.PrincipalResourcePermissions {
+							p.LastUpdated, p.LastUpdatedBy = nil, nil
+							s.Permissions = append(s.Permissions, canon(p))
+						}
+					}
 				}
 			}
 		}
@@ -107,9 +123,29 @@ func Capture(ctx context.Context, g *glue.Client, lf *lakeformation.Client, cata
 	if err != nil {
 		return nil, err
 	}
-	s.Settings = []string{canon(set.DataLakeSettings)}
+	s.Settings = []string{canon(sortedSettings(set.DataLakeSettings))}
 	s.sort()
 	return s, nil
+}
+
+// sortedSettings orders the principal lists, which Lake Formation returns in no stable order
+// (observed in probe run 2651ed), so only real changes show up as differences.
+func sortedSettings(in *lftypes.DataLakeSettings) *lftypes.DataLakeSettings {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	byID := func(ps []lftypes.DataLakePrincipal) []lftypes.DataLakePrincipal {
+		ps = slices.Clone(ps)
+		sort.Slice(ps, func(i, j int) bool {
+			return aws.ToString(ps[i].DataLakePrincipalIdentifier) < aws.ToString(ps[j].DataLakePrincipalIdentifier)
+		})
+		return ps
+	}
+	out.DataLakeAdmins = byID(in.DataLakeAdmins)
+	out.ReadOnlyAdmins = byID(in.ReadOnlyAdmins)
+	out.TrustedResourceOwners = slices.Sorted(slices.Values(in.TrustedResourceOwners))
+	return &out
 }
 
 func canon(v any) string {

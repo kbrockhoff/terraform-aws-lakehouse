@@ -1,6 +1,8 @@
 package snapshot
 
 import (
+	"github.com/aws/aws-sdk-go-v2/aws"
+	lftypes "github.com/aws/aws-sdk-go-v2/service/lakeformation/types"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -32,5 +34,23 @@ func TestSaveLoad(t *testing.T) {
 	}
 	if !slices.Equal(back.LFTags, []string{"a", "b"}) || len(Diff(s, back)) != 0 {
 		t.Errorf("round trip: %+v", back)
+	}
+}
+
+func TestSettingsOrderIgnored(t *testing.T) {
+	p := func(ids ...string) []lftypes.DataLakePrincipal {
+		var out []lftypes.DataLakePrincipal
+		for _, id := range ids {
+			out = append(out, lftypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String(id)})
+		}
+		return out
+	}
+	a := canon(sortedSettings(&lftypes.DataLakeSettings{DataLakeAdmins: p("b", "a")}))
+	b := canon(sortedSettings(&lftypes.DataLakeSettings{DataLakeAdmins: p("a", "b")}))
+	if a != b {
+		t.Errorf("admin order must not matter:\n%s\n%s", a, b)
+	}
+	if c := canon(sortedSettings(&lftypes.DataLakeSettings{DataLakeAdmins: p("a")})); c == a {
+		t.Error("a removed admin must still differ")
 	}
 }

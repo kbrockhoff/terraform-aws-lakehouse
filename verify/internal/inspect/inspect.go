@@ -44,7 +44,9 @@ func Effective(grants []lftypes.PrincipalResourcePermissions, ref TableRef, tags
 			}
 		case r.TableWithColumns != nil:
 			t := r.TableWithColumns
-			if sameCatalog(aws.ToString(t.CatalogId), ref) && aws.ToString(t.DatabaseName) == ref.Database && aws.ToString(t.Name) == ref.Table {
+			// All-tables SELECT is listed as a column grant on the table name ALL_TABLES
+			name := aws.ToString(t.Name)
+			if sameCatalog(aws.ToString(t.CatalogId), ref) && aws.ToString(t.DatabaseName) == ref.Database && (name == ref.Table || name == "ALL_TABLES") {
 				add(g.Permissions)
 			}
 		case r.DataCellsFilter != nil:
@@ -110,16 +112,36 @@ type Inspector struct{ LF LFAPI }
 
 // Permissions returns principal's effective table permissions on ref.
 func (i Inspector) Permissions(ctx context.Context, principal string, ref TableRef) ([]string, error) {
+	// Two listings, because neither alone is complete (observed in probe run 043438):
+	// - the unfiltered listing has the LF-tag policy grants but omits table-level grants in
+	//   federated S3 Tables catalogs, and accepts no principal filter without a resource;
+	// - the table listing has the principal's named and all-tables grants on the table.
 	var grants []lftypes.PrincipalResourcePermissions
-	p := lakeformation.NewListPermissionsPaginator(i.LF, &lakeformation.ListPermissionsInput{
-		Principal: &lftypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String(principal)},
-	})
-	for p.HasMorePages() {
-		page, err := p.NextPage(ctx)
-		if err != nil {
-			return nil, err
+	keep := func(in *lakeformation.ListPermissionsInput) error {
+		p := lakeformation.NewListPermissionsPaginator(i.LF, in)
+		for p.HasMorePages() {
+			page, err := p.NextPage(ctx)
+			if err != nil {
+				return err
+			}
+			for _, g := range page.PrincipalResourcePermissions {
+				if g.Principal != nil && aws.ToString(g.Principal.DataLakePrincipalIdentifier) == principal {
+					grants = append(grants, g)
+				}
+			}
 		}
-		grants = append(grants, page.PrincipalResourcePermissions...)
+		return nil
+	}
+	if err := keep(&lakeformation.ListPermissionsInput{}); err != nil {
+		return nil, err
+	}
+	if err := keep(&lakeformation.ListPermissionsInput{
+		Principal: &lftypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String(principal)},
+		Resource: &lftypes.Resource{Table: &lftypes.TableResource{
+			CatalogId: aws.String(ref.CatalogID), DatabaseName: aws.String(ref.Database), Name: aws.String(ref.Table),
+		}},
+	}); err != nil {
+		return nil, err
 	}
 	out, err := i.LF.GetResourceLFTags(ctx, &lakeformation.GetResourceLFTagsInput{
 		Resource: &lftypes.Resource{Table: &lftypes.TableResource{

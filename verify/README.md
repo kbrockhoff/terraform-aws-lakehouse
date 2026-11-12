@@ -61,7 +61,9 @@ It covers these personas:
   - `snapshot` captures the catalogs, LF-tags, assignments, filters, permissions, and settings
     before and after the run, and `diff` fails on any difference.
   - `make verify-probe-audit RUN_ID=…` lists non-read-only CloudTrail events from the run's
-    sessions. Run it at least 15 minutes after the probe, because CloudTrail delivers events
+    sessions. Query starts (`StartQueryExecution`) are counted separately rather than treated as
+    changes: CloudTrail marks them as not read-only, but probe mode runs read-only queries by
+    design. Run it at least 15 minutes after the probe, because CloudTrail delivers events
     late.
 
 ## Prerequisites
@@ -71,7 +73,9 @@ It covers these personas:
   - **Full mode**: the runner becomes the fixture owner and a data-lake admin, and needs to
     create IAM roles, S3 Tables, Glue, Lake Formation, Athena, S3, and KMS resources.
   - **Probe mode**: the runner needs `ReadOnlyAccess`, `sts:AssumeRole` on the persona roles,
-    and `iam:SimulatePrincipalPolicy` on itself.
+    `iam:SimulatePrincipalPolicy` on itself, and `lakeformation:GetDataAccess`. Lake Formation
+    requires `GetDataAccess` to list permissions on federated S3 Tables databases;
+    `ReadOnlyAccess` lacks it.
 - Optional: `RUNNER_ROLE_ARN` when the role running Terraform is not the runner. By default the
   fixture uses the session's role.
 
