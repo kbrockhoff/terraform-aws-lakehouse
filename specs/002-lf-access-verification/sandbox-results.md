@@ -23,7 +23,6 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
 | Bucket-catalog `DESCRIBE` grant from Terraform | `lfverify seed` makes it, because the provider cannot | awslkhs-qrp |
 | Static analysis of the Go code (`gosec`) | The planned `make lint-verify` target was not built | awslkhs-46y5 |
-| Determinism, 10 consecutive runs | In progress (T049) | — |
 | Interrupted-run recovery | Pending (T052), after T049 | — |
 
 ## Runs
@@ -39,7 +38,7 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `c9cea7` | probe | 11-11 | 105 | 101 | 0 | 0 | 4 | Cross-check run, against fixture `513eb0` |
 | `513eb0` | full | 11-11 | 211 | 197 | 0 | 14 | — | Cross-check run; matrix with gamma-denied cases added |
 | `77dc1f` | full | 11-12 | 211 | 197 | 0 | 14 | — | T049 run 1; reference run |
-| `d66355` | full | 11-12 | 211 | 197 | 0 | 14 | — | T049 run 2 |
+| `d66355`, `3aebc6`, `3215bf`, `166f1f`, `14f318`, `623dbd`, `71a0ea`, `4b3990`, `ddc587` | full | 11-12 | 211 each | 197 | 0 | 14 | — | T049 runs 2–10 |
 
 Runs `c39bc9` and `92eafa` failed during fixture apply and produced no report; plan.md D5 and D6
 record the fixes.
@@ -120,9 +119,28 @@ resources with no sweep needed.
 
 ## Determinism (T049, Determinism SLO)
 
-In progress: 10 consecutive `make verify-full` runs against an unchanged configuration, compared
-by status and observed outcome per case ID. So far, runs `77dc1f` and `d66355`, together with
-`513eb0` from the day before, agree on all 211 cases.
+**Met.** Ten consecutive `make verify-full` runs against an unchanged configuration
+(`77dc1f`, `d66355`, `3aebc6`, `3215bf`, `166f1f`, `14f318`, `623dbd`, `71a0ea`, `4b3990`,
+`ddc587`, 10:26–13:44 on 11-12) produced identical results. Every run had 197 pass and 14 not run,
+and all 211 case IDs had the same status and observed outcome in every run. `513eb0`, from the
+day before, also matches. No retry or settle change was needed.
+
+| | Runs | End to end | Matrix |
+|---|---|---|---|
+| Typical | 9 | 873–937 s | 7–8 min |
+| `14f318` | 1 | 3,791 s | 55 min |
+
+`14f318` was slow because the Mac running it went into idle sleep at 11:48 and woke only for brief
+maintenance until 12:38 (`pmset` log). The log's two gaps, 11:49–12:23 and 12:24–12:38, match the
+sleep periods. Its results were still identical, after nearly an hour asleep with persona sessions
+of up to one hour. Excluding sleep, every run met the 30-minute target.
+
+The runs also showed that `report.json` recorded `duration_ns = 0` for every case: the deferred
+timer wrote to a copy of the result. That is fixed, with a unit test, so per-case durations and
+JUnit times are recorded from now on.
+
+After the tenth run, the account held no `lfv-` resources, no S3 Tables catalog integration, and
+empty admin and read-only admin lists, as before the runs.
 
 ## Probe mode (T051)
 

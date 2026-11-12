@@ -657,9 +657,12 @@ SLOs.
     `note:` citing the observation and date.
   - Writer DML cases are expected to be `not-run: engine error` while `awslkhs-cdq` is open.
     Record them; do not change their expectation.
-- [ ] T049 Sandbox: run `make verify-full` 10 consecutive times against an unchanged
+- [x] T049 Sandbox: run `make verify-full` 10 consecutive times against an unchanged
   configuration (Determinism SLO). Compare `report.json` pass/fail per case ID across the runs.
   Any flaky case is fixed in the runner's retry and settle logic, not by loosening expectations.
+  - Result (2026-11-12): all 211 cases had the same status and outcome in all 10 runs; no flaky
+    case. Runs took 873–937 s, except one slowed by the host sleeping. Fixed `duration_ns` always
+    being 0. See `sandbox-results.md`, Determinism.
 - [x] T050 Sandbox: run `make verify-detect`. Every scenario must produce at least one failing
   case with identifying evidence (Detection SLO). Save `detect.json`.
 - [x] T051 Sandbox: probe-mode cross-check (success criteria, Operational Validation).

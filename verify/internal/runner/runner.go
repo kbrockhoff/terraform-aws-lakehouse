@@ -177,10 +177,12 @@ func (r *Runner) target(inst matrix.Instance) (manifest.Target, error) {
 	return r.Manifest.Resolve(inst.Style, inst.Case.Resource)
 }
 
-func (r *Runner) execute(ctx context.Context, inst matrix.Instance) report.Result {
+// execute names its result so the deferred duration lands on the value returned; with an
+// unnamed result, every case reported a duration of 0 (observed in T049)
+func (r *Runner) execute(ctx context.Context, inst matrix.Instance) (res report.Result) {
 	c := inst.Case
 	start := time.Now()
-	res := report.Result{
+	res = report.Result{
 		ID: inst.ID, Persona: inst.Persona.Key, Style: string(inst.Style), Op: string(c.Op),
 		Expected: string(c.Expect), Rule: c.Rule,
 	}
