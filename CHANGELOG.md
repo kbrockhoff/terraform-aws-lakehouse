@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.1.0...v0.2.0) (2026-11-13)
+
+
+### Features
+
+* support Lake Formation read-only admins ([aab5dc5](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/aab5dc5c10259eff579b74f47a0c087e32c8b454))
+* **verify:** add lfverify Lake Formation access verification harness ([70d28e3](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/70d28e3ede3df383b1047bf6ff9a8a415411464e))
+* **verify:** gosec scan for lfverify (make lint-verify) ([7daa726](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/7daa726df8274234937df337dd2ed933025e5c11))
+* **verify:** standalone lfverify distribution (T060-T070) ([4918ea6](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/4918ea62e989e07cca629c9cc283956100264298))
+
+
+### Bug Fixes
+
+* address PR [#3](https://github.com/kbrockhoff/terraform-aws-lakehouse/issues/3) review findings ([65969a1](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/65969a10918817108ab89c539f34ec32348b86d1))
+* **tenant:** keep row-filtered readers off the unfiltered table grant ([bca2b33](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/bca2b3339b58d5e63d38952b880916f7b530ae9b))
+* **verify:** never tear down after a refused preflight (T053) ([a3d5f61](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/a3d5f61a2d8421421da48fad61392c042b2821c6))
+* **verify:** probe-mode fixes from the full/probe cross-check (T050, T051) ([2ce3b2a](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/2ce3b2ae02e8fa8472453f5e3491c074772965e7))
+* **verify:** record per-case durations; T049 determinism results ([2c59763](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/2c59763aa7a90764a5894ad4b0fd8eef0fd787b2))
+* **verify:** sweep all-tables column grants and keep revoking after a failure (T052, T058) ([c90110a](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/c90110a2e63d4f23dfd3732552179fd2185984c1))
+
 ## 0.1.0 (2026-10-26)
 
 
