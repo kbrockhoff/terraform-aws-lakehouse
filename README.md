@@ -142,6 +142,7 @@ Override the zones with `zones_config`.
 | `<prefix>-sensitivity` | `governance_config.sensitivity_values`, least to most sensitive | Databases (tenant ceiling), then pipelines and stewards |
 | `<prefix>-reg-<regulation>` | `no`, `yes` | One key per `regulation_values` entry |
 | `<prefix>-domain` | `governance_config.domain_values` | Databases (tenant domain), optionally tables |
+| `<prefix>-tenant-<tenant>-rf-<reader>` | `no`, `yes` | The tenant submodule, one key per reader with `row_filters`: `no` on its databases, `yes` on the filtered tables. No persona can ASSOCIATE it |
 
 The `lf_tag_vocabulary` output lists the keys and values for pipelines.
 
@@ -163,7 +164,13 @@ Grants are account-level LF-tag policies; every expression includes `tenant = T`
 
 Column-level control is built in: a reader sees only the columns whose labels fall within its expression. A
 reader's `domains` list is an optional filter. Row filters (`row_filters`) are the only named-resource grants; they
-need the table to exist, so add them after writers create it. The module outputs least-privilege IAM policy
+need the table to exist, so add them after writers create it. Lake Formation combines a principal's grants, so a
+filtered reader that also held its tag grant on the table would see every row. The module therefore labels each
+filtered table `<prefix>-tenant-<tenant>-rf-<reader> = yes` and limits that reader's tag grant to tables labeled `no`
+(the database default): the reader reaches a filtered table only through its filter, and other readers are
+unaffected. Because grants combine per principal, every reader entry that shares the filtered reader's
+`principal_arn` gets the same limit, and a filtered reader's principal may not also be a writer or steward of the
+tenant (their unfiltered SELECT would bypass the filter; validation rejects it). The module outputs least-privilege IAM policy
 documents per persona (`persona_policy_json`) but never attaches them.
 
 ### Steward runbook
@@ -232,7 +239,8 @@ data-access role, the `bucket/*` registration, the federated `s3tablescatalog`, 
 - Exactly one deployment per account and Region keeps `catalog_integration_config.enabled = true`.
 - Its data-lake settings are **authoritative**: admins not in `governance_config.admin_principal_arns` are removed,
   including console-added ones, and the default `IAM_ALLOWED_PRINCIPALS` permissions are cleared. List the deploying
-  role, every secondary deployment's role, and every tenant pipeline role.
+  role, every secondary deployment's role, and every tenant pipeline role. Read-only admins (auditors) are
+  likewise authoritative: list them in `governance_config.read_only_admin_principal_arns`.
 - Secondary deployments set `enabled = false` and pass the owner's `data_access_role_arn` output (see
   [`examples/secondary`](examples/secondary)).
 
@@ -317,6 +325,27 @@ done
 
 Both grants are outside Terraform only because AWS provider 6.x cannot manage them correctly yet.
 
+## Access Verification
+
+`lfverify`, in [`verify/`](verify/README.md), checks that the Lake Formation grants give each persona
+exactly the intended access. It assumes each persona's role and attempts real catalog, query,
+write, and grant calls, then compares every outcome with a declared expectation matrix. It covers
+administrators, read-only administrators, metadata-only readers and writers, readers and writers
+of one or several namespaces, and column-, row-, and cell-restricted readers, in both the LF-tag
+grant style this module uses and named-resource grants.
+
+- **Full mode** (`make verify-full`) deploys this module into a disposable fixture in an
+  allow-listed sandbox account, runs the matrix, and destroys everything. It refuses production.
+- **Probe mode** (`lfverify probe --matrix …`, or `make verify-probe MATRIX=…`) checks an existing
+  deployment, production included, without changing it. The runner must be read-only and listed in
+  `governance_config.read_only_admin_principal_arns`. Every release attaches standalone `lfverify`
+  executables for Linux, macOS, and Windows, so probe mode needs no checkout: download yours from
+  the [latest release](https://github.com/kbrockhoff/terraform-aws-lakehouse/releases/latest) and
+  follow the [user guide](verify/docs/user-guide.md).
+
+Live `verify-*` targets never run from `make validate` or `make test`. Sandbox results are in
+[`specs/002-lf-access-verification/sandbox-results.md`](specs/002-lf-access-verification/sandbox-results.md).
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -374,7 +403,7 @@ Both grants are outside Terraform only because AWS provider 6.x cannot manage th
 | <a name="input_enabled"></a> [enabled](#input\_enabled) | Set to false to prevent the module from creating any resources | `bool` | `true` | no |
 | <a name="input_encryption_config"></a> [encryption\_config](#input\_encryption\_config) | Configuration object for encryption settings and KMS key management | <pre>object({<br/>    create_kms_key               = bool<br/>    kms_key_id                   = string<br/>    kms_key_deletion_window_days = number<br/>  })</pre> | <pre>{<br/>  "create_kms_key": true,<br/>  "kms_key_deletion_window_days": 14,<br/>  "kms_key_id": ""<br/>}</pre> | no |
 | <a name="input_environment_type"></a> [environment\_type](#input\_environment\_type) | Environment type for resource configuration defaults. Select 'None' to use individual config values. | `string` | `"Development"` | no |
-| <a name="input_governance_config"></a> [governance\_config](#input\_governance\_config) | Lake Formation governance: data-lake admins and the platform LF-tag vocabularies for sensitivity, regulations, and domains. | <pre>object({<br/>    admin_principal_arns          = list(string)<br/>    sensitivity_values            = optional(list(string), ["public", "internal", "confidential", "restricted"])<br/>    regulation_values             = optional(list(string), ["gdpr", "hipaa", "pci_dss"])<br/>    domain_values                 = optional(list(string), ["general"])<br/>    shared_storage_classification = optional(string)<br/>    writer_drop_enabled           = optional(bool)<br/>  })</pre> | <pre>{<br/>  "admin_principal_arns": []<br/>}</pre> | no |
+| <a name="input_governance_config"></a> [governance\_config](#input\_governance\_config) | Lake Formation governance: data-lake admins, read-only admins, and the platform LF-tag vocabularies for sensitivity, regulations, and domains. | <pre>object({<br/>    admin_principal_arns           = list(string)<br/>    read_only_admin_principal_arns = optional(list(string), [])<br/>    sensitivity_values             = optional(list(string), ["public", "internal", "confidential", "restricted"])<br/>    regulation_values              = optional(list(string), ["gdpr", "hipaa", "pci_dss"])<br/>    domain_values                  = optional(list(string), ["general"])<br/>    shared_storage_classification  = optional(string)<br/>    writer_drop_enabled            = optional(bool)<br/>  })</pre> | <pre>{<br/>  "admin_principal_arns": []<br/>}</pre> | no |
 | <a name="input_monitoring_config"></a> [monitoring\_config](#input\_monitoring\_config) | Configuration object for optional monitoring | <pre>object({<br/>    enabled = bool<br/>  })</pre> | <pre>{<br/>  "enabled": false<br/>}</pre> | no |
 | <a name="input_query_config"></a> [query\_config](#input\_query\_config) | Platform query defaults that tenants may override. Null values use the environment default. | <pre>object({<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    results_expiration_days        = optional(number)<br/>  })</pre> | `{}` | no |
 | <a name="input_required_tags_config"></a> [required\_tags\_config](#input\_required\_tags\_config) | Tag keys the module requires or writes. When enforced (null uses the environment default), tags must include the cost-center and data-owner keys. | <pre>object({<br/>    enforced                = optional(bool)<br/>    cost_center_key         = optional(string, "CostCenter")<br/>    data_owner_key          = optional(string, "DataOwner")<br/>    data_classification_key = optional(string, "DataClassification")<br/>    tenant_key              = optional(string, "Tenant")<br/>  })</pre> | `{}` | no |

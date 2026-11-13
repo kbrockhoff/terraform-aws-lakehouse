@@ -1,0 +1,19 @@
+mode: probe
+defaults: { scan_cap_bytes: 1048576 }
+personas:
+  - key: eu_reader
+    role_arn: arn:aws:iam::123456789012:role/eu-reader
+    cases:
+      - id: eu-rows
+        style: label
+        op: select
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-curated", database: sales, table: orders, workgroup: sales }
+        expect: allowed
+        row_predicate: { column: region, op: eq, values: [EU] }
+        max_rows: 1000
+      - id: eu-writer-inspect
+        style: label
+        op: insert
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-curated", database: sales, table: orders }
+        expect: inspect
+        expect_permissions: [SELECT]

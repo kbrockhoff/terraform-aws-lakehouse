@@ -43,6 +43,9 @@ locals {
         }
       ],
       r.domains == null ? [] : [{ key = var.platform.lf_tags.domain.key, values = r.domains }],
+      # Row-filtered tables are reached only through the filter (local.row_filter_tag_key), for
+      # every reader entry of a row-filtered principal
+      [for key in local.reader_row_filter_keys[k] : { key = key, values = ["no"] }],
     )
   }
 }
@@ -240,7 +243,7 @@ resource "aws_lakeformation_permissions" "reader_table" {
     }
   }
 
-  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter, terraform_data.admin_guard]
 }
 
 # ----

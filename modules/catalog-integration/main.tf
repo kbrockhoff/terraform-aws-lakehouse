@@ -38,6 +38,10 @@ resource "aws_glue_catalog" "s3tables" {
 resource "aws_lakeformation_data_lake_settings" "this" {
   admins = var.admin_principal_arns
 
+  # PutDataLakeSettings replaces the whole settings object, so omitting this would erase any
+  # read-only admins configured outside Terraform on every apply.
+  read_only_admins = var.read_only_admin_principal_arns
+
   # No create_*_default_permissions blocks: omitting them sends empty lists, which removes the
   # IAM_ALLOWED_PRINCIPALS defaults, so Lake Formation grants are the only access to new
   # databases and tables. (An empty block would send an empty principal, which the API rejects.)

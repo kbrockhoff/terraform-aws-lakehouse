@@ -228,6 +228,10 @@ Platform defaults derive from `environment_type`.
 - **FR-012**: Infrastructure MUST support optional row-level filters on named, existing tables of
   a tenant, granted to that tenant's readers. Row filters cannot be expressed as tag expressions.
   They are the only grants that name specific resources, and the documentation MUST say so.
+  A filtered reader MUST NOT also reach a filtered table through its label-based grant, because
+  the permission service combines a principal's grants and an unfiltered grant defeats the
+  filter. The tenant unit owns one exclusion label per filtered reader for this (amended
+  2026-11-11 after the 002 harness found the gap, awslkhs-fysh).
 - **FR-013**: Infrastructure MUST manage the account-level data permission service settings,
   controlled by the same feature flag as federated catalog management (FR-007). These settings are
   the data-lake administrator list and the default permissions for newly created databases and

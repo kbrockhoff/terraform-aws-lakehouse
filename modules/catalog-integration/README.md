@@ -5,7 +5,7 @@ Integrates S3 Tables with AWS Lake Formation for one account and Region:
 - the Lake Formation data-access role (`<name_prefix>-lf-s3tables-access`);
 - the registration of every table bucket (`bucket/*`) with Lake Formation, with federation;
 - the federated `s3tablescatalog` Glue catalog;
-- the data-lake settings: admins, and empty default permissions.
+- the data-lake settings: admins, read-only admins, and empty default permissions.
 
 ## One owner per account and Region
 
@@ -22,6 +22,10 @@ console. List in `admin_principal_arns`:
 - the role that deploys this module (a plan-time precondition enforces this);
 - the deploying role of every secondary deployment;
 - every tenant provisioning pipeline role.
+
+Read-only admins are authoritative in the same way. List auditors and the access-verification
+probe runner in `read_only_admin_principal_arns`; anyone added in the console is removed on the
+next apply. A principal cannot be in both lists.
 
 ## Importing an existing catalog
 
@@ -77,6 +81,7 @@ No modules.
 | <a name="input_partition"></a> [partition](#input\_partition) | AWS partition (aws, aws-us-gov, aws-cn). | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | AWS Region of the S3 Tables catalog integration. | `string` | n/a | yes |
 | <a name="input_allow_full_table_external_data_access"></a> [allow\_full\_table\_external\_data\_access](#input\_allow\_full\_table\_external\_data\_access) | Allow third-party engines to access full tables in the federated s3tablescatalog. | `bool` | `false` | no |
+| <a name="input_read_only_admin_principal_arns"></a> [read\_only\_admin\_principal\_arns](#input\_read\_only\_admin\_principal\_arns) | Lake Formation read-only admins: they can view all catalog resources and permissions but change nothing. Authoritative, like admin\_principal\_arns. | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
 
 ## Outputs

@@ -51,3 +51,7 @@ makefile.tfplan
 
 .beads.gate.lock
 
+
+# Access verification harness run output and fixture state
+verify/out/
+verify/fixture/.terraform*

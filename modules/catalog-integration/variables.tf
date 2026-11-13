@@ -62,6 +62,17 @@ variable "admin_principal_arns" {
   }
 }
 
+variable "read_only_admin_principal_arns" {
+  description = "Lake Formation read-only admins: they can view all catalog resources and permissions but change nothing. Authoritative, like admin_principal_arns."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for a in var.read_only_admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))])
+    error_message = "Every read_only_admin_principal_arns entry must be an IAM role or user ARN."
+  }
+}
+
 variable "deployer_role_arn" {
   description = "Role ARN of the deploying session. It must be one of admin_principal_arns."
   type        = string

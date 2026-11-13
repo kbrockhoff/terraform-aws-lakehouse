@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumePersonaRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::111122223333:role/sales-eu-analyst",
+        "arn:aws:iam::111122223333:role/semantic-layer"
+      ]
+    },
+    {
+      "Sid": "SimulateOwnPolicy",
+      "Effect": "Allow",
+      "Action": "iam:SimulatePrincipalPolicy",
+      "Resource": "arn:aws:iam::111122223333:role/lfverify-probe-runner"
+    },
+    {
+      "Sid": "ListFederatedPermissions",
+      "Effect": "Allow",
+      "Action": "lakeformation:GetDataAccess",
+      "Resource": "*"
+    }
+  ]
+}

@@ -95,14 +95,15 @@ variable "catalog_integration_config" {
 }
 
 variable "governance_config" {
-  description = "Lake Formation governance: data-lake admins and the platform LF-tag vocabularies for sensitivity, regulations, and domains."
+  description = "Lake Formation governance: data-lake admins, read-only admins, and the platform LF-tag vocabularies for sensitivity, regulations, and domains."
   type = object({
-    admin_principal_arns          = list(string)
-    sensitivity_values            = optional(list(string), ["public", "internal", "confidential", "restricted"])
-    regulation_values             = optional(list(string), ["gdpr", "hipaa", "pci_dss"])
-    domain_values                 = optional(list(string), ["general"])
-    shared_storage_classification = optional(string)
-    writer_drop_enabled           = optional(bool)
+    admin_principal_arns           = list(string)
+    read_only_admin_principal_arns = optional(list(string), [])
+    sensitivity_values             = optional(list(string), ["public", "internal", "confidential", "restricted"])
+    regulation_values              = optional(list(string), ["gdpr", "hipaa", "pci_dss"])
+    domain_values                  = optional(list(string), ["general"])
+    shared_storage_classification  = optional(string)
+    writer_drop_enabled            = optional(bool)
   })
   default = {
     admin_principal_arns = []
@@ -111,6 +112,16 @@ variable "governance_config" {
   validation {
     condition     = alltrue([for a in var.governance_config.admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))])
     error_message = "Every admin_principal_arns entry must be an IAM role or user ARN."
+  }
+
+  validation {
+    condition     = alltrue([for a in var.governance_config.read_only_admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))])
+    error_message = "Every read_only_admin_principal_arns entry must be an IAM role or user ARN."
+  }
+
+  validation {
+    condition     = length(setintersection(var.governance_config.admin_principal_arns, var.governance_config.read_only_admin_principal_arns)) == 0
+    error_message = "A principal cannot be both a data-lake admin and a read-only admin."
   }
 
   validation {

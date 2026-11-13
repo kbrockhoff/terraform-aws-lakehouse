@@ -19,4 +19,7 @@ governance_config = {
   sensitivity_values = ["public", "internal", "confidential", "restricted"]
   regulation_values  = ["gdpr", "hipaa", "pci_dss"]
   domain_values      = ["general", "sales", "finance", "health"]
+
+  # Auditors view all catalog resources and permissions but change nothing
+  read_only_admin_principal_arns = ["arn:aws:iam::123456789012:role/lakehouse-auditor"]
 }

@@ -1,0 +1,81 @@
+name: Access Verification
+
+# Live Lake Formation access verification (spec 002). Full mode deploys a disposable fixture in
+# the development sandbox, runs the persona matrix, and always tears it down. Manual only: it
+# creates real resources and temporarily changes the account's data-lake settings.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: full runs the matrix; detect applies each misconfiguration overlay
+        type: choice
+        options: [full, detect]
+        default: full
+      region:
+        description: AWS Region of the sandbox (must be in verify/sandbox-accounts.txt)
+        default: us-east-1
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # The fixture owns the account's data-lake settings, so runs in one account never overlap
+  group: verify-access-${{ inputs.region }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify access (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    environment: development
+    timeout-minutes: 90
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Setup Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: '1.26'
+
+    # The role's trust policy must match this repository's immutable OIDC subject,
+    # repo:kbrockhoff@1822996/terraform-aws-lakehouse@1417696478:environment:development,
+    # not repo:kbrockhoff/terraform-aws-lakehouse:*
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-session-name: verify-access
+        aws-region: ${{ inputs.region }}
+        audience: sts.amazonaws.com
+        retry-max-attempts: 3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: latest
+        terraform_wrapper: false
+
+    - name: Run access verification
+      run: make verify-${{ inputs.mode }}
+
+    - name: Clean up after an interrupted run
+      if: always()
+      run: |
+        if [ -f verify/out/.last-run-id ]; then
+          make verify-cleanup RUN_ID="$(cat verify/out/.last-run-id)" || true
+        fi
+
+    - name: Upload reports
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: verify-access-reports
+        path: |
+          verify/out/*/report.*
+          verify/out/*/junit.xml
+          verify/out/*/detect.json
+          verify/out/*/settings.before.json
+        if-no-files-found: warn

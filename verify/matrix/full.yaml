@@ -1,0 +1,686 @@
+# Full-mode expectations (spec 002, FR-009 to FR-023). Cases default to style both (one
+# instance per grant style) and phase static (parallel, read-only or self-cleaning). Writes,
+# setups, and drops run in the scenario phase, in file order, so they never race static counts.
+#
+# Resources are symbolic: tenant alpha, beta, or gamma resolves to the label namespace
+# <tenant>/<zone> (zone defaults to curated) and the named namespace n_<tenant>. gamma is granted
+# to nobody but administrators.
+#
+# Fixture data (internal/seed): orders 200 rows (EU 80, US 70, APAC 50), customers 50,
+# scratch 5. orders.ssn is the restricted column, order_date the partition column, attrs a map.
+#
+# When AWS behavior differs from an expectation here, change the expectation deliberately with
+# a note citing the observation and date; never loosen it to make a run pass.
+mode: full
+
+personas:
+  # ---------------------------------------------------------------- FR-009
+  - key: admin
+    cases:
+      - id: admin-list-databases
+        op: list_databases
+        resource: { tenant: alpha }
+        expect: allowed
+        rule: Data lake administrators can access the Data Catalog
+      - id: admin-get-table
+        op: get_table
+        resource: { tenant: gamma, table: orders }
+        expect: allowed
+        rule: Data lake administrators can view all catalog resources
+        note: confirmed in run 36ea41 (2026-11-11) - admins can describe tables they did not create
+      - id: admin-list-permissions
+        op: list_permissions
+        expect: allowed
+        rule: Data lake administrators can view permissions
+      - id: admin-grant
+        op: grant
+        resource: { tenant: alpha, table: customers, grantee: control }
+        expect: allowed
+        rule: Data lake administrators can grant permissions on any resource
+      - id: admin-revoke
+        op: revoke
+        # A different table from admin-grant: the two run in parallel
+        resource: { tenant: alpha, table: scratch, grantee: control }
+        expect: allowed
+        rule: Data lake administrators can revoke permissions on any resource
+      - id: admin-create-lf-tag
+        style: label
+        op: create_lf_tag
+        expect: allowed
+        rule: Data lake administrators can create LF-tags
+      - id: admin-add-lf-tags
+        op: add_lf_tags
+        resource: { tenant: alpha, table: scratch }
+        expect: denied
+        rule: Data lake administrators do not implicitly hold ASSOCIATE on LF-tags another principal created
+        note: observed in run 36ea41 (2026-11-11); matches the module README's one-time tag grants for non-creator admins
+      - id: admin-create-filter
+        op: create_filter
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        rule: Data lake administrators can create data cells filters
+      - id: admin-get-settings
+        op: get_settings
+        expect: allowed
+        rule: Data lake administrators read data-lake settings
+      - id: admin-select-without-self-grant
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: Administrators get no implicit SELECT on tables they did not create
+        note: confirmed in run 36ea41 (2026-11-11)
+      - id: admin-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022 - table storage is reachable only through the permission service
+      # FR-021: invalid grants attempted by the administrator, who could make any valid grant,
+      # so a rejection proves the rule rather than a missing permission
+      - id: admin-columns-with-write
+        phase: boundary
+        op: grant_columns_with_write
+        resource: { tenant: alpha, table: orders, columns: [order_id, region], grantee: control }
+        expect: rejected
+        rule: Column-restricted SELECT cannot be combined with INSERT, DELETE, ALTER, or DROP
+      - id: admin-exclude-partition
+        phase: boundary
+        op: grant_exclude_partition
+        resource: { tenant: alpha, table: orders, grantee: control }
+        expect: allowed
+        rule: The partition-key column-filter rule applies to Hive tables, not S3 Tables Iceberg tables
+        note: >-
+          observed in run 36ea41 (2026-11-11) - Lake Formation accepted a column grant excluding the
+          Iceberg partition source column order_date; the documented rule is for Hive partition keys
+      - id: admin-filter-map-column
+        phase: boundary
+        op: create_filter_map_column
+        resource: { tenant: alpha, table: orders }
+        expect: rejected
+        rule: Row filter expressions cannot reference array or map columns
+
+  # ---------------------------------------------------------------- FR-010
+  - key: roadmin
+    cases:
+      - id: roadmin-get-settings
+        op: get_settings
+        expect: allowed
+        rule: Read-only administrators view data-lake settings
+      - id: roadmin-list-permissions
+        op: list_permissions
+        expect: allowed
+        rule: Read-only administrators view permissions
+      - id: roadmin-list-databases
+        op: list_databases
+        resource: { tenant: gamma }
+        expect: allowed
+        rule: Read-only administrators view all Data Catalog resources
+        note: confirmed in run 36ea41 (2026-11-11) - read-only admins see S3 Tables bucket catalogs
+      - id: roadmin-get-table
+        op: get_table
+        resource: { tenant: gamma, table: orders }
+        expect: allowed
+        rule: Read-only administrators view all Data Catalog resources
+        note: confirmed in run 36ea41 (2026-11-11)
+      - id: roadmin-grant
+        op: grant
+        resource: { tenant: alpha, table: customers, grantee: control }
+        expect: denied
+        rule: Read-only administrators cannot make changes
+      - id: roadmin-revoke
+        op: revoke
+        resource: { tenant: alpha, table: scratch, grantee: control }
+        expect: denied
+        rule: Read-only administrators cannot make changes
+      - id: roadmin-create-lf-tag
+        style: label
+        op: create_lf_tag
+        expect: denied
+        rule: Read-only administrators cannot change LF-tags
+      - id: roadmin-add-lf-tags
+        op: add_lf_tags
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: Read-only administrators cannot change LF-tag assignments
+      - id: roadmin-create-filter
+        op: create_filter
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: Read-only administrators cannot create data cells filters
+      - id: roadmin-put-settings
+        op: put_settings
+        expect: denied
+        rule: Read-only administrators cannot change data-lake settings
+      - id: roadmin-select
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: Read-only administrators get no data access
+      - id: roadmin-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: roadmin-create-table
+        phase: scenario
+        op: create_table
+        resource: { tenant: alpha }
+        expect: denied
+        rule: Read-only administrators cannot create tables
+      - id: roadmin-alter-table
+        phase: scenario
+        op: alter_table
+        resource: { tenant: alpha, table: scratch }
+        expect: denied
+        rule: Read-only administrators cannot alter tables
+      - id: roadmin-drop-table
+        phase: scenario
+        op: drop_table
+        resource: { tenant: alpha, table: scratch }
+        expect: denied
+        rule: Read-only administrators cannot drop tables
+
+  # ---------------------------------------------------------------- FR-011
+  - key: meta_reader
+    cases:
+      - id: mr-get-database
+        op: get_database
+        resource: { tenant: alpha }
+        expect: allowed
+        rule: DESCRIBE on a database shows the database
+      - id: mr-get-database-beta
+        op: get_database
+        resource: { tenant: beta }
+        expect: allowed
+        rule: DESCRIBE on a database shows the database
+      - id: mr-list-tables
+        op: list_tables
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        rule: DESCRIBE on tables shows them
+      - id: mr-get-table-schema
+        op: get_table
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_columns: [order_id, region, amount, ssn, attrs, order_date]
+        rule: DESCRIBE on a table shows its full schema
+      - id: mr-select
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: DESCRIBE grants no data access; no queries without SELECT
+      - id: mr-count
+        op: count
+        resource: { tenant: beta, table: orders }
+        expect: denied
+        rule: DESCRIBE grants no data access
+      - id: mr-get-database-gamma
+        op: get_database
+        resource: { tenant: gamma }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: mr-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: mr-create-table
+        phase: scenario
+        op: create_table
+        resource: { tenant: alpha }
+        expect: denied
+        rule: DESCRIBE implies no CREATE_TABLE
+      - id: mr-alter-table
+        phase: scenario
+        op: alter_table
+        resource: { tenant: alpha, table: scratch }
+        expect: denied
+        rule: DESCRIBE implies no ALTER
+
+  # ---------------------------------------------------------------- FR-012
+  - key: meta_writer
+    cases:
+      - id: mw-select
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: CREATE_TABLE, ALTER, and DROP grant no data access
+      - id: mw-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: mw-create-table
+        phase: scenario
+        op: create_table
+        resource: { tenant: alpha }
+        expect: allowed
+        rule: CREATE_TABLE on a database allows creating tables in it
+        note: the creator receives every permission on the new table, with grant option
+      - id: mw-create-table-beta
+        phase: scenario
+        op: create_table
+        resource: { tenant: beta }
+        expect: denied
+        rule: CREATE_TABLE is per database
+      - id: mw-alter-scratch
+        phase: scenario
+        op: alter_table
+        resource: { tenant: alpha, table: scratch }
+        expect: allowed
+        rule: ALTER on a table allows schema changes
+      - id: mw-alter-customers
+        phase: scenario
+        op: alter_table
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: ALTER is per table
+      - id: mw-insert
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: Metadata permissions grant no INSERT
+      - id: mw-drop-scratch
+        phase: scenario
+        op: drop_table
+        resource: { tenant: alpha, table: scratch }
+        expect: allowed
+        rule: DROP on a table allows dropping it
+        note: runs last; the fixture is not reused afterwards
+
+  # ---------------------------------------------------------------- FR-013
+  - key: reader_multi
+    cases:
+      - id: rm-count-alpha
+        op: count
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 200 }
+        rule: SELECT on all tables in a database allows queries
+      - id: rm-count-beta
+        op: count
+        resource: { tenant: beta, table: orders }
+        expect: allowed
+        expect_rows: { count: 200 }
+        rule: Grants span several namespaces
+      - id: rm-select-customers
+        op: select
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: SELECT on all tables in a database allows queries
+      - id: rm-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: rm-select-raw
+        style: label
+        op: select
+        resource: { tenant: alpha, zone: raw, table: orders }
+        expect: denied
+        rule: FR-014 - zones are separate access boundaries
+      - id: rm-list-databases-gamma
+        op: list_databases
+        resource: { tenant: gamma }
+        expect: absent
+        rule: Databases without permissions are not listed
+      - id: rm-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: rm-late-table
+        phase: scenario
+        setup: late_table
+        op: get_table
+        resource: { tenant: alpha, table: late_table }
+        expect: allowed
+        rule: All-tables and LF-tag grants cover tables created after the grant
+      - id: rm-insert
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: SELECT grants no INSERT
+      - id: rm-update
+        phase: scenario
+        op: update
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: SELECT grants no INSERT
+      - id: rm-delete
+        phase: scenario
+        op: delete
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: SELECT grants no DELETE
+      - id: rm-alter
+        phase: scenario
+        op: alter_table
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: SELECT grants no ALTER
+
+  # ---------------------------------------------------------------- FR-014
+  - key: reader_single
+    cases:
+      - id: rs-count-alpha
+        op: count
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 200 }
+        rule: SELECT on all tables in a database allows queries
+      - id: rs-select-beta
+        op: select
+        resource: { tenant: beta, table: orders }
+        expect: denied
+        rule: FR-014 - one namespace only
+      - id: rs-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - one namespace only
+      - id: rs-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: rs-insert
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: SELECT grants no INSERT
+
+  # ---------------------------------------------------------------- FR-015
+  - key: writer_multi
+    cases:
+      - id: wm-count-alpha
+        op: count
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: Writers hold SELECT
+      - id: wm-add-lf-tags
+        op: add_lf_tags
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: Writers hold ASSOCIATE only on the platform labels within their limits, not fixture tags
+      - id: wm-grant
+        op: grant
+        resource: { tenant: alpha, table: customers, grantee: control }
+        expect: denied
+        rule: Writers hold no grant option
+      - id: wm-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: wm-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: wm-insert-alpha
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        rule: INSERT allows adding rows
+        note: blocked while awslkhs-cdq (Athena INSERT into S3 Tables fails) is open
+      - id: wm-update-alpha
+        phase: scenario
+        op: update
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        rule: INSERT allows updating rows
+        note: blocked while awslkhs-cdq is open
+      - id: wm-delete-alpha
+        phase: scenario
+        op: delete
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        rule: DELETE allows removing rows
+        note: blocked while awslkhs-cdq is open
+      - id: wm-insert-beta
+        phase: scenario
+        op: insert
+        resource: { tenant: beta, table: customers }
+        expect: allowed
+        rule: Grants span several namespaces
+        note: blocked while awslkhs-cdq is open
+      - id: wm-insert-gamma
+        phase: scenario
+        op: insert
+        resource: { tenant: gamma, table: customers }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+
+  # ---------------------------------------------------------------- FR-016
+  - key: writer_single
+    cases:
+      - id: ws-count-alpha
+        op: count
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: Writers hold SELECT
+      - id: ws-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: ws-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: ws-insert-alpha
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        rule: INSERT allows adding rows
+        note: blocked while awslkhs-cdq is open
+      - id: ws-insert-beta
+        phase: scenario
+        op: insert
+        resource: { tenant: beta, table: customers }
+        expect: denied
+        rule: FR-016 - one namespace only
+
+  # ---------------------------------------------------------------- FR-017
+  - key: reader_cols
+    cases:
+      - id: rc-schema
+        op: get_table
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_columns: [order_id, region, amount, attrs, order_date]
+        rule: GetTable returns only the columns the caller may see
+      - id: rc-permitted-columns
+        op: select_columns
+        resource: { tenant: alpha, table: orders, columns: [order_id, region, amount] }
+        expect: allowed
+        expect_rows: { count: 200 }
+        rule: Column-restricted SELECT returns every row of the permitted columns
+      - id: rc-restricted-column
+        op: select_columns
+        resource: { tenant: alpha, table: orders, columns: [ssn] }
+        expect: denied
+        rule: Excluded columns cannot be queried
+      - id: rc-select-star
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: absent
+        absent_columns: [ssn]
+        rule: SELECT * omits excluded columns
+      - id: rc-customers
+        op: count
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: Unrestricted tables stay fully readable
+      - id: rc-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: rc-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: rc-relabel-column
+        style: label
+        phase: scenario
+        setup: relabel_column_restricted
+        op: get_table
+        resource: { tenant: alpha, table: orders }
+        expect: absent
+        absent_columns: [amount]
+        rule: Relabeling a column restricted hides it from readers without that level
+      - id: rc-relabel-column-restored
+        style: label
+        phase: scenario
+        op: get_table
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_columns: [order_id, region, amount, attrs, order_date]
+        rule: Restoring the label returns the column
+      - id: rc-relabel-table
+        style: label
+        phase: scenario
+        setup: relabel_table_restricted
+        op: count
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: FR-023 - access follows labels; a table moved above the reader's levels is hidden
+      - id: rc-relabel-table-restored
+        style: label
+        phase: scenario
+        op: count
+        resource: { tenant: alpha, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: FR-023 - restoring the label restores access
+
+  # ---------------------------------------------------------------- FR-018
+  - key: reader_rows
+    cases:
+      - id: rr-count-union
+        op: count
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 150 }
+        rule: Several row filters for one principal combine as a union (EU 80 + US 70)
+        note: label style failed before the awslkhs-fysh fix (the reader's tag grant covered all rows)
+      - id: rr-rows-match
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 150 }
+        row_predicate: { column: region, op: in, values: [EU, US] }
+        rule: Row filters return only matching rows
+      - id: rr-other-namespace
+        op: count
+        resource: { tenant: beta, table: orders }
+        expect: denied
+        rule: Row filters grant only their table
+      - id: rr-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: rr-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: rr-all-rows
+        phase: scenario
+        setup: all_rows_filter
+        op: count
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 200 }
+        rule: An all-rows filter prevails over predicate filters
+
+  # ---------------------------------------------------------------- FR-019
+  - key: reader_cells
+    cases:
+      - id: rce-count
+        op: count
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_rows: { count: 80 }
+        rule: Cell filters restrict rows (EU 80)
+        note: label style failed before the awslkhs-fysh fix
+      - id: rce-schema
+        op: get_table
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        expect_columns: [order_id, region, amount, attrs, order_date]
+        rule: Cell filters restrict columns
+      - id: rce-cells
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: allowed
+        absent_columns: [ssn]
+        row_predicate: { column: region, op: eq, values: [EU] }
+        rule: Only permitted cells are returned
+      - id: rce-restricted-column
+        op: select_columns
+        resource: { tenant: alpha, table: orders, columns: [ssn] }
+        expect: denied
+        rule: Excluded columns cannot be queried
+      - id: rce-select-gamma
+        op: select
+        resource: { tenant: gamma, table: orders }
+        expect: denied
+        rule: FR-014 - no access to ungranted namespaces
+      - id: rce-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+
+  # ---------------------------------------------------------------- FR-020
+  - key: control
+    cases:
+      - id: ctl-list-databases
+        op: list_databases
+        resource: { tenant: alpha }
+        expect: absent
+        rule: A principal with no grants sees no fixture namespaces
+      - id: ctl-get-table
+        op: get_table
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: No grants, no metadata
+      - id: ctl-select
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: No grants, no data
+      - id: ctl-count-beta
+        op: count
+        resource: { tenant: beta, table: orders }
+        expect: denied
+        rule: No grants, no data
+      - id: ctl-list-permissions
+        op: list_permissions
+        expect: denied
+        rule: Only administrators list permissions
+      - id: ctl-storage-bypass
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: FR-022
+      - id: ctl-insert
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: No grants, no writes

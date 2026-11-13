@@ -1,0 +1,13 @@
+{
+  "Sid": "LfverifyProbeRunner",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::111122223333:role/lfverify-probe-runner"
+  },
+  "Action": "sts:AssumeRole",
+  "Condition": {
+    "StringLike": {
+      "sts:RoleSessionName": "lfverify-*"
+    }
+  }
+}

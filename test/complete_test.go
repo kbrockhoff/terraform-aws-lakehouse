@@ -132,6 +132,32 @@ func TestTerraformCompleteExample(t *testing.T) {
 	}
 	assert.Equal(t, 4, semanticGrants, "database and table grants in sales and finance")
 
+	// Row filters (awslkhs-fysh): the filtered reader's tag grant requires its tenant-owned
+	// row-filter key to be "no", the filtered table carries "yes", and databases carry "no", so the
+	// data cells filter is that reader's only access to the table. Other readers are unaffected.
+	rfKey := key("tenant-sales-rf-gdpranalyst")
+	assert.Equal(t, []string{"no"}, gdpr[rfKey], "the filtered reader's grant skips row-filtered tables")
+	_, semanticHasRF := semantic[rfKey]
+	assert.False(t, semanticHasRF, "readers without filters keep their grants")
+	rfTag := changes[tenantPrefix("sales")+`aws_lakeformation_lf_tag.row_filter["gdpranalyst"]`]
+	require.NotNil(t, rfTag)
+	assert.Equal(t, []string{"no", "yes"}, strs(after(rfTag)["values"]))
+	filtered := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.row_filtered_table["gdpranalyst/curated/orders"]`])
+	require.NotNil(t, filtered)
+	assert.Equal(t, "orders", block(filtered, "table")["name"])
+	assert.Equal(t, "yes", list(filtered["lf_tag"])[0].(map[string]interface{})["value"])
+	salesDB := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.database["curated"]`])
+	dbLabels := map[string]string{}
+	for _, l := range list(salesDB["lf_tag"]) {
+		lm := l.(map[string]interface{})
+		dbLabels[lm["key"].(string)] = lm["value"].(string)
+	}
+	assert.Equal(t, "no", dbLabels[rfKey], "databases default every table to unfiltered")
+
+	// Read-only admins are authoritative like admins, so applies no longer erase them
+	settings := after(changes[shared+`module.catalog_integration[0].aws_lakeformation_data_lake_settings.this`])
+	assert.Equal(t, []string{"arn:aws:iam::123456789012:role/lakehouse-auditor"}, strs(settings["read_only_admins"]))
+
 	// Databases carry their zone, which only platform admins can associate
 	for _, z := range []string{"raw", "curated", "consumption"} {
 		db := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.database["`+z+`"]`])
@@ -377,4 +403,43 @@ func TestComplianceDesignationGatesTenantKeys(t *testing.T) {
 			assert.Equal(t, 0.0, compliance, label)
 		}
 	}
+}
+
+// TestRowFilterExclusionFollowsPrincipal: Lake Formation unions grants per principal, so an
+// unfiltered reader entry that shares a principal with a row-filtered entry must also skip the
+// filtered table. A reader key containing "/" must still resolve to its own reader, zone, and
+// table (PR #3 review, awslkhs-pg8j and awslkhs-ufrk).
+func TestRowFilterExclusionFollowsPrincipal(t *testing.T) {
+	t.Parallel()
+	name := generateTestNamePrefix("rfp")
+	analyst := "arn:aws:iam::123456789012:role/sales-eu-analyst"
+	vars := merged(completeVars(name), override("sales", map[string]interface{}{
+		"readers": map[string]interface{}{
+			"eu/analyst": map[string]interface{}{"principal_arn": analyst, "sensitivity_values": []string{"public", "internal"}},
+			"analyst":    map[string]interface{}{"principal_arn": analyst, "sensitivity_values": []string{"public"}},
+			"semantic": map[string]interface{}{"principal_arn": "arn:aws:iam::123456789012:role/semantic-layer",
+				"zones": []string{"consumption"}, "sensitivity_values": []string{"public", "internal"}},
+		},
+		"row_filters": map[string]interface{}{
+			"eu": map[string]interface{}{"reader": "eu/analyst", "zone": "curated", "table": "orders",
+				"row_filter_expression": "region = 'EU'"},
+		},
+	}))
+	changes := managedChanges(planExample(t, "complete", vars))
+	sales := shared + `module.tenant["sales"].`
+	rfKey := name + "-tenant-sales-rf-eu/analyst"
+
+	for _, k := range []string{"eu/analyst", "analyst"} {
+		rc := changes[sales+`aws_lakeformation_permissions.reader_table["`+k+`"]`]
+		require.NotNil(t, rc, k)
+		assert.Equal(t, []string{"no"}, lfExpression(rc)[rfKey], "%s shares the filtered principal, so it must skip the filtered table", k)
+	}
+	semantic := changes[sales+`aws_lakeformation_permissions.reader_table["semantic"]`]
+	require.NotNil(t, semantic)
+	_, has := lfExpression(semantic)[rfKey]
+	assert.False(t, has, "other principals keep their grants")
+
+	filtered := changes[sales+`aws_lakeformation_resource_lf_tags.row_filtered_table["eu/analyst/curated/orders"]`]
+	require.NotNil(t, filtered, "the filtered table is labeled under the full reader key")
+	assert.Equal(t, "orders", block(after(filtered), "table")["name"])
 }

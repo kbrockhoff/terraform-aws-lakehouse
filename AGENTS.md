@@ -26,7 +26,7 @@ precedence over this guide when the two conflict.
 - One-time CLI grants the provider cannot express yet (README, "Required one-time grants"): bucket catalog `DESCRIBE`, and platform tag permissions for non-creator admins
 
 ### Governed Access
-- LF-tags: per-tenant `<prefix>-tenant-<name>` (owned by the tenant submodule), and platform-owned `<prefix>-sensitivity`, `<prefix>-reg-<regulation>` (yes/no per regulation), `<prefix>-domain`, and `<prefix>-zone`
+- LF-tags: per-tenant `<prefix>-tenant-<name>` and, per row-filtered reader, `<prefix>-tenant-<name>-rf-<reader>` (no/yes; both owned by the tenant submodule), and platform-owned `<prefix>-sensitivity`, `<prefix>-reg-<regulation>` (yes/no per regulation), `<prefix>-domain`, and `<prefix>-zone`
 - Tenant databases carry the tenant's most restrictive labels plus their zone (fail closed); writer pipelines and stewards label tables and columns with roll-up (pipeline contract)
 - Grants are account-level `lf_tag_policy` grants, one per persona and resource type; every expression includes the tenant and zone terms (Lake Formation rejects grants scoped to a bucket catalog)
 - Column-level control through those tags; domain is an optional reader filter; row filters (data cells filters) are the only named-resource grants
@@ -45,6 +45,19 @@ precedence over this guide when the two conflict.
 - Root: `variables.tf`, `locals.tf` (environment defaults, effective config, `platform_contract`), `dependencies.tf`, `main.tf` (catalog integration, guards, `module.tenant`), `kms.tf`, `lf-tags.tf`, `table-buckets.tf`, `query.tf`, `alarms.tf`, `cost-estimation.tf`, `outputs.tf`
 - `modules/tenant`: `variables.tf` (all tenant validation), `locals.tf`, `kms.tf`, `storage.tf`, `lf-tags.tf`, `permissions.tf`, `query.tf`, `iam-documents.tf`, `alarms.tf`, `main.tf`, `outputs.tf`
 - Examples: `defaults`, `complete`, `secondary`, `standalone-tenant`, `deployer`; tests in `test/` are plan-only (`make test`)
+
+### Access Verification Harness
+- `verify/` holds `lfverify`, a Go CLI in its own Go module that proves the Lake Formation grants give each persona exactly the intended access by assuming persona roles and attempting real calls (spec `specs/002-lf-access-verification`, guide `verify/README.md`)
+  - `cmd/lfverify` (subcommands `probe`, `example-matrix`, `preflight`, `seed`, `run`, `detect`, `snapshot`, `diff`, `audit`, `cleanup`, `check-target`, `probe-matrix`, `version`, `help`; each command's `--help` lists only the flags in `commandFlags`, so keep that map current); `internal/` packages `matrix`, `classify`, `identity`, `ops`, `predicate`, `runner`, `seed`, `inspect`, `snapshot`, `preflight`, `manifest`, `report`
+  - `matrix/full.yaml` (full-mode expectations) and `matrix/probe.example.yaml`; change an expectation only deliberately, with a dated `note:`, never to make a run pass
+  - `fixture/`: a Terraform root that calls this module (`source = "../.."`) plus a named-resource baseline, applied in two stages (`stage` 1, then 2 after `seed`), with `inject` overlays for detection
+  - `sandbox-accounts.txt`: the full-mode allow-list
+  - `docs/`: the operator user guide and example IAM documents, shipped in every release archive; keep it in step with CLI changes
+  - `matrix/embed.go`: embeds `probe.example.yaml` in the executable
+- Releases: `make verify-dist VERSION=<v>` builds the six platform archives and `SHA256SUMS`; `.github/workflows/lfverify-release.yml` tests, builds, smoke-tests, and attaches them to each release (called from `release-please.yml`), and dry-runs on pull requests touching `verify/`
+- Persona keys, shared by the fixture, the manifest, matrix files, and session names: `admin`, `roadmin`, `meta_reader`, `meta_writer`, `reader_multi`, `reader_single`, `writer_multi`, `writer_single`, `reader_cols`, `reader_rows`, `reader_cells`, `control`, `steward` (held in reserve; not in the matrix)
+- `make test-verify` (offline unit tests) runs in `make validate`; `make test-verify-fixture` (plan-only) runs in `make test`; `make lint-verify` (gosec, pinned) runs in `make lint`. A gosec suppression needs `#nosec <rule> -- <reason>`
+- Live `verify-*` targets (`verify-full`, `verify-detect`, `verify-probe`, and the step targets) deploy into or read from real accounts and never run from `make validate` or `make test`. Full mode runs only in allow-listed sandbox accounts and refuses production
 
 ## Terraform Module Guide
 
@@ -97,6 +110,7 @@ module "monolith" { create_vpc = true; create_db = true; create_lb = true; ... }
 /examples/         # Usage demos
 /modules/          # Optional submodules
 /test/             # Automated tests
+/verify/           # Access verification harness (lfverify)
 ```
 
 ### AWS Best Practices
@@ -211,6 +225,7 @@ Favor small, focused modules with clear interfaces and strong defaults. Compose 
 * **modules/**: Terraform modules
 * **examples/**: Minimal (`defaults/`), full (`complete/`) and other common usage examples
 * **test/**: Terratest Go tests for examples
+* **verify/**: Access verification harness, with its own Go module and Terraform fixture; live runs only through `verify-*` make targets
 
 Each example needs: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`
 

@@ -1,0 +1,8 @@
+# Accounts where lfverify full mode may run (spec FR-003).
+# Full mode deploys fixtures and temporarily changes Lake Formation administrator lists,
+# so list only disposable sandbox accounts here. Probe mode ignores this file.
+#
+# Format: one "<account-id> <region>" per line. Blank lines and lines starting with # are ignored.
+# LFVERIFY_SANDBOX_ACCOUNTS (same format, entries separated by commas) adds entries at run time.
+
+492637581429 us-east-1 # dev-green
