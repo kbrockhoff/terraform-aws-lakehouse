@@ -1,6 +1,6 @@
 # Spec 002 Sandbox Results
 
-Runs 2026-11-11 and 2026-11-12 in the `dev-green` sandbox (account 492637581429, us-east-1), with
+Runs 2026-11-11 to 2026-11-13 in the `dev-green` sandbox (account 492637581429, us-east-1), with
 `make verify-full`, `make verify-detect`, and `make verify-probe`. Each full run deploys the
 `verify/fixture` root, which calls this module with three tenants (`alpha`, `beta`, `gamma`) and
 adds the named-resource baseline, 13 persona roles, and seeded synthetic tables. Fixes found during
@@ -37,6 +37,8 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `513eb0` | full | 11-11 | 211 | 197 | 0 | 14 | — | Cross-check run; matrix with gamma-denied cases added |
 | `77dc1f` | full | 11-12 | 211 | 197 | 0 | 14 | — | T049 run 1; reference run |
 | `d66355`, `3aebc6`, `3215bf`, `166f1f`, `14f318`, `623dbd`, `71a0ea`, `4b3990`, `ddc587` | full | 11-12 | 211 each | 197 | 0 | 14 | — | T049 runs 2–10 |
+| `17cab2` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 repository probe, against fixture `e58e2f` |
+| `621c38` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 standalone probe from the CI-built archive, same fixture |
 
 | `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
 | `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |
@@ -161,6 +163,51 @@ Fixture `513eb0` was applied with a temporary read-only probe runner (`ReadOnlyA
 
 The probe runner role was deleted afterwards.
 
+## Standalone distribution (T071, T072)
+
+**Release dry run (T071, first half).** Commit `4918ea6` on PR #3 triggered `lfverify-release.yml`
+through its pull-request dry run (run 43445934193, 2026-11-13, version `dev-1`):
+
+- unit tests and gosec passed in 4 min, and the six-archive build took 10 min;
+- smoke tests passed on `ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest`, `macos-15-intel`,
+  and `windows-latest`. Each verified its archive against `SHA256SUMS`, extracted it, and ran
+  `version` (for example `lfverify dev-1 (9f518ee) go1.26.11 windows/amd64`), `example-matrix`,
+  `help`, and `probe --help`;
+- the publish job was skipped, because a dry run has no tag;
+- all six downloaded archives verify against the downloaded `SHA256SUMS`.
+
+The second half of T071, assets attached to a real release, waits for the first release after merge.
+
+**Standalone acceptance (T072).** Fixture `e58e2f` was deployed with the repository and a temporary
+probe runner role `lfverify-probe-runner`, set up by following `verify/docs/user-guide.md`:
+`ReadOnlyAccess` plus the inline policy from `probe-runner-policy.json`, scoped to the run's
+persona roles. The fixture listed the runner as a read-only administrator and in each persona's
+trust policy.
+
+- **Repository probe `17cab2`** (`make verify-probe` with the matrix from `lfverify probe-matrix`):
+  105 cases, 101 pass, 4 verified by inspection, 0 fail; snapshots identical.
+- **Standalone probe `621c38`:** in a new empty directory outside the repository, with only the CI
+  artifact downloaded with `gh run download`:
+  - `shasum -a 256 -c SHA256SUMS` passed, and the darwin/arm64 archive was extracted;
+  - `lfverify version` printed `dev-1 (9f518ee)`;
+  - `lfverify example-matrix --out probe.example.yaml` wrote the template, and a second call
+    refused to overwrite it;
+  - the generated matrix for `e58e2f` was copied in, and
+    `lfverify probe --matrix probe.yaml` ran with the runner's credentials and the two
+    `LFVERIFY_PROBE_*` variables from the guide. Result: 105 cases, 101 pass, 4 verified by
+    inspection, 0 fail; snapshots identical; reports in `out/621c38/`.
+- **Comparison:** for all 105 cases, the two `report.json` files agree on id, status, expectation,
+  outcome, columns, row counts, and permissions. Only Athena's `scan_bytes` differs, as it does
+  between any two runs.
+- **Audit:** at 09:19, 15 minutes after the probes, `lfverify audit` from the extracted executable, run as the runner, found no change events from either run's sessions: `lfverify-621c38-*` had 64 query starts and `lfverify-17cab2-*` had 63, which probe mode runs by design.
+- **Teardown:** `make verify-down RUN_ID=e58e2f` exited 0 in 66 s (180 resources destroyed, settings
+  restored). Afterwards no `lfv-e58e2f` role, table bucket, S3 bucket, or workgroup remained, and
+  both administrator lists were empty. The runner role was then deleted.
+- **Seeding stall:** the first `verify-seed` failed when Athena held a `count(*)` on
+  `n_gamma.orders` for 5 minutes: 1.4 s in the engine, the rest in service processing, then
+  cancelled at the harness's timeout. Rerunning `verify-seed`, which is idempotent, kept the
+  seeded tables and finished. This was a transient Athena delay, not a harness or fixture fault.
+
 ## Production refusal (T053, FR-003)
 
 Full-mode preflight refused, with exit 2 and no settings file written, for:
@@ -244,3 +291,12 @@ output shows the evidence.
 | Full mode refuses a production target | Yes | Production refusal (T053). |
 
 All 17 criteria are met.
+
+### Distribution Validation (reviewed 2026-11-13)
+
+| Criterion | Met | Evidence |
+|-----------|-----|----------|
+| A release carries six archives plus a checksum file they all verify against | Not yet | The dry run built all six, and all verify against `SHA256SUMS`; the assets on a real release are confirmed after the first release (T071). |
+| The executable reports version and commit and writes the example matrix on Linux, macOS, and Windows | Yes | Dry-run smoke tests on five runners (Standalone distribution section). |
+| From an empty directory with only an archive and its docs, a probe run matches the repository's | Yes | T072: `621c38` and `17cab2` agree on all 105 cases. |
+| A failed build or smoke test publishes nothing | By design | `publish` needs `smoke`, which needs `build`, which needs `check`; GitHub skips dependent jobs on failure. Not yet exercised with a failing job (T071, second half). |

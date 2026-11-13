@@ -859,7 +859,7 @@ documentation. Design: plan.md, Standalone Distribution.
   - after the next real release, confirm the assets are on the release page and that a failed
     smoke test would block `publish`;
   - record both in `sandbox-results.md`.
-- [ ] T072 Standalone acceptance in dev-green (Distribution Validation):
+- [x] T072 Standalone acceptance in dev-green (Distribution Validation):
   - deploy a fixture with the repository (`make verify-up`, `make verify-seed`) and a read-only
     probe runner;
   - in an empty directory outside the repository, using only a downloaded archive and its user
@@ -869,6 +869,13 @@ documentation. Design: plan.md, Standalone Distribution.
   - tear the fixture down;
   - record the result in `sandbox-results.md`;
   - tick the Distribution Validation criteria in `spec.md` with evidence, and run `make validate`.
+  - Result (2026-11-13, fixture `e58e2f`): the standalone probe `621c38`, run from the CI dry-run
+    darwin/arm64 archive in an empty directory, and the repository probe `17cab2` both gave 105
+    cases, 101 pass, 4 by inspection, 0 fail, with identical snapshots. They agree on every case
+    apart from Athena scan bytes. The audit found 0 change events for both runs. Teardown exited 0
+    in 66 s with nothing left behind. Two Distribution Validation criteria are ticked; the other two
+    wait for the first real release (T071). `make validate` passed (Checkov 773 passed, 0
+    failed).
 
 **Checkpoint**: A release publishes six checksummed archives with the user guide. Smoke tests pass
 on Linux, macOS, and Windows. A probe run succeeds from a downloaded archive with no repository

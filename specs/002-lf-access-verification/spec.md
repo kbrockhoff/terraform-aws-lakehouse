@@ -455,9 +455,9 @@ The harness produces evidence for the access-control controls of SOC 2 (logical 
 
 - [ ] A release carries archives for all six operating-system and architecture targets, plus a
       checksum file that every archive verifies against.
-- [ ] On a Linux, a macOS, and a Windows machine, the released executable reports the release
+- [x] On a Linux, a macOS, and a Windows machine, the released executable reports the release
       version and commit, and writes the example probe matrix.
-- [ ] Starting from an empty directory with only a released archive and its user documentation,
+- [x] Starting from an empty directory with only a released archive and its user documentation,
       no repository checkout, an operator completes a probe run against a sandbox deployment and
       gets the same results as a probe run from the repository.
 - [ ] A release whose build or smoke test fails publishes no executables.
