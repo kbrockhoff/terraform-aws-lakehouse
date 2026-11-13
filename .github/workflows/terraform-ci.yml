@@ -40,6 +40,14 @@ jobs:
       with:
         tflint_version: v0.64.0
 
+    # tflint --init downloads rulesets from the GitHub releases API, which rate-limits
+    # unauthenticated calls; the cache avoids the download and the token lifts the limit
+    - name: Cache TFLint plugins
+      uses: actions/cache@v4
+      with:
+        path: ~/.tflint.d/plugins
+        key: tflint-${{ runner.os }}-${{ hashFiles('.tflint.hcl') }}
+
     - name: Setup terraform-docs
       run: go install github.com/terraform-docs/terraform-docs@v0.24.0 && echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
@@ -54,6 +62,8 @@ jobs:
 
     - name: Lint
       run: make lint
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
 
     # Cross-compiles lfverify for every release platform, so a Windows or macOS build break fails
     # here rather than in a release (spec 002, FR-032)
@@ -83,9 +93,10 @@ jobs:
         jq '.runs[].results |= map(select((.suppressions // []) | length == 0))' checkov-report.sarif > checkov-report.filtered.sarif
         mv checkov-report.filtered.sarif checkov-report.sarif
 
-    # Fork PRs get a read-only security-events token, so skip the upload there
+    # Fork PRs get a read-only security-events token, so skip the upload there; an earlier
+    # failure that skips the scan leaves no report, so skip it then too
     - name: Upload Checkov SARIF results
-      if: always() && matrix.terraform_version == 'latest' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+      if: always() && matrix.terraform_version == 'latest' && hashFiles('checkov-report.sarif') != '' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: checkov-report.sarif
