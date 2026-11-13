@@ -1,0 +1,143 @@
+name: lfverify release
+
+# Builds lfverify for every release platform, smoke-tests the archives on Linux, macOS, and
+# Windows, and attaches them to the release (spec 002, FR-032 to FR-036). release-please.yml
+# calls it with the new tag; pull requests and manual runs are dry runs that only build and test.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build and publish
+        required: true
+        type: string
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'verify/**'
+      - 'Makefile'
+      - 'LICENSE'
+      - '.github/workflows/lfverify-release.yml'
+
+permissions:
+  contents: read
+
+env:
+  # Release builds carry the tag; dry runs carry the run number
+  VERSION: ${{ inputs.tag || format('dev-{0}', github.run_number) }}
+
+jobs:
+  check:
+    name: Unit tests and gosec
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.tag || '' }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: '1.26'
+
+    - name: Unit tests
+      run: make test-verify
+
+    - name: gosec
+      run: make lint-verify
+
+  build:
+    name: Build archives
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.tag || '' }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: '1.26'
+
+    - name: Build
+      run: make verify-dist VERSION="$VERSION"
+
+    - name: Upload archives
+      uses: actions/upload-artifact@v7
+      with:
+        name: lfverify-dist
+        path: verify/out/dist/
+        if-no-files-found: error
+
+  smoke:
+    name: Smoke test (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { runner: ubuntu-latest,    os: linux,   arch: amd64 }
+        - { runner: ubuntu-24.04-arm, os: linux,   arch: arm64 }
+        - { runner: macos-latest,     os: darwin,  arch: arm64 }
+        - { runner: macos-15-intel,   os: darwin,  arch: amd64 }
+        - { runner: windows-latest,   os: windows, arch: amd64 }
+        # windows/arm64 is cross-compiled only: there is no generally available Windows arm64 runner
+    steps:
+    - name: Download archives
+      uses: actions/download-artifact@v8
+      with:
+        name: lfverify-dist
+
+    - name: Verify checksum and extract (Linux, macOS)
+      if: matrix.os != 'windows'
+      shell: bash
+      run: |
+        name="lfverify_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
+        if command -v sha256sum >/dev/null; then sha256sum --ignore-missing -c SHA256SUMS; else shasum -a 256 --ignore-missing -c SHA256SUMS; fi
+        grep -q "$name.tar.gz" SHA256SUMS
+        tar -xzf "$name.tar.gz"
+        echo "EXE=$PWD/$name/lfverify" >> "$GITHUB_ENV"
+
+    - name: Verify checksum and extract (Windows)
+      if: matrix.os == 'windows'
+      shell: pwsh
+      run: |
+        $name = "lfverify_$($env:VERSION)_windows_${{ matrix.arch }}"
+        $want = (Select-String -Path SHA256SUMS -Pattern "$name.zip").Line.Split(' ')[0]
+        $got = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash
+        if ($got -ne $want) { throw "checksum mismatch: $got, want $want" }
+        Expand-Archive "$name.zip" -DestinationPath .
+        "EXE=$PWD\$name\lfverify.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Run the executable
+      shell: bash
+      run: |
+        "$EXE" version | tee version.txt
+        grep -qF "lfverify $VERSION (" version.txt
+        "$EXE" example-matrix > probe.yaml
+        grep -q '^mode: probe' probe.yaml
+        "$EXE" help > /dev/null
+        "$EXE" probe --help
+
+  publish:
+    name: Attach archives to the release
+    runs-on: ubuntu-latest
+    needs: smoke
+    # Only release builds publish, and only after every smoke test passed (FR-033)
+    if: inputs.tag != ''
+    permissions:
+      contents: write
+    steps:
+    - name: Download archives
+      uses: actions/download-artifact@v8
+      with:
+        name: lfverify-dist
+
+    - name: Upload to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release upload "${{ inputs.tag }}" lfverify_* SHA256SUMS --clobber --repo "${{ github.repository }}"

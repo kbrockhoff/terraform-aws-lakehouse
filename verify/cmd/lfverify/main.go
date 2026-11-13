@@ -11,10 +11,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -33,6 +35,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/identity"
+	matrixfiles "github.com/kbrockhoff/terraform-aws-lakehouse/verify/matrix"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/inspect"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/manifest"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/matrix"
@@ -46,19 +49,55 @@ import (
 )
 
 const usage = `usage: lfverify <command> [flags]
+       lfverify <command> --help   (the command's own flags)
 
-commands:
-  preflight  check that a run may start (full: allow-list, settings owner; probe: read-only runner)
-  seed       create fixture tables and rows as the fixture owner (full mode)
-  run        execute a matrix and write report.json, junit.xml, report.md
-  detect     apply each misconfiguration overlay and require a failing case (full mode)
-  snapshot   capture probe target state (--name before|after)
-  diff       compare the before and after snapshots; fails on any difference
-  audit      list non-read-only CloudTrail events from the run's sessions (probe mode)
-  cleanup    sweep a run's resources by prefix and restore the data-lake settings
-  check-target  refuse unless the credentials point at the account and Region the run's preflight checked
-  probe-matrix  derive a probe matrix from --matrix (full) and --manifest, written to --out
+probe mode (any account, read-only; needs only this executable and a matrix):
+  probe          run the whole probe sequence: preflight, snapshot, run, snapshot, diff
+  example-matrix write the probe matrix template to start from
+  preflight      check that a run may start (probe: read-only runner; full: allow-list, settings owner)
+  snapshot       capture probe target state (--name before|after)
+  run            execute a matrix and write report.json, junit.xml, report.md
+  diff           compare the before and after snapshots; fails on any difference
+  audit          list non-read-only CloudTrail events from the run's sessions
+
+full mode (sandbox accounts, from a repository checkout through make verify-*):
+  seed           create fixture tables and rows as the fixture owner
+  detect         apply each misconfiguration overlay and require a failing case
+  cleanup        sweep a run's resources by prefix and restore the data-lake settings
+  check-target   refuse unless the credentials point at the run's checked account and Region
+  probe-matrix   derive a probe matrix from --matrix (full) and --manifest, written to --out
+
+other:
+  version        print the version, commit, Go version, and platform
+  help           print this list, or "help <command>" for a command's flags
+
+exit status: 0 every case passed; 1 a case failed or did not run, or an error; 2 usage error or
+preflight refusal
 `
+
+// commandFlags lists the flags each command reads, for its --help (FR-036). Parsing accepts
+// every flag for every command, so scripts that pass an unused flag keep working.
+var commandFlags = map[string][]string{
+	"probe":          {"matrix", "run-id", "out", "workers"},
+	"example-matrix": {"out"},
+	"preflight":      {"mode", "matrix", "manifest", "run-id", "out", "allow-list"},
+	"snapshot":       {"matrix", "name", "run-id", "out"},
+	"run":            {"mode", "matrix", "manifest", "run-id", "out", "workers", "only", "static-only"},
+	"diff":           {"run-id", "out"},
+	"audit":          {"run-id", "since"},
+	"seed":           {"manifest", "run-id"},
+	"detect":         {"matrix", "manifest", "run-id", "out", "apply-cmd", "workers"},
+	"cleanup":        {"run-id", "out", "tables-only"},
+	"check-target":   {"run-id", "out"},
+	"probe-matrix":   {"matrix", "manifest", "run-id", "out"},
+	"version":        {},
+}
+
+// version and commit are set by release builds: -ldflags "-X main.version=<tag> -X main.commit=<sha>"
+var (
+	version = "dev"
+	commit  = "none"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -68,7 +107,7 @@ func main() {
 	ctx := context.Background()
 	err := dispatch(ctx, os.Args[1], os.Args[2:])
 	switch {
-	case err == nil:
+	case err == nil, errors.Is(err, flag.ErrHelp):
 	case errors.Is(err, errUsage), errors.Is(err, preflight.ErrRefused):
 		fmt.Fprintln(os.Stderr, "lfverify:", err)
 		os.Exit(2)
@@ -94,11 +133,13 @@ type flags struct {
 
 func parse(cmd string, args []string) (*flags, error) {
 	f := &flags{fs: flag.NewFlagSet(cmd, flag.ContinueOnError)}
+	f.fs.SetOutput(os.Stderr)
+	f.fs.Usage = func() { commandHelp(os.Stdout, cmd, f.fs) }
 	f.fs.StringVar(&f.mode, "mode", "full", "full or probe")
 	f.fs.StringVar(&f.manifest, "manifest", "", "fixture manifest JSON (full mode)")
 	f.fs.StringVar(&f.matrix, "matrix", "", "expectation matrix YAML")
-	f.fs.StringVar(&f.out, "out", "", "output directory (default verify/out/<run-id>)")
-	f.fs.StringVar(&f.runID, "run-id", "", "run identifier (full mode reads it from the manifest)")
+	f.fs.StringVar(&f.out, "out", "", "output directory (default out/<run-id> under the current directory)")
+	f.fs.StringVar(&f.runID, "run-id", "", "run identifier, six lowercase hex characters (default: a new one, or the manifest's in full mode)")
 	f.fs.StringVar(&f.allow, "allow-list", "sandbox-accounts.txt", "full-mode account allow-list")
 	f.fs.StringVar(&f.name, "name", "", "snapshot name: before or after")
 	f.fs.StringVar(&f.since, "since", "", "audit start time (RFC 3339); default: 1 hour ago")
@@ -108,6 +149,9 @@ func parse(cmd string, args []string) (*flags, error) {
 	f.fs.BoolVar(&f.staticOnly, "static-only", false, "skip scenario and boundary cases")
 	f.fs.BoolVar(&f.tablesOnly, "tables-only", false, "cleanup: drop the run's tables only, before terraform destroy")
 	if err := f.fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if f.mode != "full" && f.mode != "probe" {
@@ -190,12 +234,49 @@ func load(ctx context.Context) (*env, error) {
 	return e, nil
 }
 
+// commandHelp prints a command's usage and only the flags it reads.
+func commandHelp(w io.Writer, cmd string, fs *flag.FlagSet) {
+	names, ok := commandFlags[cmd]
+	if !ok {
+		fmt.Fprint(w, usage)
+		return
+	}
+	fmt.Fprintf(w, "usage: lfverify %s [flags]\n", cmd)
+	if len(names) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\nflags:")
+	for _, n := range names {
+		fl := fs.Lookup(n)
+		def := ""
+		if fl.DefValue != "" && fl.DefValue != "false" {
+			def = fmt.Sprintf(" (default %q)", fl.DefValue)
+		}
+		fmt.Fprintf(w, "  --%-12s %s%s\n", fl.Name, fl.Usage, def)
+	}
+}
+
 func dispatch(ctx context.Context, cmd string, args []string) error {
+	switch cmd {
+	case "help", "-h", "--help":
+		if len(args) > 0 {
+			return dispatch(ctx, args[0], []string{"--help"})
+		}
+		fmt.Print(usage)
+		return nil
+	}
 	f, err := parse(cmd, args)
 	if err != nil {
 		return err
 	}
 	switch cmd {
+	case "version":
+		fmt.Println(versionString())
+		return nil
+	case "example-matrix":
+		return cmdExampleMatrix(f)
+	case "probe":
+		return cmdProbe(ctx, f)
 	case "preflight":
 		return cmdPreflight(ctx, f)
 	case "seed":
@@ -748,6 +829,85 @@ func cmdCheckTarget(ctx context.Context, f *flags) error {
 		return err
 	}
 	return preflight.CheckTarget(filepath.Join(dir, "target.json"), e.target())
+}
+
+func versionString() string {
+	return fmt.Sprintf("lfverify %s (%s) %s %s/%s", version, commit, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+}
+
+// cmdExampleMatrix writes the probe matrix template embedded in the executable (FR-034). It never
+// overwrites an existing file.
+func cmdExampleMatrix(f *flags) error {
+	if f.out == "" {
+		_, err := os.Stdout.Write(matrixfiles.ProbeExample)
+		return err
+	}
+	file, err := os.OpenFile(f.out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 G703 -- the operator's own --out path
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(matrixfiles.ProbeExample); err != nil {
+		_ = file.Close() // the write error is the one to report
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	logf("wrote %s; replace the example roles, catalogs, databases, and workgroups with the target's", f.out)
+	return nil
+}
+
+// probeSteps are the probe sequence's steps, replaceable in tests.
+type probeSteps struct {
+	preflight func() error
+	snapshot  func(name string) error
+	run       func() error
+	diff      func() error
+}
+
+// probeSequence runs the probe steps as make verify-probe does. A refused preflight or a failed
+// before snapshot stops it; after the run, the after snapshot and diff still run when cases
+// fail, so a run is always checked for changes to the target.
+func probeSequence(s probeSteps) error {
+	if err := s.preflight(); err != nil {
+		return err
+	}
+	if err := s.snapshot("before"); err != nil {
+		return err
+	}
+	runErr := s.run()
+	if err := s.snapshot("after"); err != nil {
+		return errors.Join(runErr, err)
+	}
+	return errors.Join(runErr, s.diff())
+}
+
+// cmdProbe runs the whole probe sequence against the matrix's target (FR-034).
+func cmdProbe(ctx context.Context, f *flags) error {
+	if f.matrix == "" {
+		return fmt.Errorf("%w: --matrix is required (lfverify example-matrix writes a template)", errUsage)
+	}
+	f.mode = "probe"
+	if f.runID == "" {
+		f.runID = fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff)
+	}
+	dir, err := f.outDir()
+	if err != nil {
+		return err
+	}
+	start := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	logf("probe run %s; reports in %s", f.runID, dir)
+	err = probeSequence(probeSteps{
+		preflight: func() error { return cmdPreflight(ctx, f) },
+		snapshot: func(name string) error {
+			f.name = name
+			return cmdSnapshot(ctx, f)
+		},
+		run:  func() error { return cmdRun(ctx, f) },
+		diff: func() error { return cmdDiff(f) },
+	})
+	logf("after 15 minutes, check the audit trail: lfverify audit --run-id %s --since %s", f.runID, start)
+	return err
 }
 
 func cmdProbeMatrix(f *flags) error {

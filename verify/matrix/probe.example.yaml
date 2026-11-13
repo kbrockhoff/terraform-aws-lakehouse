@@ -1,9 +1,11 @@
-# Probe-mode matrix template (spec 002, FR-027 to FR-031). Copy it, replace the identifiers with
-# your deployment's, and run `make verify-probe MATRIX=<your file>`.
+# Probe-mode matrix template (spec 002, FR-027 to FR-031). Write a copy with
+# `lfverify example-matrix --out probe.yaml`, replace the identifiers with your deployment's, and
+# run `lfverify probe --matrix probe.yaml` (or `make verify-probe MATRIX=...` from the repository).
+# The user guide (docs/user-guide.md) explains every field.
 #
 # Probe mode never changes the target:
-# - The runner must be read-only in IAM (lfverify preflight simulates ~40 mutating actions and
-#   aborts if any is allowed) and listed in the deployment's
+# - The runner must be read-only in IAM (lfverify preflight simulates ~50 mutating actions against
+#   * and the target's resources, and aborts if any is allowed) and listed in the deployment's
 #   governance_config.read_only_admin_principal_arns.
 # - Each persona role must already trust the runner role, for session names lfverify-*; the
 #   harness never edits trust policies.

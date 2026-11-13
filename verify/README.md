@@ -5,6 +5,11 @@ intended. It does not read grant definitions. It assumes each persona's IAM role
 real Glue, Lake Formation, Athena, and S3 Tables calls, then compares every outcome with a
 declared expectation matrix. Specification: [`specs/002-lf-access-verification`](../specs/002-lf-access-verification/spec.md).
 
+This README is for contributors and full-mode sandbox runs. Operators who only run probe mode
+against a deployment should use the standalone executable from the
+[latest release](https://github.com/kbrockhoff/terraform-aws-lakehouse/releases/latest) and the
+[user guide](docs/user-guide.md), which ships in every release archive.
+
 It covers two grant styles:
 
 - **Label**: LF-tag expressions. This is the style this module uses.
@@ -101,10 +106,30 @@ It covers these personas:
 | `make verify-up`, `verify-seed`, `verify-run`, `verify-down` | The same steps one at a time. They use the last run ID, or `RUN_ID=…` |
 | `make verify-detect` | Applies each misconfiguration overlay and requires at least one failing case (Detection SLO) |
 | `make verify-cleanup RUN_ID=…` | Sweeps an interrupted run by prefix and restores the settings |
-| `make verify-probe MATRIX=…` | Probe preflight → snapshot → run → snapshot → diff |
+| `make verify-probe MATRIX=…` | `lfverify probe`: preflight → snapshot → run → snapshot → diff |
+| `make verify-dist VERSION=…` | Release archives for linux, darwin, and windows on amd64 and arm64, with `SHA256SUMS`, in `verify/out/dist/`. CI runs it with `VERSION=ci` |
 | `make verify-probe-audit RUN_ID=…` | CloudTrail change events from the probe's sessions |
 
 `make validate` and `make test` never run the live `verify-*` targets.
+
+## Releases
+
+`.github/workflows/lfverify-release.yml` publishes the executables (spec FR-032 to FR-036).
+`release-please.yml` calls it with the tag when a release is created. Its jobs run in order:
+
+1. `make test-verify` and `make lint-verify`;
+2. `make verify-dist VERSION=<tag>`;
+3. smoke tests: on Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64), each job
+   verifies its archive against `SHA256SUMS` and runs `version`, `example-matrix`, and `help`;
+4. upload of the archives and `SHA256SUMS` to the release, only when every smoke test passed.
+
+Pull requests that touch `verify/` and manual runs are dry runs: steps 1 to 3 only. Windows
+arm64 is cross-compiled but not smoke-tested, because there is no generally available runner.
+
+Each archive contains the executable, `LICENSE`, `docs/` (the [user guide](docs/user-guide.md)
+and the example IAM documents), and `probe.example.yaml`, which the executable also embeds
+(`lfverify example-matrix`). `lfverify version` reports the tag and commit set with
+`-ldflags -X`; local builds report `dev`.
 
 The matrix's drop cases remove `scratch` at the end of a run; the runner then re-creates and
 re-seeds it, so the fixture stays whole for teardown. Its labels and the metadata writer's grant

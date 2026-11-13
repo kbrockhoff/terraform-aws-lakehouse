@@ -55,6 +55,12 @@ jobs:
     - name: Lint
       run: make lint
 
+    # Cross-compiles lfverify for every release platform, so a Windows or macOS build break fails
+    # here rather than in a release (spec 002, FR-032)
+    - name: Cross-platform lfverify build
+      if: matrix.terraform_version == 'latest'
+      run: make verify-dist VERSION=ci
+
     - name: Documentation is current
       run: |
         make docs

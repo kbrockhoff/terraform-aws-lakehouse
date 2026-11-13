@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"flag"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/matrix"
+	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/preflight"
 )
 
 func TestDetectScenarios(t *testing.T) {
@@ -76,5 +82,84 @@ func TestProbeResources(t *testing.T) {
 		if !slices.Contains(got, want) {
 			t.Errorf("missing %s in %v", want, got)
 		}
+	}
+}
+
+func TestVersionString(t *testing.T) {
+	version, commit = "v1.2.3", "abc1234"
+	defer func() { version, commit = "dev", "none" }()
+	if got := versionString(); !strings.HasPrefix(got, "lfverify v1.2.3 (abc1234) go") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestCommandHelp: every command answers --help with only flags it registers (FR-036)
+func TestCommandHelp(t *testing.T) {
+	for cmd, names := range commandFlags {
+		_, err := parse(cmd, []string{"--help"})
+		if !errors.Is(err, flag.ErrHelp) {
+			t.Errorf("%s --help: got %v, want flag.ErrHelp", cmd, err)
+		}
+		probe, _ := parse(cmd, nil)
+		for _, n := range names {
+			if probe.fs.Lookup(n) == nil {
+				t.Errorf("%s lists unknown flag %s", cmd, n)
+			}
+		}
+		var buf bytes.Buffer
+		commandHelp(&buf, cmd, probe.fs)
+		for _, n := range names {
+			if !strings.Contains(buf.String(), "--"+n) {
+				t.Errorf("%s help omits --%s", cmd, n)
+			}
+		}
+	}
+	if err := dispatch(context.Background(), "help", nil); err != nil {
+		t.Errorf("help: %v", err)
+	}
+}
+
+func TestExampleMatrixNeverOverwrites(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "probe.yaml")
+	if err := cmdExampleMatrix(&flags{out: out}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdExampleMatrix(&flags{out: out}); err == nil {
+		t.Error("an existing file must not be overwritten")
+	}
+}
+
+func TestProbeSequence(t *testing.T) {
+	var calls []string
+	step := func(name string, err error) func() error {
+		return func() error { calls = append(calls, name); return err }
+	}
+	steps := func(pre, run, diff error) probeSteps {
+		return probeSteps{
+			preflight: step("preflight", pre),
+			snapshot:  func(n string) error { calls = append(calls, "snapshot "+n); return nil },
+			run:       step("run", run),
+			diff:      step("diff", diff),
+		}
+	}
+
+	calls = nil
+	if err := probeSequence(steps(nil, nil, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"preflight", "snapshot before", "run", "snapshot after", "diff"}; !slices.Equal(calls, want) {
+		t.Errorf("order %v, want %v", calls, want)
+	}
+
+	calls = nil
+	if err := probeSequence(steps(preflight.ErrRefused, nil, nil)); !errors.Is(err, preflight.ErrRefused) || len(calls) != 1 {
+		t.Errorf("a refused preflight stops the run: %v %v", err, calls)
+	}
+
+	calls = nil
+	failed := errors.New("some cases failed")
+	err := probeSequence(steps(nil, failed, nil))
+	if !errors.Is(err, failed) || !slices.Contains(calls, "diff") {
+		t.Errorf("failing cases still get the after snapshot and diff: %v %v", err, calls)
 	}
 }

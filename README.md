@@ -336,9 +336,12 @@ grant style this module uses and named-resource grants.
 
 - **Full mode** (`make verify-full`) deploys this module into a disposable fixture in an
   allow-listed sandbox account, runs the matrix, and destroys everything. It refuses production.
-- **Probe mode** (`make verify-probe MATRIX=…`) checks an existing deployment, production included,
-  without changing it. The runner must be read-only and listed in
-  `governance_config.read_only_admin_principal_arns`.
+- **Probe mode** (`lfverify probe --matrix …`, or `make verify-probe MATRIX=…`) checks an existing
+  deployment, production included, without changing it. The runner must be read-only and listed in
+  `governance_config.read_only_admin_principal_arns`. Every release attaches standalone `lfverify`
+  executables for Linux, macOS, and Windows, so probe mode needs no checkout: download yours from
+  the [latest release](https://github.com/kbrockhoff/terraform-aws-lakehouse/releases/latest) and
+  follow the [user guide](verify/docs/user-guide.md).
 
 Live `verify-*` targets never run from `make validate` or `make test`. Sandbox results are in
 [`specs/002-lf-access-verification/sandbox-results.md`](specs/002-lf-access-verification/sandbox-results.md).

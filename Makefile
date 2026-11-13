@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -171,6 +171,30 @@ INJECT_PERSONA ?=
 verify-build: ## Build the lfverify CLI into verify/out/lfverify
 	@cd verify && go build -o out/lfverify ./cmd/lfverify
 
+# Release archives (spec 002 FR-032, FR-033): six static executables, each packaged with the
+# license, the operator docs, and the probe matrix template, plus SHA256SUMS
+VERSION ?= dev
+DIST := $(CURDIR)/verify/out/dist
+DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+
+verify-dist: ## Build release archives for every OS and architecture into verify/out/dist (VERSION=...)
+	@rm -rf $(DIST) && mkdir -p $(DIST)/stage
+	@commit=$$(git rev-parse --short HEAD); \
+	for t in $(DIST_TARGETS); do \
+	  os=$${t%/*}; arch=$${t#*/}; name=lfverify_$(VERSION)_$${os}_$${arch}; dir=$(DIST)/stage/$$name; exe=lfverify; \
+	  [ $$os = windows ] && exe=lfverify.exe; \
+	  mkdir -p $$dir && \
+	  (cd verify && CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath \
+	    -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$$commit" -o $$dir/$$exe ./cmd/lfverify) || exit 1; \
+	  cp LICENSE verify/matrix/probe.example.yaml $$dir/ && cp -R verify/docs $$dir/docs; \
+	  if [ $$os = windows ]; then (cd $(DIST)/stage && zip -qr $(DIST)/$$name.zip $$name); \
+	  else tar -C $(DIST)/stage -czf $(DIST)/$$name.tar.gz $$name; fi || exit 1; \
+	  echo "$(GREEN)✓ $$name$(RESET)"; \
+	done
+	@rm -rf $(DIST)/stage
+	@cd $(DIST) && shasum -a 256 lfverify_* > SHA256SUMS
+	@echo "$(GREEN)✓ Release archives and SHA256SUMS in $(DIST)$(RESET)"
+
 verify-new-run: ## Start a new run ID (six hex characters) and remember it
 	@mkdir -p verify/out && openssl rand -hex 3 > $(VERIFY_RUN_FILE) && echo "$(CYAN)Run ID: $$(cat $(VERIFY_RUN_FILE))$(RESET)"
 
@@ -236,12 +260,8 @@ verify-cleanup: check-aws verify-build ## Sweep an interrupted run by prefix and
 verify-probe: check-aws verify-build ## Probe mode against an existing deployment (MATRIX=...); read-only
 	@test -n "$(MATRIX)" || { echo "$(RED)✗ MATRIX is required$(RESET)"; exit 1; }
 	@$(MAKE) -s verify-new-run
-	@run=$$(cat $(VERIFY_RUN_FILE)); out=$(CURDIR)/verify/out/$$run; \
-	  $(LFVERIFY) preflight --mode probe --matrix $(abspath $(MATRIX)) || exit $$?; \
-	  $(LFVERIFY) snapshot --matrix $(abspath $(MATRIX)) --name before --run-id $$run --out $$out || exit $$?; \
-	  $(LFVERIFY) run --mode probe --matrix $(abspath $(MATRIX)) --run-id $$run --out $$out; status=$$?; \
-	  $(LFVERIFY) snapshot --matrix $(abspath $(MATRIX)) --name after --run-id $$run --out $$out && \
-	  $(LFVERIFY) diff --run-id $$run --out $$out || status=1; \
+	@run=$$(cat $(VERIFY_RUN_FILE)); \
+	  $(LFVERIFY) probe --matrix $(abspath $(MATRIX)) --run-id $$run --out $(CURDIR)/verify/out/$$run; status=$$?; \
 	  echo "$(CYAN)Probe run $$run: audit with make verify-probe-audit RUN_ID=$$run after 15 minutes$(RESET)"; exit $$status
 
 verify-probe-audit: check-aws verify-build ## List change events from a probe run's sessions (RUN_ID=...)

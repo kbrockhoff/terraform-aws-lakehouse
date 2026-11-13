@@ -378,13 +378,16 @@ to `./out/<run-id>`.
 
 - Triggered by `workflow_call` with a `tag` input from `release-please.yml`, when its
   `release_created` output is true. Also triggered by `workflow_dispatch`, with no tag, for a dry
-  run that publishes workflow artifacts only.
+  run that publishes workflow artifacts only. As built, `pull_request` (paths `verify/**`, the
+  `Makefile`, `LICENSE`, the workflow) also triggers a dry run, because GitHub dispatches a
+  workflow only once it exists on the default branch, so the first dry run happens on the
+  pull request that adds it.
 - Jobs:
   1. `check`: `make test-verify` and `make lint-verify` (gosec) on the tagged commit.
   2. `build`: `make verify-dist VERSION=<tag>`. The archives and `SHA256SUMS` are uploaded as a
      workflow artifact.
   3. `smoke`: a matrix of `ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest` (arm64),
-     `macos-13` (amd64), and `windows-latest`. Each verifies its archive against `SHA256SUMS`,
+     `macos-15-intel` (amd64; GitHub retired `macos-13`), and `windows-latest`. Each verifies its archive against `SHA256SUMS`,
      extracts it, and runs `lfverify version` (which must print the tag) and
      `lfverify example-matrix`. Windows arm64 is only cross-compiled, because GitHub has no
      generally available Windows arm64 runner.

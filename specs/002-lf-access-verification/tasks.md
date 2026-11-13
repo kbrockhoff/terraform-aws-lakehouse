@@ -761,38 +761,38 @@ documentation. Design: plan.md, Standalone Distribution.
 
 ### CLI
 
-- [ ] T060 [P] Add `lfverify version` in `verify/cmd/lfverify/main.go` (FR-033):
+- [x] T060 [P] Add `lfverify version` in `verify/cmd/lfverify/main.go` (FR-033):
   - package variables `version = "dev"` and `commit = "none"`, set by `-ldflags -X`;
   - prints `lfverify <version> (<commit>) <go version> <os>/<arch>`;
   - unit test in `main_test.go`.
-- [ ] T061 [P] Embed the probe matrix template and add `lfverify example-matrix [--out <file>]`
+- [x] T061 [P] Embed the probe matrix template and add `lfverify example-matrix [--out <file>]`
   (FR-034):
   - new Go package in `verify/matrix/embed.go` with `//go:embed probe.example.yaml`;
   - writes to stdout, or to `--out` without overwriting an existing file;
   - unit test that the embedded bytes equal the file and pass `matrix.Parse` in probe mode.
-- [ ] T062 Add `lfverify probe --matrix <file>` in `verify/cmd/lfverify/main.go` (FR-034):
+- [x] T062 Add `lfverify probe --matrix <file>` in `verify/cmd/lfverify/main.go` (FR-034):
   - runs the `make verify-probe` sequence in one process: new run ID, preflight, before
     snapshot, run, after snapshot, diff;
   - exits non-zero on any failure, and still takes the after snapshot and diff when cases fail;
   - prints the `lfverify audit` command to run 15 minutes later;
   - change `make verify-probe` in `Makefile` to call it;
   - unit test of the sequencing with fakes for the step functions.
-- [ ] T063 [P] Command help (FR-036): `lfverify help` and `lfverify <command> --help` list each
+- [x] T063 [P] Command help (FR-036): `lfverify help` and `lfverify <command> --help` list each
   command's own flags with descriptions, in `verify/cmd/lfverify/main.go`. Unit test that every
   command answers `--help` with exit 0.
 
 ### Build and release
 
-- [ ] T064 Add `make verify-dist VERSION=<v>` in `Makefile` (FR-032, FR-033):
+- [x] T064 Add `make verify-dist VERSION=<v>` in `Makefile` (FR-032, FR-033):
   - builds `linux`, `darwin`, and `windows` on `amd64` and `arm64` into `verify/out/dist/`, with
     `CGO_ENABLED=0 -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=<sha>"`;
   - archives each as `lfverify_<v>_<os>_<arch>.tar.gz`, or `.zip` for Windows, containing the
     executable, `LICENSE`, `verify/docs/`, and `verify/matrix/probe.example.yaml`;
   - writes `SHA256SUMS`;
   - add `verify-dist` to `.PHONY`.
-- [ ] T065 Run `make verify-dist VERSION=ci` in the lint job of
+- [x] T065 Run `make verify-dist VERSION=ci` in the lint job of
   `.github/workflows/terraform-ci.yml`, so a cross-platform build break fails CI.
-- [ ] T066 Create `.github/workflows/lfverify-release.yml` (FR-032, FR-033):
+- [x] T066 Create `.github/workflows/lfverify-release.yml` (FR-032, FR-033):
   - triggers: `workflow_call` (input `tag`) and `workflow_dispatch` (dry run, no tag);
   - jobs:
     - `check`: `make test-verify`, `make lint-verify`;
@@ -804,14 +804,14 @@ documentation. Design: plan.md, Standalone Distribution.
       `SHA256SUMS`;
   - permissions: `contents: read`, and `contents: write` on `publish` only;
   - actions pinned by major tag, as in the existing CI.
-- [ ] T067 Wire `.github/workflows/release-please.yml`:
+- [x] T067 Wire `.github/workflows/release-please.yml`:
   - expose `release_created` and `tag_name` as job outputs;
   - add a job that calls `lfverify-release.yml` with `tag: ${{ needs.release-please.outputs.tag_name }}`
     when `release_created` is true.
 
 ### User documentation
 
-- [ ] T068 [P] Write `verify/docs/user-guide.md` for operators (FR-035):
+- [x] T068 [P] Write `verify/docs/user-guide.md` for operators (FR-035):
   - install per OS: download, `sha256sum` / `shasum -a 256` / `Get-FileHash` checks, PATH, the
     macOS quarantine attribute and Windows SmartScreen prompt for unsigned executables;
   - prerequisites;
@@ -826,14 +826,30 @@ documentation. Design: plan.md, Standalone Distribution.
   - troubleshooting: `GetDataAccess`, `CATALOG_NOT_FOUND`, preflight refusals, expired sessions;
   - probe-mode limits;
   - full mode needs the repository.
-- [ ] T069 [P] Add `verify/docs/probe-runner-policy.json` (ReadOnlyAccess companion: `sts:AssumeRole`
+- [x] T069 [P] Add `verify/docs/probe-runner-policy.json` (ReadOnlyAccess companion: `sts:AssumeRole`
   on persona roles, `iam:SimulatePrincipalPolicy` on itself, `lakeformation:GetDataAccess`) and
   `verify/docs/persona-trust-statement.json`, referenced from the user guide.
-- [ ] T070 Update contributor and repository docs:
+- [x] T070 Update contributor and repository docs:
   - `verify/README.md`: link the user guide, and list `version`, `probe`, `example-matrix`, and
     `make verify-dist`;
   - root `README.md` Access Verification section: download from the latest release;
   - `AGENTS.md`: `verify/docs/`, `make verify-dist`, and the release workflow.
+
+- Result T060–T070 (2026-11-12):
+  - `version`, `example-matrix` (template embedded through `verify/matrix/embed.go`), `probe`, and
+    per-command `--help` are in place with unit tests;
+  - `make verify-probe` calls `lfverify probe`;
+  - `make verify-dist` builds all six targets: about 77 MB per executable, for example Windows
+    amd64;
+  - the darwin/arm64 archive verified against `SHA256SUMS`, and its `version`, `example-matrix`,
+    and `probe --help` ran from an empty directory;
+  - CI runs `make verify-dist VERSION=ci`;
+  - `lfverify-release.yml` and the `release-please.yml` wiring pass `actionlint`;
+  - deviations from the plan:
+    - a `pull_request` dry-run trigger, because `workflow_dispatch` works only from the default
+      branch;
+    - `macos-15-intel` replaces the retired `macos-13`;
+    - artifact actions at `upload-artifact@v7` and `download-artifact@v8`.
 
 ### Validation
 
