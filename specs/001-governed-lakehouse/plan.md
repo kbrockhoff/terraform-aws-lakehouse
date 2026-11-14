@@ -121,7 +121,7 @@ under Complexity Tracking.
 | Embed Compliance into the Architecture | ✅ | No-cost controls always apply: KMS CMK, TLS-deny policies, public access block, residency (no replication), tenant isolation, tag-based sensitivity and regulation labels, and erasure through unreferenced-file removal windows. Cost-incurring framework controls are gated per tenant. A `check` block warns when a designated tenant exists in a Baseline environment type. |
 | Optimize for Cost Efficiency | ✅ | Serverless only: S3 Tables, Glue Data Catalog, Lake Formation, and Athena. Non-designated tenants share zone buckets and add $0 idle cost. Each tenant workgroup has a `bytes_scanned_cutoff_per_query`, and the results bucket has lifecycle expiration. Per-tenant workgroups give usage attribution. The cost estimate is extended. Enhanced table buckets default new tables to the S3 Tables Intelligent-Tiering storage class (FR-005), which moves data to Infrequent Access after 30 days and Archive Instant Access after 90. Baseline uses Standard because its data is short-lived. Query results expire instead of tiering. |
 | Protect Data Durability and Recoverability | ✅ | The S3 Tables snapshot management default (max snapshot age 120 h) is at least every environment type's RPO. Writers get `DROP` only in Baseline (`writer_drop_enabled`). In Enhanced only data-lake admins and stewards can drop tables. A table bucket cannot be deleted while it holds tables, and `force_destroy` is set only for Ephemeral. Enhanced uses a 30-day KMS deletion window. |
-| Establish Resource Identity and Accountability | ✅ | `name_prefix` naming on every resource, and `common_tags` on all. Tenant resources also carry the `Tenant` tag and `DataOwner = tenant.owner`. Storage carries a computed `DataClassification` (FR-022). Compliance-only resources carry `ComplianceFrameworks`. In Enhanced, a precondition requires the cost-center and data-owner keys in `tags`. |
+| Establish Resource Identity and Accountability | ✅ | `name_prefix` naming on every resource, and `common_tags` on all. Tenant resources also carry the `Tenant` tag and `DataOwner = tenant.owner`. Storage carries a computed `DataClassification` (FR-022). Compliance-only resources carry `ComplianceFrameworks`. In Enhanced, a precondition requires `CostCenter` in `tags` and `DataOwner` in `tags` or `data_tags`. KMS keys carry common tags only; `data_tags` go only on data-at-rest. |
 | Define Small, Validated Module Contracts | ✅ | Inputs are grouped in `*_config` objects plus one `tenants` map, all with `validation` blocks. Account-level singletons live in `modules/catalog-integration`, and everything tenant-scoped lives in `modules/tenant`. That submodule is applied by the root or called standalone through the typed `platform_contract`. Outputs are ARNs, names, and policy JSON only. The unused `networktags_name` input is removed. |
 | Secure by Construction | ✅ | All policies use `aws_iam_policy_document`. Service trusts use `aws:SourceAccount` and `aws:SourceArn` conditions. Bucket and table bucket policies deny `aws:SecureTransport = false` for non-service principals. The results bucket denies designated-tenant prefixes any KMS key other than the tenant's. No wildcard principals in Allow statements. |
 | Validate Before Merge | ✅ | Every validation step in tasks uses `make` targets. New plan-only tests cover tenancy, each feature flag, per-tenant designation, and invalid inputs. The CI workflow is switched to the same `make` targets, with TFLint and terraform-docs installed. |
@@ -227,7 +227,7 @@ of identifiers and effective settings only, never resource objects:
 | `query_results` | `{ bucket_name, bucket_arn }` for the shared results bucket |
 | `alarm_sns_topic_arn` | Alarm routing |
 | `cost_estimation_enabled` | Whether tenant units produce a cost estimate (FR-024) |
-| `common_tags`, `data_tags`, `required_tags` | Tag keys, the `Tenant` key, and the classification key |
+| `common_tags`, `data_tags` | Common tags for every tenant resource; data tags for tenant data-at-rest only |
 
 - **Publishing**: the contract contains no secrets. The README shows two ways to share it with
   pipelines. One is Terraform remote state. The other is publishing it with
@@ -653,7 +653,7 @@ Resource scoping:
 ### Environment Configuration
 
 These keys are added to `locals.environment_defaults`. `None` takes the explicit `*_config`
-values.
+values, except `required_tags_enforced`, which is always false under `None`.
 
 | Key | Ephemeral | Development | Testing | UAT | Production | MissionCritical |
 |-----|-----------|-------------|---------|-----|------------|-----------------|
@@ -720,15 +720,16 @@ New inputs, with validation:
     `sensitivity_values` entry.
   - `writer_drop_enabled` is nullable, so the environment default applies. Under `None` the
     explicit value is required.
-- **`required_tags_config`**: `{ enforced = bool, cost_center_key = string, data_owner_key =
-  string, data_classification_key = string, tenant_key = string }`.
-  - Defaults: `enforced = null`, so the environment default applies; keys `CostCenter`,
-    `DataOwner`, `DataClassification`, `Tenant`.
-  - The module writes `data_classification_key` itself (FR-022): the platform's
+- **`tags` and `data_tags`** (Brockhoff Cloud tagging standard, FR-022): `tags` go on every
+  resource; `data_tags` go only on resources containing data-at-rest (zone and dedicated table
+  buckets, results buckets), never on KMS keys. There is no tag configuration input.
+  - Tag keys are fixed in locals: `CostCenter`, `DataOwner`, `DataClassification`, `Tenant`.
+  - The module writes `DataClassification` itself (FR-022): the platform's
     `shared_storage_classification` on shared storage, and the tenant's ceiling on dedicated
     storage.
-  - Enforcement is a `lifecycle.precondition` on `terraform_data.required_tags_guard`. It checks
-    that `tags` has the cost-center and data-owner keys.
+  - Enforcement is a `lifecycle.precondition` on `terraform_data.required_tags_guard`, created
+    when `required_tags_enforced` (Enhanced only). It checks that `tags` has `CostCenter` and that
+    `merge(tags, data_tags)` has `DataOwner`.
 - **`storage_config`**: `{ table_storage_class = string }`. Nullable, so the environment default
   applies. Validated against `["STANDARD", "INTELLIGENT_TIERING"]`.
 - **`query_config`**: `{ bytes_scanned_cutoff_per_query = number, results_expiration_days =
@@ -819,7 +820,7 @@ specs/001-governed-lakehouse/
 ├── dependencies.tf           # caller identity, partition, region, iam_session_context,
 │                             #   lakeformation_data_lake_settings (secondary deployments only)
 ├── variables.tf              # + zones_config, tenants, catalog_integration_config,
-│                             #   governance_config, query_config, required_tags_config;
+│                             #   governance_config, query_config;
 │                             #   - networktags_name
 ├── locals.tf                 # environment_defaults extended; zone bucket names; platform_contract
 ├── main.tf                   # catalog-integration and tenant submodule calls; guards

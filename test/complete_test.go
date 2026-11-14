@@ -227,6 +227,40 @@ func TestTerraformCompleteExample(t *testing.T) {
 	assert.LessOrEqual(t, number(outputAfter(plan, "monthly_cost_estimate")), 10+3*0.50+2)
 }
 
+// TestDataTagsOnlyOnDataAtRest checks that data_tags may supply the data owner, and that they
+// reach only resources containing data-at-rest, never KMS keys.
+func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
+	t.Parallel()
+	vars := completeVars(generateTestNamePrefix("dtag"))
+	vars["tags"] = map[string]interface{}{"Environment": "Production", "CostCenter": "data-platform"}
+	vars["data_tags"] = map[string]interface{}{"DataOwner": "platform-data@example.com", "DataAtRest": "true"}
+	changes := managedChanges(planExample(t, "complete", vars))
+
+	dataAtRest := map[string]bool{
+		"aws_s3tables_table_bucket": true,
+		"aws_s3_bucket":             true,
+	}
+	kmsKeys := 0
+	for addr, rc := range changes {
+		tg, ok := tags(rc)
+		if !ok {
+			continue
+		}
+		if rc.Type == "aws_kms_key" {
+			kmsKeys++
+		}
+		if dataAtRest[rc.Type] {
+			assert.Equal(t, "true", tg["DataAtRest"], addr)
+		} else {
+			assert.NotContains(t, tg, "DataAtRest", addr)
+		}
+		if tn := tenantOf(addr); tn != "" {
+			assert.Equal(t, tenantOwners[tn], tg["DataOwner"], addr)
+		}
+	}
+	assert.GreaterOrEqual(t, kmsKeys, 2, "platform and designated tenant KMS keys")
+}
+
 func TestCompleteExampleSecurityControls(t *testing.T) {
 	t.Parallel()
 	plan := planExample(t, "complete", completeVars(generateTestNamePrefix("sec")))

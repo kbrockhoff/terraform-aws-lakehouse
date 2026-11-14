@@ -16,7 +16,7 @@ locals {
       force_destroy                 = false
       table_storage_class           = var.storage_config.table_storage_class
       writer_drop_enabled           = var.governance_config.writer_drop_enabled
-      required_tags_enforced        = var.required_tags_config.enforced
+      required_tags_enforced        = false
       scanned_bytes_alarm_threshold = var.alarms_config.scanned_bytes_threshold
     }
     Ephemeral = {
@@ -126,7 +126,6 @@ locals {
     bytes_scanned_cutoff_per_query = var.query_config.bytes_scanned_cutoff_per_query != null ? var.query_config.bytes_scanned_cutoff_per_query : local.environment_config.bytes_scanned_cutoff_per_query
     table_storage_class            = var.storage_config.table_storage_class != null ? var.storage_config.table_storage_class : local.environment_config.table_storage_class
     writer_drop_enabled            = var.governance_config.writer_drop_enabled != null ? var.governance_config.writer_drop_enabled : local.environment_config.writer_drop_enabled
-    required_tags_enforced         = var.required_tags_config.enforced != null ? var.required_tags_config.enforced : local.environment_config.required_tags_enforced
     scanned_bytes_alarm_threshold  = var.alarms_config.scanned_bytes_threshold != null ? var.alarms_config.scanned_bytes_threshold : local.environment_config.scanned_bytes_alarm_threshold
   })
 
@@ -193,7 +192,10 @@ locals {
     local.sensitivity_values[length(local.sensitivity_values) - 1],
   )
 
-  data_classification_key = var.required_tags_config.data_classification_key
+  # Brockhoff Cloud tag keys
+  cost_center_key         = "CostCenter"
+  data_owner_key          = "DataOwner"
+  data_classification_key = "DataClassification"
 
   # Versioned public interface consumed by modules/tenant (plan.md: Tenant Submodule and Platform
   # Contract). Identifiers and effective settings only, never resource objects. Adding a field is
@@ -253,12 +255,5 @@ locals {
     cost_estimation_enabled = var.cost_estimation_config.enabled
     common_tags             = local.common_tags
     data_tags               = var.data_tags
-    required_tags = {
-      enforced                = local.effective_config.required_tags_enforced
-      cost_center_key         = var.required_tags_config.cost_center_key
-      data_owner_key          = var.required_tags_config.data_owner_key
-      data_classification_key = var.required_tags_config.data_classification_key
-      tenant_key              = var.required_tags_config.tenant_key
-    }
   } : null
 }

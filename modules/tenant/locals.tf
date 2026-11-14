@@ -103,12 +103,14 @@ locals {
   bytes_scanned_cutoff_per_query = coalesce(var.tenant.bytes_scanned_cutoff_per_query, local.effective.bytes_scanned_cutoff_per_query)
   scanned_bytes_alarm_threshold  = coalesce(var.tenant.scanned_bytes_alarm_threshold, local.effective.scanned_bytes_alarm_threshold)
 
-  tags = merge(var.platform.common_tags, var.tags, {
-    (var.platform.required_tags.tenant_key)     = var.name
-    (var.platform.required_tags.data_owner_key) = var.tenant.owner
-  })
-  data_tags = merge(local.tags, var.platform.data_tags, {
-    (var.platform.required_tags.data_classification_key) = var.tenant.sensitivity
+  # Tenant identity wins over platform data_tags, which may carry a platform-level data owner
+  tenant_tags = {
+    Tenant    = var.name
+    DataOwner = var.tenant.owner
+  }
+  tags = merge(var.platform.common_tags, var.tags, local.tenant_tags)
+  data_tags = merge(local.tags, var.platform.data_tags, local.tenant_tags, {
+    DataClassification = var.tenant.sensitivity
     }, local.designated ? {
     ComplianceFrameworks = join(" ", sort(tolist(var.tenant.compliance_frameworks)))
   } : {})

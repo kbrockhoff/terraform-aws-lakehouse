@@ -94,6 +94,10 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 			"valid IAM role ARN when enabled is false"},
 		{"production without DataOwner tag", map[string]interface{}{"tags": map[string]interface{}{"CostCenter": "data-platform"}},
 			`"DataOwner" tag`},
+		{"CostCenter only in data_tags", map[string]interface{}{
+			"tags":      map[string]interface{}{"DataOwner": "platform-data@example.com"},
+			"data_tags": map[string]interface{}{"CostCenter": "data-platform"}},
+			`"CostCenter" tag`},
 		{"zone with underscore", map[string]interface{}{"zones_config": map[string]interface{}{"zones": []string{"raw", "raw_v2"}}},
 			"no underscores"},
 		{"dedicated bucket name too long", merged(map[string]interface{}{"name_prefix": longPrefix},
@@ -112,8 +116,6 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 			"ranks above the shared storage classification"},
 		{"unsupported storage class", map[string]interface{}{"storage_config": map[string]interface{}{"table_storage_class": "GLACIER"}},
 			"must be STANDARD or INTELLIGENT_TIERING"},
-		{"None without required tag enforcement", map[string]interface{}{"environment_type": "None"},
-			"required_tags_config.enforced is required"},
 		{"invalid read-only admin ARN", map[string]interface{}{"governance_config": map[string]interface{}{
 			"read_only_admin_principal_arns": []string{"not-an-arn"}}},
 			"Every read_only_admin_principal_arns entry must be an IAM role or user ARN"},

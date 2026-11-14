@@ -116,12 +116,6 @@ variable "query_config" {
   default     = {}
 }
 
-variable "required_tags_config" {
-  description = "Required tag keys"
-  type        = any
-  default     = {}
-}
-
 variable "catalog_integration_config" {
   description = "Account-level catalog integration"
   type        = any

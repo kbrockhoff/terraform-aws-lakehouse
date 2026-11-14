@@ -53,13 +53,6 @@ variable "platform" {
     cost_estimation_enabled = bool
     common_tags             = map(string)
     data_tags               = map(string)
-    required_tags = object({
-      enforced                = bool
-      cost_center_key         = string
-      data_owner_key          = string
-      data_classification_key = string
-      tenant_key              = string
-    })
   })
 
   validation {
