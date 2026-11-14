@@ -108,8 +108,12 @@ data "aws_iam_policy_document" "query_results" {
     }
   }
 
+  # Uploads without encryption headers get the bucket default key, which a workgroup without a
+  # result encryption setting needs (awslkhs-cdq). These statements deny only explicit headers that
+  # name something other than the key. "aws:kms" without a key ID would use the AWS managed
+  # aws/s3 key, not the bucket default, so it is denied as well.
   statement {
-    sid    = "DenyUnencryptedUploads"
+    sid    = "DenyNonKmsEncryption"
     effect = "Deny"
     principals {
       type        = "*"
@@ -118,9 +122,56 @@ data "aws_iam_policy_document" "query_results" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.query_results[0].arn}/*"]
     condition {
-      test     = "StringNotEqualsIfExists"
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
       variable = "s3:x-amz-server-side-encryption"
       values   = ["aws:kms"]
+    }
+  }
+
+  statement {
+    sid    = "DenyAwsManagedKey"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.query_results[0].arn}/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["true"]
+    }
+  }
+
+  statement {
+    sid    = "DenyOtherKmsKeys"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.query_results[0].arn}/*"]
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = [local.kms_key_arn]
     }
   }
 }

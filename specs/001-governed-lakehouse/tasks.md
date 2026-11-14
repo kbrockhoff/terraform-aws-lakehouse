@@ -189,7 +189,7 @@ tenant submodule consumes.
   - `BucketOwnerEnforced` ownership;
   - SSE `aws:kms` with `local.kms_key_arn` and `bucket_key_enabled = true`;
   - a lifecycle that expires objects after `local.effective_config.query_results_expiration_days` days and aborts incomplete multipart uploads after 1 day;
-  - a bucket policy denying non-TLS requests from non-service principals and unencrypted uploads;
+  - a bucket policy denying non-TLS requests from non-service principals, and uploads whose encryption headers name anything but the platform key (non-KMS encryption, `aws:kms` without a key ID, which would use the `aws/s3` key, or another key ID). Uploads without encryption headers are allowed and get the bucket default key (awslkhs-cdq);
   - `force_destroy` from effective config, and `tags = merge(local.common_data_tags, { (data_classification_key) = local.shared_storage_classification })`. Comment that results expire instead of tiering (FR-005).
   Comment that the policy has no per-tenant statements, so standalone tenants never edit it.
 - [x] T028 Add `local.platform_contract` to `locals.tf` with exactly the fields in the plan.md platform contract table, including `cost_estimation_enabled`, `shared_storage_classification`, and `effective.table_storage_class`: identifiers, effective settings, zones with bucket names, ARNs, and catalog IDs, the LF-tag vocabulary, the regulation-designation map, the platform key, the data-access role, the results bucket, the SNS topic, and tag settings. Add the `platform_contract` output in `outputs.tf`, with a description stating that it is a versioned public interface (plan.md: Versioning). When `enabled = false` it is `null`.
@@ -295,7 +295,7 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
 ### Query, policies, alarms, guards (FR-015 to FR-018, FR-023, FR-030)
 
 - [x] T042 Create `modules/tenant/query.tf`:
-  - When designated, create `aws_s3_bucket.results` named `${name_prefix}-${name}-athena-results-${account_id}`, with the same controls as T027. It uses the tenant key, and its bucket policy also denies uploads whose `s3:x-amz-server-side-encryption-aws-kms-key-id` is not the tenant key.
+  - When designated, create `aws_s3_bucket.results` named `${name_prefix}-${name}-athena-results-${account_id}`, with the same controls as T027. It uses the tenant key, and its bucket policy applies the same encryption-header denies, keyed to the tenant key.
   - `aws_athena_workgroup.this`, named `${name_prefix}-${name}`:
     - `enforce_workgroup_configuration = true`;
     - the effective cutoff;

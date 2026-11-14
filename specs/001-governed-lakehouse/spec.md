@@ -765,3 +765,8 @@ All code validation runs through `make` targets. Do not invoke `terraform`, `tfl
   common tags only. The data owner may come from the data tags; the cost center must be in the
   common tags. The configurable tag-key and enforcement input was removed: keys are fixed and
   enforcement follows the environment type, with `None` not enforcing.
+- Amended 2026-11-14 (awslkhs-cdq, Athena writes): a workgroup result encryption setting makes
+  every Athena DML statement into S3 Tables fail with an internal engine error. Read workgroups
+  keep it; an opt-in DML workgroup without it is planned (awslkhs-vpuy). Results locations now
+  allow uploads without encryption headers, which get the platform or tenant key by default, and
+  deny any header that names a different key (FR-019).
