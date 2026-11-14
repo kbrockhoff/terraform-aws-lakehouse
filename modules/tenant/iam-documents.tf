@@ -58,7 +58,11 @@ data "aws_iam_policy_document" "persona" {
       "athena:StopQueryExecution",
       "athena:GetWorkGroup",
     ]
-    resources = [aws_athena_workgroup.this.arn]
+    # Only writers reach the DML workgroup
+    resources = concat(
+      [aws_athena_workgroup.this.arn],
+      each.value.persona == "writer" ? aws_athena_workgroup.dml[*].arn : [],
+    )
   }
 
   statement {

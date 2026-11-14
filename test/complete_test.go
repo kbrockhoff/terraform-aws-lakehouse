@@ -182,6 +182,10 @@ func TestTerraformCompleteExample(t *testing.T) {
 		loc := block(block(wg, "configuration"), "result_configuration")["output_location"].(string)
 		assert.True(t, strings.HasSuffix(loc, "/"+tn+"/"), loc)
 	}
+	// The DML workgroup is opt-in (awslkhs-vpuy)
+	for addr, rc := range withPrefix(changes, shared+"module.tenant[") {
+		assert.False(t, strings.HasPrefix(rc.Name, "dml"), "%s: no DML workgroups or alarms by default", addr)
+	}
 	claimsWG := after(changes[tenantPrefix("claims")+"aws_athena_workgroup.this"])
 	claimsLoc := block(block(claimsWG, "configuration"), "result_configuration")["output_location"].(string)
 	assert.Equal(t, "s3://"+name+"-claims-athena-results-", claimsLoc[:len("s3://"+name+"-claims-athena-results-")])
@@ -259,6 +263,43 @@ func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
 		}
 	}
 	assert.GreaterOrEqual(t, kmsKeys, 2, "platform and designated tenant KMS keys")
+}
+
+// TestDMLWorkgroupOptIn checks awslkhs-vpuy: with dml_workgroup_enabled, each tenant gets a DML
+// workgroup without a result encryption setting (it breaks Athena DML into S3 Tables), the read
+// workgroup keeps SSE_KMS, and a tenant can opt out.
+func TestDMLWorkgroupOptIn(t *testing.T) {
+	t.Parallel()
+	name := generateTestNamePrefix("dml")
+	vars := completeVars(name)
+	vars["query_config"] = map[string]interface{}{"dml_workgroup_enabled": true}
+	vars["extra_tenants"] = map[string]interface{}{
+		"nodml": map[string]interface{}{"owner": "x@example.com", "sensitivity": "internal", "dml_workgroup_enabled": false},
+	}
+	plan := planExample(t, "complete", vars)
+	changes := managedChanges(plan)
+	tenantPrefix := func(tn string) string { return shared + `module.tenant["` + tn + `"].` }
+
+	for tn := range tenantOwners {
+		read := block(block(after(changes[tenantPrefix(tn)+"aws_athena_workgroup.this"]), "configuration"), "result_configuration")
+		assert.Equal(t, "SSE_KMS", block(read, "encryption_configuration")["encryption_option"], tn)
+
+		require.Contains(t, changes, tenantPrefix(tn)+"aws_athena_workgroup.dml[0]")
+		dml := after(changes[tenantPrefix(tn)+"aws_athena_workgroup.dml[0]"])
+		assert.Equal(t, name+"-"+tn+"-dml", dml["name"])
+		res := block(block(dml, "configuration"), "result_configuration")
+		assert.Nil(t, block(res, "encryption_configuration"), "%s DML workgroup must not set result encryption", tn)
+		assert.True(t, strings.HasSuffix(res["output_location"].(string), "dml/"), res["output_location"])
+
+		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.dml_query_failures[0]")
+		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.dml_scanned_bytes[0]")
+	}
+	assert.NotContains(t, changes, tenantPrefix("nodml")+"aws_athena_workgroup.dml[0]", "tenant override wins")
+	assert.Contains(t, changes, tenantPrefix("nodml")+"aws_athena_workgroup.this")
+
+	contract, _ := outputAfter(plan, "platform_contract").(map[string]interface{})
+	effective, _ := contract["effective"].(map[string]interface{})
+	assert.Equal(t, true, effective["dml_workgroup_enabled"])
 }
 
 func TestCompleteExampleSecurityControls(t *testing.T) {

@@ -21,6 +21,7 @@ output "manifest" {
             database         = ns.database
             table_bucket_arn = module.lakehouse.tenants[split("/", k)[0]].table_bucket_arns[split("/", k)[1]]
             workgroup        = module.lakehouse.tenants[split("/", k)[0]].workgroup_name
+            dml_workgroup    = module.lakehouse.tenants[split("/", k)[0]].dml_workgroup_name
             results_location = module.lakehouse.tenants[split("/", k)[0]].query_results_location
           }
         }
@@ -41,6 +42,7 @@ output "manifest" {
             database         = ns
             table_bucket_arn = aws_s3tables_table_bucket.named.arn
             workgroup        = aws_athena_workgroup.named.name
+            dml_workgroup    = aws_athena_workgroup.named_dml.name
             results_location = "s3://${aws_s3_bucket.named_results.bucket}/"
           }
         }

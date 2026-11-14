@@ -22,6 +22,8 @@ variable "platform" {
       scanned_bytes_alarm_threshold  = number
       kms_key_deletion_window_days   = number
       table_storage_class            = string
+      # Optional so contracts published before this field still parse
+      dml_workgroup_enabled = optional(bool, false)
     })
     shared_storage_classification = string
     zones = map(object({
@@ -104,6 +106,7 @@ variable "tenant" {
     bytes_scanned_cutoff_per_query = optional(number)
     scanned_bytes_alarm_threshold  = optional(number)
     dedicated_storage              = optional(bool, false)
+    dml_workgroup_enabled          = optional(bool)
   })
 
   validation {

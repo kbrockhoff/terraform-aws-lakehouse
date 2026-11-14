@@ -145,7 +145,7 @@ under Complexity Tracking.
 | Designated tenant | A dedicated tenant that also gets its own KMS key and a dedicated results bucket (FR-028) |
 | Tenant boundary | Tenant-owned LF-tag `${name_prefix}-tenant-<tenant> = member` on each tenant database |
 | Sensitivity, regulations, domain | LF-tags `${name_prefix}-sensitivity`, `${name_prefix}-reg-<r>`, `${name_prefix}-domain` on each tenant database (= tenant's most restrictive values); pipelines label tables and columns with roll-up |
-| Query isolation | Workgroup `${name_prefix}-${tenant}`, writing to results prefix `s3://<shared results>/<tenant>/`. A designated tenant writes to its own bucket `${name_prefix}-${tenant}-athena-results-${account_id}` |
+| Query isolation | Workgroup `${name_prefix}-${tenant}`, writing to results prefix `s3://<shared results>/<tenant>/`. A designated tenant writes to its own bucket `${name_prefix}-${tenant}-athena-results-${account_id}`. With `dml_workgroup_enabled` (platform `query_config`, tenant override), writers also get `${name_prefix}-${tenant}-dml`, writing to `<results location>dml/` with no result encryption setting, which would break Athena DML into S3 Tables (awslkhs-cdq); the results bucket default key encrypts its results |
 
 Inside the tenant submodule, `local.zones` is the tenant's zone set. Every zone-scoped resource
 uses it with `for_each`. The root instantiates the submodule with `for_each = var.tenants`, so
@@ -748,6 +748,7 @@ per-tenant attribute.
   - scanned bytes: `ProcessedBytes` sum over 1 day above the tenant's threshold, or the
     environment default.
 - Both alarms route to the existing SNS topic and carry the `Tenant` tag.
+- A tenant DML workgroup, when enabled, gets its own pair (`dml_query_failures`, `dml_scanned_bytes`) with the same threshold.
 
 ### Complexity Level
 

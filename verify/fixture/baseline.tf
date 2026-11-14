@@ -166,6 +166,28 @@ resource "aws_athena_workgroup" "named" {
   }
 }
 
+# The named style's counterpart of the tenant DML workgroups: no result encryption setting, which
+# breaks Athena DML into S3 Tables (awslkhs-cdq). The bucket default key encrypts results.
+resource "aws_athena_workgroup" "named_dml" {
+  #checkov:skip=CKV_AWS_159:A result encryption setting breaks Athena DML into S3 Tables (awslkhs-cdq); the results bucket encrypts with the platform key by default
+  name          = "${local.prefix}-named-dml"
+  force_destroy = true
+
+  configuration {
+    enforce_workgroup_configuration    = true
+    publish_cloudwatch_metrics_enabled = false
+    bytes_scanned_cutoff_per_query     = 1073741824
+
+    engine_version {
+      selected_engine_version = "Athena engine version 3"
+    }
+
+    result_configuration {
+      output_location = "s3://${aws_s3_bucket.named_results.bucket}/dml/"
+    }
+  }
+}
+
 # Every persona reaches the baseline workgroup and its own results prefix (T020); Lake Formation
 # decides what the queries return
 data "aws_iam_policy_document" "named_access" {
@@ -181,7 +203,8 @@ data "aws_iam_policy_document" "named_access" {
       "athena:StopQueryExecution",
       "athena:GetWorkGroup",
     ]
-    resources = [aws_athena_workgroup.named.arn]
+    # Readers reach the DML workgroup too, so their DML denials come from Lake Formation, not IAM
+    resources = [aws_athena_workgroup.named.arn, aws_athena_workgroup.named_dml.arn]
   }
 
   statement {

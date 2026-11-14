@@ -102,6 +102,8 @@ locals {
 
   bytes_scanned_cutoff_per_query = coalesce(var.tenant.bytes_scanned_cutoff_per_query, local.effective.bytes_scanned_cutoff_per_query)
   scanned_bytes_alarm_threshold  = coalesce(var.tenant.scanned_bytes_alarm_threshold, local.effective.scanned_bytes_alarm_threshold)
+  dml_workgroup_enabled          = coalesce(var.tenant.dml_workgroup_enabled, local.effective.dml_workgroup_enabled)
+  workgroup_count                = local.dml_workgroup_enabled ? 2 : 1
 
   # Tenant identity wins over platform data_tags, which may carry a platform-level data owner
   tenant_tags = {

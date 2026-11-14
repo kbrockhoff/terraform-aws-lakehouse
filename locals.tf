@@ -219,6 +219,7 @@ locals {
       scanned_bytes_alarm_threshold  = local.effective_config.scanned_bytes_alarm_threshold
       kms_key_deletion_window_days   = local.effective_config.kms_key_deletion_window_days
       table_storage_class            = local.effective_config.table_storage_class
+      dml_workgroup_enabled          = var.query_config.dml_workgroup_enabled
     }
     shared_storage_classification = local.shared_storage_classification
     zones = {

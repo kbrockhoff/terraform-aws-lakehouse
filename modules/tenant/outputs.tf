@@ -23,6 +23,11 @@ output "workgroup_name" {
   value       = aws_athena_workgroup.this.name
 }
 
+output "dml_workgroup_name" {
+  description = "Name of the tenant DML workgroup for INSERT, UPDATE, DELETE, and MERGE, or null when dml_workgroup_enabled is off."
+  value       = one(aws_athena_workgroup.dml[*].name)
+}
+
 output "query_results_location" {
   description = "S3 location of the tenant's query results."
   value       = "s3://${local.results.bucket_name}/${local.results.prefix}"

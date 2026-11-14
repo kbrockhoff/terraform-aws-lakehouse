@@ -17,7 +17,7 @@ The design and its verified deviations are in [`specs/001-governed-lakehouse/pla
 - **Open Table Catalog**: Apache Iceberg tables in the federated `s3tablescatalog`, queryable from Athena and other engines
 - **Governed Access**: LF-tag access by tenant, zone, sensitivity, regulation, and domain on databases, tables, and
   columns, with delegated tenant stewards and row filters
-- **Query Isolation**: an Athena workgroup per tenant with encrypted, isolated results, scan limits, and alarms
+- **Query Isolation**: an Athena workgroup per tenant with encrypted, isolated results, scan limits, and alarms, plus an opt-in DML workgroup for writers
 - **Environment-Aware**: security, durability, monitoring, and cost defaults derived from `environment_type`
 - **Encryption by Default**: a customer-managed KMS key created by default, or bring your own
 - **Compliance-Ready**: SOC 2, HIPAA, PCI DSS, and GDPR support; dedicated keys and storage only for designated tenants
@@ -118,7 +118,7 @@ AWS provider 6.x cannot yet set it on table buckets, so new tables use S3 Tables
 | Tables per table bucket | 10,000 | Shared across all tenants in a zone; large tenants set `dedicated_storage = true` |
 | Table buckets per Region | 100 | 3 shared buckets, plus one per zone for each dedicated or designated tenant |
 | LF-tag keys per account | check Service Quotas | One key per tenant, plus the platform's sensitivity, domain, zone, and per-regulation keys |
-| Athena workgroups per account | check Service Quotas | One workgroup per tenant |
+| Athena workgroups per account | check Service Quotas | One workgroup per tenant, two with `dml_workgroup_enabled` |
 
 ## Data Zones
 
@@ -292,6 +292,21 @@ CloudWatch metrics. When alarms are enabled, `query_failures` and `scanned_bytes
 platform SNS topic. The shared results bucket policy has no per-tenant statements; persona IAM policies limit each
 persona to its own workgroup and results prefix.
 
+### Writing Through Athena
+
+A workgroup with a result encryption setting cannot run `INSERT`, `UPDATE`, `DELETE`, or `MERGE` against S3
+Tables: Athena fails them with `INTERNAL_ERROR_QUERY_ENGINE`. Reads are unaffected. When writers use Athena for
+DML, set `query_config.dml_workgroup_enabled = true` (or `dml_workgroup_enabled` on individual tenants, which
+overrides the platform value). Each such tenant also gets `<prefix>-<tenant>-dml`:
+
+- the same scan cutoff, metrics, and alarm pair as the read workgroup;
+- results under the tenant's results location at `dml/`, with no result encryption setting. The results bucket
+  encrypts them with the same KMS key by default, and its policy denies uploads that name any other key;
+- reachable only by writer personas (`persona_policy_json`), and output as `dml_workgroup_name`.
+
+The read workgroup keeps SSE-KMS, and table storage stays encrypted with the KMS key either way. Pipelines that
+write through Spark, Glue, or the Iceberg REST endpoint do not need the DML workgroup.
+
 ## Required One-Time Grants
 
 Athena resolves an S3 Tables bucket catalog only for principals that have Lake Formation `DESCRIBE`
@@ -407,10 +422,10 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | <a name="input_environment_type"></a> [environment\_type](#input\_environment\_type) | Environment type for resource configuration defaults. Select 'None' to use individual config values. | `string` | `"Development"` | no |
 | <a name="input_governance_config"></a> [governance\_config](#input\_governance\_config) | Lake Formation governance: data-lake admins, read-only admins, and the platform LF-tag vocabularies for sensitivity, regulations, and domains. | <pre>object({<br/>    admin_principal_arns           = list(string)<br/>    read_only_admin_principal_arns = optional(list(string), [])<br/>    sensitivity_values             = optional(list(string), ["public", "internal", "confidential", "restricted"])<br/>    regulation_values              = optional(list(string), ["gdpr", "hipaa", "pci_dss"])<br/>    domain_values                  = optional(list(string), ["general"])<br/>    shared_storage_classification  = optional(string)<br/>    writer_drop_enabled            = optional(bool)<br/>  })</pre> | <pre>{<br/>  "admin_principal_arns": []<br/>}</pre> | no |
 | <a name="input_monitoring_config"></a> [monitoring\_config](#input\_monitoring\_config) | Configuration object for optional monitoring | <pre>object({<br/>    enabled = bool<br/>  })</pre> | <pre>{<br/>  "enabled": false<br/>}</pre> | no |
-| <a name="input_query_config"></a> [query\_config](#input\_query\_config) | Platform query defaults that tenants may override. Null values use the environment default. | <pre>object({<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    results_expiration_days        = optional(number)<br/>  })</pre> | `{}` | no |
+| <a name="input_query_config"></a> [query\_config](#input\_query\_config) | Platform query defaults that tenants may override. Null values use the environment default. dml\_workgroup\_enabled adds a second workgroup per tenant for INSERT, UPDATE, DELETE, and MERGE, which a result-encrypted workgroup cannot run against S3 Tables. | <pre>object({<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    results_expiration_days        = optional(number)<br/>    dml_workgroup_enabled          = optional(bool, false)<br/>  })</pre> | `{}` | no |
 | <a name="input_storage_config"></a> [storage\_config](#input\_storage\_config) | Table storage settings. Null values use the environment default. | <pre>object({<br/>    table_storage_class = optional(string)<br/>  })</pre> | `{}` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags/labels to apply to all resources (usually generated by terraform-external-context). | `map(string)` | `{}` | no |
-| <a name="input_tenants"></a> [tenants](#input\_tenants) | Tenants to provision with the platform, keyed by tenant name. Each entry is applied through modules/tenant. | <pre>map(object({<br/>    owner                 = string<br/>    sensitivity           = string<br/>    regulations           = optional(set(string), [])<br/>    domain                = optional(string)<br/>    zones                 = optional(list(string))<br/>    compliance_frameworks = optional(set(string), [])<br/>    stewards              = optional(list(string), [])<br/>    writers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    readers = optional(map(object({<br/>      principal_arn      = string<br/>      zones              = optional(list(string))<br/>      sensitivity_values = list(string)<br/>      regulations        = optional(set(string), [])<br/>      domains            = optional(list(string))<br/>    })), {})<br/>    row_filters = optional(map(object({<br/>      reader                = string<br/>      zone                  = string<br/>      table                 = string<br/>      row_filter_expression = string<br/>      column_names          = optional(list(string))<br/>    })), {})<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    scanned_bytes_alarm_threshold  = optional(number)<br/>    dedicated_storage              = optional(bool, false)<br/>  }))</pre> | `{}` | no |
+| <a name="input_tenants"></a> [tenants](#input\_tenants) | Tenants to provision with the platform, keyed by tenant name. Each entry is applied through modules/tenant. | <pre>map(object({<br/>    owner                 = string<br/>    sensitivity           = string<br/>    regulations           = optional(set(string), [])<br/>    domain                = optional(string)<br/>    zones                 = optional(list(string))<br/>    compliance_frameworks = optional(set(string), [])<br/>    stewards              = optional(list(string), [])<br/>    writers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    readers = optional(map(object({<br/>      principal_arn      = string<br/>      zones              = optional(list(string))<br/>      sensitivity_values = list(string)<br/>      regulations        = optional(set(string), [])<br/>      domains            = optional(list(string))<br/>    })), {})<br/>    row_filters = optional(map(object({<br/>      reader                = string<br/>      zone                  = string<br/>      table                 = string<br/>      row_filter_expression = string<br/>      column_names          = optional(list(string))<br/>    })), {})<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    scanned_bytes_alarm_threshold  = optional(number)<br/>    dedicated_storage              = optional(bool, false)<br/>    dml_workgroup_enabled          = optional(bool)<br/>  }))</pre> | `{}` | no |
 | <a name="input_zones_config"></a> [zones\_config](#input\_zones\_config) | Data zones shared by the platform. Each zone becomes an S3 table bucket named <name\_prefix>-<zone>. | <pre>object({<br/>    zones = list(string)<br/>  })</pre> | <pre>{<br/>  "zones": [<br/>    "raw",<br/>    "curated",<br/>    "consumption"<br/>  ]<br/>}</pre> | no |
 
 ## Outputs

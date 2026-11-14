@@ -122,6 +122,11 @@ module "lakehouse" {
     enabled = false
   }
 
+  # Writer cases run INSERT, UPDATE, and DELETE through the tenant DML workgroups (awslkhs-cdq)
+  query_config = {
+    dml_workgroup_enabled = true
+  }
+
   governance_config = {
     # missing_grant on admin or roadmin removes that persona from its list
     admin_principal_arns = concat(

@@ -202,6 +202,7 @@ variable "tenants" {
     bytes_scanned_cutoff_per_query = optional(number)
     scanned_bytes_alarm_threshold  = optional(number)
     dedicated_storage              = optional(bool, false)
+    dml_workgroup_enabled          = optional(bool)
   }))
   default = {}
 
@@ -234,10 +235,11 @@ variable "storage_config" {
 }
 
 variable "query_config" {
-  description = "Platform query defaults that tenants may override. Null values use the environment default."
+  description = "Platform query defaults that tenants may override. Null values use the environment default. dml_workgroup_enabled adds a second workgroup per tenant for INSERT, UPDATE, DELETE, and MERGE, which a result-encrypted workgroup cannot run against S3 Tables."
   type = object({
     bytes_scanned_cutoff_per_query = optional(number)
     results_expiration_days        = optional(number)
+    dml_workgroup_enabled          = optional(bool, false)
   })
   default = {}
 

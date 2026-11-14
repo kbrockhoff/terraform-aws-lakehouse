@@ -251,6 +251,12 @@ Platform defaults derive from `environment_type`.
 - **FR-015**: Infrastructure MUST provide one serverless query workgroup per tenant. The workgroup
   configuration MUST be enforced, so clients cannot override the result location, encryption, or
   scan limit.
+  - When enabled for the platform or a tenant, infrastructure MUST also provide a tenant DML
+    workgroup for data changes, because the query engine cannot change table data through a
+    workgroup with a result encryption setting. It is off by default, reachable only by writers,
+    carries no result encryption setting, and keeps the tenant's results location, scan limit,
+    and alarms. Its results MUST still be encrypted with the tenant's customer-managed key
+    (FR-016, FR-019).
 - **FR-016**: Infrastructure MUST provide a dedicated query-results object storage location. It
   MUST be encrypted with a customer-managed key, block all public access, deny non-TLS requests,
   and expire results automatically after an environment-type-dependent period.
@@ -767,6 +773,6 @@ All code validation runs through `make` targets. Do not invoke `terraform`, `tfl
   enforcement follows the environment type, with `None` not enforcing.
 - Amended 2026-11-14 (awslkhs-cdq, Athena writes): a workgroup result encryption setting makes
   every Athena DML statement into S3 Tables fail with an internal engine error. Read workgroups
-  keep it; an opt-in DML workgroup without it is planned (awslkhs-vpuy). Results locations now
+  keep it; an opt-in DML workgroup without it was added (FR-015, awslkhs-vpuy). Results locations now
   allow uploads without encryption headers, which get the platform or tenant key by default, and
   deny any header that names a different key (FR-019).
