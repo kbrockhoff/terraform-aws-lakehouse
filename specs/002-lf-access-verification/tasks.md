@@ -857,12 +857,16 @@ documentation. Design: plan.md, Standalone Distribution.
 
 ### Validation
 
-- [ ] T071 Release dry run:
+- [x] T071 Release dry run:
   - run `lfverify-release.yml` with `workflow_dispatch` on the branch; confirm every job passes,
     the six archives verify against `SHA256SUMS`, and the smoke jobs print the version;
   - after the next real release, confirm the assets are on the release page and that a failed
     smoke test would block `publish`;
   - record both in `sandbox-results.md`.
+  - Result: dry run 43445934193 on PR #3 (2026-11-13); release v0.2.0 run 43482740482
+    (2026-11-13) attached all six archives and `SHA256SUMS` after check, build, and five smoke jobs
+    passed. All six verify, and the darwin/arm64 binary reports `lfverify v0.2.0 (6cbcec8)`
+    (checked 2026-11-14, awslkhs-27hc).
 - [x] T072 Standalone acceptance in dev-green (Distribution Validation):
   - deploy a fixture with the repository (`make verify-up`, `make verify-seed`) and a read-only
     probe runner;

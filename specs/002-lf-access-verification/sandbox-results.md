@@ -178,7 +178,14 @@ through its pull-request dry run (run 43445934193, 2026-11-13, version `dev-1`):
 - the publish job was skipped, because a dry run has no tag;
 - all six downloaded archives verify against the downloaded `SHA256SUMS`.
 
-The second half of T071, assets attached to a real release, waits for the first release after merge.
+**Release v0.2.0 (T071, second half).** Release Please run 43482740482 (2026-11-13) called
+`lfverify-release.yml` with tag `v0.2.0`. Jobs ran in order: unit tests and gosec (2 min 42 s),
+build (9 min 56 s), five smoke tests (darwin/arm64, darwin/amd64, linux/arm64, linux/amd64,
+windows/amd64), then "Attach archives to the release", which started only after every smoke job
+passed. The release page carries all six archives and `SHA256SUMS`. On 2026-11-14 all six downloaded
+archives verified against it, and the extracted darwin/arm64 archive (executable, `docs/`,
+`LICENSE`, `probe.example.yaml`) reported `lfverify v0.2.0 (6cbcec8) go1.26.11 darwin/arm64`.
+windows/arm64 is built and checksummed but has no smoke runner.
 
 **Standalone acceptance (T072).** Fixture `e58e2f` was deployed with the repository and a temporary
 probe runner role `lfverify-probe-runner`, set up by following `verify/docs/user-guide.md`:
@@ -298,7 +305,7 @@ All 17 criteria are met.
 
 | Criterion | Met | Evidence |
 |-----------|-----|----------|
-| A release carries six archives plus a checksum file they all verify against | Not yet | The dry run built all six, and all verify against `SHA256SUMS`; the assets on a real release are confirmed after the first release (T071). |
+| A release carries six archives plus a checksum file they all verify against | Yes | Release v0.2.0: six archives and `SHA256SUMS` on the release page, all verify (T071). |
 | The executable reports version and commit and writes the example matrix on Linux, macOS, and Windows | Yes | Dry-run smoke tests on five runners (Standalone distribution section). |
 | From an empty directory with only an archive and its docs, a probe run matches the repository's | Yes | T072: `621c38` and `17cab2` agree on all 105 cases. |
-| A failed build or smoke test publishes nothing | By design | `publish` needs `smoke`, which needs `build`, which needs `check`; GitHub skips dependent jobs on failure. Not yet exercised with a failing job (T071, second half). |
+| A failed build or smoke test publishes nothing | Yes, by job dependency | `publish` needs `smoke`, which needs `build`, which needs `check`; GitHub skips dependent jobs on failure. Release v0.2.0 shows the order: publish started only after all five smoke jobs passed. Not exercised with a deliberately failing job. |
