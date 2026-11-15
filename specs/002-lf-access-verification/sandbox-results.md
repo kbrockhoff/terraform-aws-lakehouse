@@ -7,15 +7,16 @@ adds the named-resource baseline, 13 persona roles, and seeded synthetic tables.
 the runs are committed; see plan.md, Deviations found during implementation.
 
 **Result: 211 cases, 197 pass, 0 fail, 14 not run** (run `77dc1f`, the reference run below). The
-14 not-run cases are Athena DML cases blocked by `awslkhs-cdq`. A full run takes about 15 minutes
+14 not-run cases were Athena DML cases blocked by `awslkhs-cdq`: a workgroup result encryption
+setting breaks Athena DML into S3 Tables. With the opt-in DML workgroup (awslkhs-vpuy), run `c59e08`
+on 2026-11-14 passed all 211 cases, 0 not run. A full run takes about 15 minutes
 end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Target: 30 minutes.
 
 ## Not verified in these runs
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Writer `INSERT`, `UPDATE`, and `DELETE` (11 cases) | Athena DML into S3 Tables fails with `INTERNAL_ERROR_QUERY_ENGINE`, so the cases report not run | awslkhs-cdq |
-| Reader `UPDATE` and `DELETE` are denied (`rm-update`, `rm-delete`, both styles) | Same engine error; a denial cannot be told apart from the engine fault | awslkhs-cdq |
+| Label-style Lake Formation denial of reader DML (`rs-insert`, `rm-insert`, `rm-update`, `rm-delete`) | Since run `c59e08`, DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial | awslkhs-ptos |
 | Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22) | awslkhs-ptos |
 | Missing-grant detection in the label style | The label-style grants belong to the module, so `missing_grant` overlays remove only named grants. Label detection is covered by `drop_column_restriction`, `drop_row_filter`, and `open_default` | awslkhs-sr2a |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
@@ -39,6 +40,7 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `d66355`, `3aebc6`, `3215bf`, `166f1f`, `14f318`, `623dbd`, `71a0ea`, `4b3990`, `ddc587` | full | 11-12 | 211 each | 197 | 0 | 14 | — | T049 runs 2–10 |
 | `17cab2` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 repository probe, against fixture `e58e2f` |
 | `621c38` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 standalone probe from the CI-built archive, same fixture |
+| `c59e08` | full | 11-14 | 211 | 211 | 0 | 0 | — | First run with the tenant DML workgroups (awslkhs-vpuy): all 14 Athena DML cases run and pass. Matrix 8 min 19 s, 930 s end to end |
 
 | `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
 | `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |

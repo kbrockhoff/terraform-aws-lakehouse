@@ -12,12 +12,10 @@ role: plan 3 s, apply 83 s (113 resources), destroy 28 s. Targets: 3 minutes and
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Row filter limits rows | Athena `INSERT` fails in the sandbox, so tables hold no rows | awslkhs-cdq |
-| Query over the cutoff is cancelled | Needs data | awslkhs-cdq |
-| Restore to an earlier snapshot within the RPO | Needs committed snapshots | awslkhs-cdq |
-| `AWS::S3Tables::Table` data events | The sandbox has no CloudTrail trail; the module creates none (FR-020) | consumer setup |
-| Development configuration first | Only Production was applied; Baseline defaults are covered by plan-only tests | — |
 | Default table storage class | Not supported by provider 6.69 | awslkhs-oix |
+
+The other checks listed here originally were verified later: row filter row limiting in the spec
+002 runs (2026-11-12), and the rest in the follow-up below (2026-11-14, awslkhs-92h).
 
 ## Checks
 
@@ -85,3 +83,25 @@ PASS  standalone tenant offboarding works after the workgroup force_destroy fix
 ### Deployer platform scope
 PASS  platform-scope deployer: clean plan 3 s and apply 83 s (113 resources), destroy 28 s, with only its policies (after the T052 fixes)
 ```
+
+## Follow-up run (2026-11-14, awslkhs-92h)
+
+The checks above that needed Athena writes were blocked by awslkhs-cdq: a workgroup result
+encryption setting makes every Athena DML statement into S3 Tables fail with
+`INTERNAL_ERROR_QUERY_ENGINE`. With the opt-in tenant DML workgroup (awslkhs-vpuy), they were run in
+`dev-green` against `examples/defaults` (Development) with `query_config.dml_workgroup_enabled = true`
+and a tenant scan cutoff of 10 MB, plus a temporary account trail logging `AWS::S3Tables::Table`
+data events. Everything was destroyed afterwards and the data-lake settings were restored.
+
+```text
+PASS  Development configuration applied first (34 resources, 82 s)
+PASS  query over the scan cutoff is cancelled: CANCELLED at 10,485,760 bytes scanned of a 1,000,000-row table ("Bytes scanned limit was exceeded")
+PASS  writes through the tenant DML workgroup: INSERT, UPDATE, DELETE, MERGE
+PASS  restore to an earlier snapshot: rows (1, 2) committed, then (3) inserted and (1) deleted; DELETE and INSERT ... SELECT FOR VERSION AS OF the earlier snapshot restored exactly (1, 2) in 12 s, far inside the 48-hour Development RTO
+PASS  AWS::S3Tables::Table data events delivered to the trail (80 events: GetObject, PutObject, HeadObject, multipart upload), made by the Lake Formation data-access role and attributable to the calling principal through sessionContext.sourceIdentity (V2.<account>.<caller role ID>)
+```
+
+The restore uses Athena time travel because Athena has no Iceberg rollback procedure; Spark's
+`rollback_to_snapshot` is the alternative for large tables. The same day, `lfverify` full run
+`c59e08` passed all 211 cases with 0 not run (specs/002-lf-access-verification/sandbox-results.md).
+
