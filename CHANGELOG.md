@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.2.0...v0.3.0) (2026-11-16)
+
+
+### Features
+
+* **alarms:** alarm on failed DDL as well as failed DML ([da0acda](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/da0acda250cdf441a92d63124867a1b9432d17cb))
+* **query:** opt-in per-tenant Athena DML workgroup ([02b1dd0](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/02b1dd0b2e2c1dbbb35d3986b15306e23e5aabb1))
+* tagging standard, results encryption, DML workgroup, DDL alarms, metadata personas, and verification coverage ([6bba0de](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/6bba0de40aab24262edf748d0cd8e675fffe0780))
+* **tenant:** metadata reader and writer personas ([1da3db4](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/1da3db4be1cff19fc201477978a56d068a84f626))
+* **verify:** add Lake Formation denial cases for reader_multi DML ([5bf35da](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/5bf35da2d2e57afed68d71f82b1d3034f1c51a94))
+* **verify:** detect label-style missing grants and prove Lake Formation denials ([0034fa2](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/0034fa2682f52de0c07921ded6fb54260949c1db))
+
+
+### Bug Fixes
+
+* **ci:** authenticate and cache tflint plugin downloads ([738aa70](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/738aa70bc3fca3a12e458b86bbe07f6a37e82af2))
+* **results:** allow header-less uploads and deny the aws/s3 key on results buckets ([759af02](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/759af02621b55233184d535df4a30cee3507f78b))
+* **results:** deny SSE-C uploads on results buckets ([962d1ee](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/962d1ee960845c8e04245077d532f7ddae4c936f))
+* **tags:** apply data_tags only to data-at-rest and drop required_tags_config ([ccd3965](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/ccd396527b19297414ad9c1ae911de03e861f5f9))
+* **tenant:** restore ComplianceFrameworks on the tenant key ([b31ccb1](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/b31ccb1a88e090d896adc7b8e952ec0e66fcbe27))
+* **verify:** recognize Athena's IAM refusal phrasing in denied_by ([9d01a67](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/9d01a67af23ea07780527d59af1da8dd06a64792))
+* **verify:** require Lake Formation evidence for denied_by ([cf41ab1](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/cf41ab1f39a006549efa75a6969f535a3ce4b5b7))
+
 ## [0.2.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.1.0...v0.2.0) (2026-11-13)
 
 
