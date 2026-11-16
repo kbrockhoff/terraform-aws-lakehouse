@@ -36,18 +36,19 @@ resource "terraform_data" "secondary_admin_guard" {
 }
 
 # Every storage resource depends on this guard, so missing required tags fail before anything
-# is created
+# is created. Cost center applies to every resource, so it must be in tags. Data owner only
+# applies to data-at-rest, so data_tags may supply it.
 resource "terraform_data" "required_tags_guard" {
   count = var.enabled && local.effective_config.required_tags_enforced ? 1 : 0
 
   lifecycle {
     precondition {
-      condition     = try(var.tags[var.required_tags_config.cost_center_key], "") != ""
-      error_message = "tags must include a non-empty \"${var.required_tags_config.cost_center_key}\" tag (required_tags_config.cost_center_key)."
+      condition     = try(var.tags[local.cost_center_key], "") != ""
+      error_message = "tags must include a non-empty \"${local.cost_center_key}\" tag."
     }
     precondition {
-      condition     = try(var.tags[var.required_tags_config.data_owner_key], "") != ""
-      error_message = "tags must include a non-empty \"${var.required_tags_config.data_owner_key}\" tag (required_tags_config.data_owner_key)."
+      condition     = try(merge(var.tags, var.data_tags)[local.data_owner_key], "") != ""
+      error_message = "tags or data_tags must include a non-empty \"${local.data_owner_key}\" tag."
     }
   }
 }

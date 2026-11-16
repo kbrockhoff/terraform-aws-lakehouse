@@ -104,7 +104,7 @@ It covers these personas:
 | `make test-verify-fixture` | Plan-only Terratest of the fixture at both stages and with overlays. Part of `make test` |
 | `make verify-full` | New run ID → preflight → apply stage 1 → seed → apply stage 2 → run → destroy → cleanup |
 | `make verify-up`, `verify-seed`, `verify-run`, `verify-down` | The same steps one at a time. They use the last run ID, or `RUN_ID=…` |
-| `make verify-detect` | Applies each misconfiguration overlay and requires at least one failing case (Detection SLO) |
+| `make verify-detect` | Applies each misconfiguration overlay and requires at least one failing case, and for `missing_grant` one in each style (Detection SLO) |
 | `make verify-cleanup RUN_ID=…` | Sweeps an interrupted run by prefix and restores the settings |
 | `make verify-probe MATRIX=…` | `lfverify probe`: preflight → snapshot → run → snapshot → diff |
 | `make verify-dist VERSION=…` | Release archives for linux, darwin, and windows on amd64 and arm64, with `SHA256SUMS`, in `verify/out/dist/`. CI runs it with `VERSION=ci` |
@@ -182,7 +182,14 @@ Optional checks are:
 - `max_rows`;
 - `expect_permissions`, used with `expect: inspect`;
 - `setup`, a scenario mutation that is applied and reverted around the case:
-  `relabel_column_restricted`, `relabel_table_restricted`, `late_table`, or `all_rows_filter`.
+  `relabel_column_restricted`, `relabel_table_restricted`, `late_table`, or `all_rows_filter`;
+- `denied_by: lake_formation`, used with `expect: denied` (not on `storage_read`): the case fails
+  unless the evidence is Lake Formation's (its permission messages, or "not found" for an object
+  that exists). An IAM refusal (`not authorized to perform: <action>`) or a generic access denial,
+  such as S3 refusing the results location, fails;
+- `resource.via: named` (full mode, `style: label` query cases): runs the query through the
+  named baseline's workgroups, which every persona reaches, so a label-style denial comes from
+  Lake Formation rather than the module's workgroup-scoped IAM policy.
 
 ### Updating expectations
 

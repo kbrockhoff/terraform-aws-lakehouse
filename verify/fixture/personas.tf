@@ -94,23 +94,6 @@ locals {
   ]
 }
 
-# Lake Formation decides whether the metadata writer may create, alter, or drop (FR-012), so IAM
-# allows the Glue calls
-data "aws_iam_policy_document" "meta_writer" {
-  statement {
-    sid       = "MetadataWrites"
-    effect    = "Allow"
-    actions   = ["glue:CreateTable", "glue:UpdateTable", "glue:DeleteTable"]
-    resources = local.glue_arns
-  }
-}
-
-resource "aws_iam_role_policy" "meta_writer" {
-  name   = "metadata-writes"
-  role   = aws_iam_role.persona["meta_writer"].id
-  policy = data.aws_iam_policy_document.meta_writer.json
-}
-
 resource "aws_iam_role_policy_attachment" "admin" {
   role       = aws_iam_role.persona["admin"].name
   policy_arn = "arn:${local.partition}:iam::aws:policy/AWSLakeFormationDataAdmin"

@@ -226,7 +226,11 @@ fixture-owned metadata grants) and the named-resource baseline, with the two-sta
     lifecycle rule;
   - `aws_athena_workgroup` `${local.prefix}-named`, with enforced configuration, engine version 3,
     SSE-KMS result encryption, `bytes_scanned_cutoff_per_query = 1073741824`, and
-    `force_destroy = true`.
+    `force_destroy = true`;
+  - `aws_athena_workgroup` `${local.prefix}-named-dml`, the same without a result encryption
+    setting and writing under `dml/`, reachable by every persona so reader DML denials come from
+    Lake Formation. The platform sets `query_config.dml_workgroup_enabled = true`, so label-style
+    writers use the tenant DML workgroups (awslkhs-vpuy, awslkhs-cdq).
 
   Add a Checkov skip comment with justification only where a check fails, for example access
   logging on a disposable bucket.
@@ -277,10 +281,10 @@ fixture-owned metadata grants) and the named-resource baseline, with the two-sta
   - `run_id`, `region`, `account_id`, `prefix`, `stage`;
   - `personas`, mapping each persona key to its role ARN;
   - `styles`:
-    - `label`: per tenant and zone, the `catalog_id`, `database`, `workgroup`, and results
+    - `label`: per tenant and zone, the `catalog_id`, `database`, `workgroup`, `dml_workgroup`, and results
       location from `module.lakehouse.tenants`, plus `lf_tag_keys` from `lf_tag_vocabulary` and
       the `mw` tag key;
-    - `named`: `catalog_id`, the databases, workgroup `${local.prefix}-named`, the results
+    - `named`: `catalog_id`, the databases, workgroups `${local.prefix}-named` and `-named-dml`, the results
       bucket, and the filter names.
   - `tables`: from `local.tables`, including the partition column, the restricted column, and the
     map column;
@@ -853,12 +857,16 @@ documentation. Design: plan.md, Standalone Distribution.
 
 ### Validation
 
-- [ ] T071 Release dry run:
+- [x] T071 Release dry run:
   - run `lfverify-release.yml` with `workflow_dispatch` on the branch; confirm every job passes,
     the six archives verify against `SHA256SUMS`, and the smoke jobs print the version;
   - after the next real release, confirm the assets are on the release page and that a failed
     smoke test would block `publish`;
   - record both in `sandbox-results.md`.
+  - Result: dry run 43445934193 on PR #3 (2026-11-13); release v0.2.0 run 43482740482
+    (2026-11-13) attached all six archives and `SHA256SUMS` after check, build, and five smoke jobs
+    passed. All six verify, and the darwin/arm64 binary reports `lfverify v0.2.0 (6cbcec8)`
+    (checked 2026-11-14, awslkhs-27hc).
 - [x] T072 Standalone acceptance in dev-green (Distribution Validation):
   - deploy a fixture with the repository (`make verify-up`, `make verify-seed`) and a read-only
     probe runner;

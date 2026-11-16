@@ -148,6 +148,10 @@ type Resource struct {
 	CatalogID string `yaml:"catalog_id,omitempty"`
 	Database  string `yaml:"database,omitempty"`
 	Workgroup string `yaml:"workgroup,omitempty"`
+	// Via, in full mode, runs a label-style query through another style's workgroups. "named"
+	// uses the named baseline's workgroups, which every persona reaches, so IAM does not refuse
+	// the query before Lake Formation is consulted (plan.md D22).
+	Via Style `yaml:"via,omitempty"`
 	// Grantee is the persona key that grant and revoke cases target
 	Grantee string `yaml:"grantee,omitempty"`
 }
@@ -158,6 +162,12 @@ type Rows struct {
 	KeyColumn string   `yaml:"key_column,omitempty"`
 	Keys      []string `yaml:"keys,omitempty"`
 }
+
+// DeniedBy is the service expected to make a denial.
+type DeniedBy string
+
+// LakeFormation requires the denial to come from Lake Formation, not an IAM policy.
+const LakeFormation DeniedBy = "lake_formation"
 
 // Case is one operation a persona attempts, with its expected outcome.
 type Case struct {
@@ -178,6 +188,10 @@ type Case struct {
 	// Setup names a mutation the runner applies before the case and reverts after it (full
 	// mode, phase scenario only)
 	Setup Setup `yaml:"setup,omitempty"`
+
+	// DeniedBy names the service a denial must come from. lake_formation fails a denial that IAM
+	// made before Lake Formation was consulted.
+	DeniedBy DeniedBy `yaml:"denied_by,omitempty"`
 
 	// Rule cites the documented permission rule the expectation encodes
 	Rule string `yaml:"rule,omitempty"`
@@ -330,6 +344,17 @@ func (m *Matrix) validateCase(c Case) []error {
 			add("a setup case needs phase: scenario")
 		}
 	}
+	if c.DeniedBy != "" {
+		if c.DeniedBy != LakeFormation {
+			add("unknown denied_by %q", c.DeniedBy)
+		}
+		if c.Expect != Denied {
+			add("denied_by needs expect: denied")
+		}
+		if c.Op == StorageRead {
+			add("denied_by does not apply to storage_read, which bypasses Lake Formation")
+		}
+	}
 	if c.RowPredicate != nil {
 		if err := c.RowPredicate.Validate(); err != nil {
 			add("row_predicate: %w", err)
@@ -365,6 +390,12 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Style == Named && c.Resource.Zone != "" && c.Resource.Zone != "curated" {
 			add("the named baseline mirrors curated namespaces only")
 		}
+		if c.Resource.Via != "" && (c.Resource.Via != Named || c.Style != Label || !slices.Contains(QueryOps, c.Op)) {
+			add("via: named applies only to label-style query cases")
+		}
+	}
+	if m.Mode == Probe && c.Resource.Via != "" {
+		add("via is for full mode; probe cases name their workgroup")
 	}
 	return errs
 }

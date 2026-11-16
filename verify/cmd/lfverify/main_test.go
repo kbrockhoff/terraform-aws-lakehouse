@@ -12,6 +12,7 @@ import (
 
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/matrix"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/preflight"
+	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/report"
 )
 
 func TestDetectScenarios(t *testing.T) {
@@ -27,6 +28,28 @@ func TestDetectScenarios(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("%d: got %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// missing_grant drops the persona's named and label grants, so a failure in one style is not enough
+func TestDetectedMissingGrantNeedsBothStyles(t *testing.T) {
+	named := report.Result{ID: "rs-count-alpha/named", Style: "named"}
+	label := report.Result{ID: "rs-count-alpha/label", Style: "label"}
+	for _, tc := range []struct {
+		inject  string
+		failing []report.Result
+		want    bool
+	}{
+		{"missing_grant", []report.Result{named}, false},
+		{"missing_grant", []report.Result{label}, false},
+		{"missing_grant", []report.Result{named, label}, true},
+		{"extra_grant", []report.Result{named}, true},
+		{"extra_grant", nil, false},
+		{"drop_row_filter", []report.Result{label}, true},
+	} {
+		if got := detected(tc.inject, tc.failing); got != tc.want {
+			t.Errorf("%s %v: got %v, want %v", tc.inject, tc.failing, got, tc.want)
 		}
 	}
 }

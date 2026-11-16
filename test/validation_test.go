@@ -55,7 +55,14 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"tenant zone not a platform zone", override("finance", map[string]interface{}{"zones": []string{"gold"}}),
 			"must be a platform zone"},
 		{"writer zone outside tenant zones", override("sales", map[string]interface{}{"zones": []string{"raw"}}),
-			"writer and reader zones must be among the tenant's zones"},
+			"writer, reader, and metadata persona zones must be among the tenant's zones"},
+		{"metadata writer zone outside tenant zones", override("finance", map[string]interface{}{
+			"zones":            []string{"curated"},
+			"metadata_writers": map[string]interface{}{"m": map[string]interface{}{"principal_arn": "arn:aws:iam::123456789012:role/m", "zones": []string{"raw"}}}}),
+			"metadata persona zones must be among the tenant's zones"},
+		{"metadata reader not an IAM ARN", override("finance", map[string]interface{}{
+			"metadata_readers": map[string]interface{}{"m": map[string]interface{}{"principal_arn": "m"}}}),
+			"must be an IAM role or user ARN"},
 		{"empty principal ARN", override("sales", map[string]interface{}{"stewards": []string{""}}),
 			"must be an IAM role or user ARN"},
 		{"reader above tenant ceiling", override("finance", reader(map[string]interface{}{
@@ -94,6 +101,10 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 			"valid IAM role ARN when enabled is false"},
 		{"production without DataOwner tag", map[string]interface{}{"tags": map[string]interface{}{"CostCenter": "data-platform"}},
 			`"DataOwner" tag`},
+		{"CostCenter only in data_tags", map[string]interface{}{
+			"tags":      map[string]interface{}{"DataOwner": "platform-data@example.com"},
+			"data_tags": map[string]interface{}{"CostCenter": "data-platform"}},
+			`"CostCenter" tag`},
 		{"zone with underscore", map[string]interface{}{"zones_config": map[string]interface{}{"zones": []string{"raw", "raw_v2"}}},
 			"no underscores"},
 		{"dedicated bucket name too long", merged(map[string]interface{}{"name_prefix": longPrefix},
@@ -112,8 +123,6 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 			"ranks above the shared storage classification"},
 		{"unsupported storage class", map[string]interface{}{"storage_config": map[string]interface{}{"table_storage_class": "GLACIER"}},
 			"must be STANDARD or INTELLIGENT_TIERING"},
-		{"None without required tag enforcement", map[string]interface{}{"environment_type": "None"},
-			"required_tags_config.enforced is required"},
 		{"invalid read-only admin ARN", map[string]interface{}{"governance_config": map[string]interface{}{
 			"read_only_admin_principal_arns": []string{"not-an-arn"}}},
 			"Every read_only_admin_principal_arns entry must be an IAM role or user ARN"},

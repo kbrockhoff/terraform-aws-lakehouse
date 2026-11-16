@@ -22,6 +22,8 @@ variable "platform" {
       scanned_bytes_alarm_threshold  = number
       kms_key_deletion_window_days   = number
       table_storage_class            = string
+      # Optional so contracts published before this field still parse
+      dml_workgroup_enabled = optional(bool, false)
     })
     shared_storage_classification = string
     zones = map(object({
@@ -53,13 +55,6 @@ variable "platform" {
     cost_estimation_enabled = bool
     common_tags             = map(string)
     data_tags               = map(string)
-    required_tags = object({
-      enforced                = bool
-      cost_center_key         = string
-      data_owner_key          = string
-      data_classification_key = string
-      tenant_key              = string
-    })
   })
 
   validation {
@@ -101,6 +96,14 @@ variable "tenant" {
       regulations        = optional(set(string), [])
       domains            = optional(list(string))
     })), {})
+    metadata_readers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
+    metadata_writers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
     row_filters = optional(map(object({
       reader                = string
       zone                  = string
@@ -111,6 +114,7 @@ variable "tenant" {
     bytes_scanned_cutoff_per_query = optional(number)
     scanned_bytes_alarm_threshold  = optional(number)
     dedicated_storage              = optional(bool, false)
+    dml_workgroup_enabled          = optional(bool)
   })
 
   validation {
@@ -119,9 +123,11 @@ variable "tenant" {
         coalesce(var.tenant.zones, keys(var.platform.zones)),
         flatten([for w in values(var.tenant.writers) : coalesce(w.zones, [])]),
         flatten([for r in values(var.tenant.readers) : coalesce(r.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_readers) : coalesce(m.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_writers) : coalesce(m.zones, [])]),
       ) : contains(keys(var.platform.zones), z)
     ])
-    error_message = "Tenant ${var.name}: every tenant, writer, and reader zone must be a platform zone (${join(", ", keys(var.platform.zones))})."
+    error_message = "Tenant ${var.name}: every tenant and persona zone must be a platform zone (${join(", ", keys(var.platform.zones))})."
   }
 
   validation {
@@ -129,9 +135,11 @@ variable "tenant" {
       for z in concat(
         flatten([for w in values(var.tenant.writers) : coalesce(w.zones, [])]),
         flatten([for r in values(var.tenant.readers) : coalesce(r.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_readers) : coalesce(m.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_writers) : coalesce(m.zones, [])]),
       ) : contains(coalesce(var.tenant.zones, keys(var.platform.zones)), z)
     ])
-    error_message = "Tenant ${var.name}: writer and reader zones must be among the tenant's zones."
+    error_message = "Tenant ${var.name}: writer, reader, and metadata persona zones must be among the tenant's zones."
   }
 
   validation {
@@ -140,9 +148,11 @@ variable "tenant" {
         var.tenant.stewards,
         [for w in values(var.tenant.writers) : w.principal_arn],
         [for r in values(var.tenant.readers) : r.principal_arn],
+        [for m in values(var.tenant.metadata_readers) : m.principal_arn],
+        [for m in values(var.tenant.metadata_writers) : m.principal_arn],
       ) : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))
     ])
-    error_message = "Tenant ${var.name}: every steward, writer, and reader principal must be an IAM role or user ARN."
+    error_message = "Tenant ${var.name}: every steward, writer, reader, and metadata persona principal must be an IAM role or user ARN."
   }
 
   validation {

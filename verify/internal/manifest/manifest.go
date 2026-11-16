@@ -13,10 +13,13 @@ import (
 
 // Namespace is one database in one grant style.
 type Namespace struct {
-	CatalogID       string `json:"catalog_id"`
-	Database        string `json:"database"`
-	TableBucketARN  string `json:"table_bucket_arn"`
-	Workgroup       string `json:"workgroup"`
+	CatalogID      string `json:"catalog_id"`
+	Database       string `json:"database"`
+	TableBucketARN string `json:"table_bucket_arn"`
+	Workgroup      string `json:"workgroup"`
+	// DMLWorkgroup runs INSERT, UPDATE, and DELETE: a result-encrypted workgroup cannot run
+	// them against S3 Tables (awslkhs-cdq). Empty means use Workgroup.
+	DMLWorkgroup    string `json:"dml_workgroup,omitempty"`
 	ResultsLocation string `json:"results_location"`
 }
 
@@ -106,6 +109,14 @@ type Target struct {
 	Exists bool
 }
 
+// ForDML returns the target with its workgroup switched to the DML workgroup, when there is one.
+func (t Target) ForDML() Target {
+	if t.DMLWorkgroup != "" {
+		t.Workgroup = t.DMLWorkgroup
+	}
+	return t
+}
+
 // Label returns a short description for reports.
 func (t Target) Label() string {
 	s := t.Key
@@ -154,6 +165,15 @@ func (m *Manifest) Resolve(style matrix.Style, r matrix.Resource) (Target, error
 	}
 	if !ok {
 		return Target{}, fmt.Errorf("no %s namespace %q in manifest", style, key)
+	}
+	if r.Via == matrix.Named {
+		// Every named namespace shares the baseline workgroups and results location
+		via, ok := m.Styles.Named.Namespaces["n_alpha"]
+		if !ok {
+			return Target{}, fmt.Errorf("no named namespace %q in manifest for via", "n_alpha")
+		}
+		ns.Workgroup, ns.DMLWorkgroup, ns.ResultsLocation = via.Workgroup, via.DMLWorkgroup, via.ResultsLocation
+		key += " via " + string(matrix.Named)
 	}
 	_, known := m.Tables[r.Table]
 	return Target{

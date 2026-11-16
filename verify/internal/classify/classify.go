@@ -56,6 +56,31 @@ var (
 	columnNotFound = regexp.MustCompile(`COLUMN_NOT_FOUND|(?i)column .* cannot be resolved`)
 )
 
+// iamRefusal is IAM's phrasing when no identity policy allows the call, as opposed to a Lake
+// Formation denial. Athena says "You are not authorized to perform: athena:StartQueryExecution"
+// (run 1b69b0, 2026-11-16); other services name the principal ("User: ... is not authorized").
+var iamRefusal = regexp.MustCompile(`not authorized to perform: [a-z0-9-]+:[A-Za-z]+`)
+
+// IAMRefusal reports whether a denial came from IAM, before Lake Formation was consulted.
+func IAMRefusal(ev Evidence) bool {
+	return iamRefusal.MatchString(ev.Message)
+}
+
+// lfEvidence is wording only Lake Formation produces, as observed in runs 36ea41 and 1b69b0
+var lfEvidence = regexp.MustCompile(`(?i)lake formation permission|does not have any privilege`)
+
+// LakeFormationDenial reports whether a denial is attributable to Lake Formation: its permission
+// messages, or a "not found" for an object that exists (the caller already classified it as a
+// denial only when the manifest says the object exists). Generic "access denied" wording, such as
+// an S3 refusal on the results location, does not count.
+func LakeFormationDenial(ev Evidence) bool {
+	if IAMRefusal(ev) {
+		return false
+	}
+	return lfEvidence.MatchString(ev.Message) || notFoundCodes[ev.Code] ||
+		tableNotFound.MatchString(ev.Message) || columnNotFound.MatchString(ev.Message)
+}
+
 // Classify maps an SDK error to an outcome. A nil error is ALLOWED.
 func Classify(err error, exists Exists) (Outcome, Evidence) {
 	if err == nil {

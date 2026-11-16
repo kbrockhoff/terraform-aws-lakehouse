@@ -37,6 +37,44 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+func TestIAMRefusal(t *testing.T) {
+	iam := Evidence{Code: "AccessDeniedException", Message: "User: arn:aws:sts::1:assumed-role/r/s is not authorized to perform: athena:StartQueryExecution on resource: arn:aws:athena:us-east-1:1:workgroup/w because no identity-based policy allows the athena:StartQueryExecution action"}
+	athena := Evidence{Code: "AccessDeniedException", Message: "You are not authorized to perform: athena:StartQueryExecution on the resource. After your AWS administrator or you have updated your permissions, please try again."}
+	for _, ev := range []Evidence{iam, athena} {
+		if !IAMRefusal(ev) {
+			t.Errorf("IAM refusal not recognized: %s", ev.Message)
+		}
+	}
+	for _, msg := range []string{
+		"Insufficient Lake Formation permission(s) on orders (Service: LakeFormation)",
+		"SCHEMA_NOT_FOUND: line 1:15: Schema 'gamma' does not exist",
+	} {
+		if IAMRefusal(Evidence{Message: msg}) {
+			t.Errorf("Lake Formation denial taken for IAM: %s", msg)
+		}
+	}
+}
+
+func TestLakeFormationDenial(t *testing.T) {
+	cases := []struct {
+		ev   Evidence
+		want bool
+	}{
+		{Evidence{Message: "Insufficient permissions to execute the query. Insufficient Lake Formation permission(s): Required Describe on gamma"}, true},
+		{Evidence{Message: "Insufficient permissions to execute the query. Principal does not have any privilege on specified resource"}, true},
+		{Evidence{Code: "SCHEMA_NOT_FOUND", Message: "SCHEMA_NOT_FOUND: line 1:15: Schema 'gamma' does not exist"}, true},
+		{Evidence{Code: "EntityNotFoundException", Message: "Table orders not found."}, true},
+		{Evidence{Message: "Access denied when writing output to url: s3://r/alpha/x.csv"}, false},
+		{Evidence{Code: "AccessDenied", Message: "Access Denied"}, false},
+		{Evidence{Code: "AccessDeniedException", Message: "You are not authorized to perform: athena:StartQueryExecution on the resource."}, false},
+	}
+	for _, c := range cases {
+		if got := LakeFormationDenial(c.ev); got != c.want {
+			t.Errorf("%q: got %v, want %v", c.ev.Message, got, c.want)
+		}
+	}
+}
+
 func TestQueryFailure(t *testing.T) {
 	both := Exists{Resource: true, Column: true}
 	cases := []struct {

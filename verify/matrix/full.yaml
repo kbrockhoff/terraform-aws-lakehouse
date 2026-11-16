@@ -314,6 +314,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - no access to ungranted namespaces
+      - id: rm-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: rm-select-raw
         style: label
         op: select
@@ -343,18 +351,45 @@ personas:
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no INSERT
+      - id: rm-insert-lf
+        style: label
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no INSERT, and Lake Formation refuses it
+        note: rm-insert/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation
       - id: rm-update
         phase: scenario
         op: update
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no INSERT
+      - id: rm-update-lf
+        style: label
+        phase: scenario
+        op: update
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no INSERT, and Lake Formation refuses it
+        note: rm-update/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation
       - id: rm-delete
         phase: scenario
         op: delete
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no DELETE
+      - id: rm-delete-lf
+        style: label
+        phase: scenario
+        op: delete
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no DELETE, and Lake Formation refuses it
+        note: rm-delete/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation
       - id: rm-alter
         phase: scenario
         op: alter_table
@@ -381,6 +416,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - one namespace only
+      - id: rs-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: rs-storage-bypass
         op: storage_read
         resource: { tenant: alpha, table: orders }
@@ -392,6 +435,15 @@ personas:
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no INSERT
+      - id: rs-insert-lf
+        style: label
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no INSERT, and Lake Formation refuses it
+        note: rs-insert/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation (awslkhs-ptos)
 
   # ---------------------------------------------------------------- FR-015
   - key: writer_multi
@@ -406,7 +458,7 @@ personas:
         op: add_lf_tags
         resource: { tenant: alpha, table: customers }
         expect: denied
-        rule: Writers hold ASSOCIATE only on the platform labels within their limits, not fixture tags
+        rule: Writers hold ASSOCIATE only on the platform labels within their limits, not the metadata-writer key
       - id: wm-grant
         op: grant
         resource: { tenant: alpha, table: customers, grantee: control }
@@ -417,6 +469,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - no access to ungranted namespaces
+      - id: wm-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: wm-storage-bypass
         op: storage_read
         resource: { tenant: alpha, table: orders }
@@ -471,6 +531,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - no access to ungranted namespaces
+      - id: ws-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: ws-storage-bypass
         op: storage_read
         resource: { tenant: alpha, table: orders }
@@ -527,6 +595,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - no access to ungranted namespaces
+      - id: rc-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: rc-storage-bypass
         op: storage_read
         resource: { tenant: alpha, table: orders }
@@ -593,6 +669,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - no access to ungranted namespaces
+      - id: rr-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: rr-storage-bypass
         op: storage_read
         resource: { tenant: alpha, table: orders }
@@ -640,6 +724,14 @@ personas:
         resource: { tenant: gamma, table: orders }
         expect: denied
         rule: FR-014 - no access to ungranted namespaces
+      - id: rce-select-gamma-lf
+        style: label
+        op: select
+        resource: { tenant: gamma, table: orders, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: FR-014 - Lake Formation, not only IAM, refuses ungranted namespaces
+        note: the named baseline workgroup lets the query reach Lake Formation (plan.md D22, awslkhs-ptos)
       - id: rce-storage-bypass
         op: storage_read
         resource: { tenant: alpha, table: orders }

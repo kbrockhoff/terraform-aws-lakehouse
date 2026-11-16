@@ -101,8 +101,13 @@ data "aws_iam_policy_document" "results" {
     }
   }
 
+  # Uploads without encryption headers get the bucket default key, which a workgroup without a
+  # result encryption setting needs (awslkhs-cdq). These statements deny only explicit headers that
+  # name something other than the key. "aws:kms" without a key ID would use the AWS managed
+  # aws/s3 key, not the bucket default, so it is denied as well. SSE-C uploads send their own
+  # headers instead and would skip the key, so any SSE-C header is denied.
   statement {
-    sid    = "DenyUnencryptedUploads"
+    sid    = "DenySseC"
     effect = "Deny"
     principals {
       type        = "*"
@@ -111,9 +116,51 @@ data "aws_iam_policy_document" "results" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.results[0].arn}/*"]
     condition {
-      test     = "StringNotEqualsIfExists"
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-customer-algorithm"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid    = "DenyNonKmsEncryption"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.results[0].arn}/*"]
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
       variable = "s3:x-amz-server-side-encryption"
       values   = ["aws:kms"]
+    }
+  }
+
+  statement {
+    sid    = "DenyAwsManagedKey"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.results[0].arn}/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["true"]
     }
   }
 
@@ -127,7 +174,12 @@ data "aws_iam_policy_document" "results" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.results[0].arn}/*"]
     condition {
-      test     = "StringNotEqualsIfExists"
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
       variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
       values   = [aws_kms_key.this[0].arn]
     }
@@ -163,6 +215,37 @@ resource "aws_athena_workgroup" "this" {
         encryption_option = "SSE_KMS"
         kms_key_arn       = local.kms_key_arn
       }
+    }
+  }
+
+  tags = local.tags
+}
+
+# Athena applies a workgroup result encryption setting to S3 Tables writes as well, and every
+# INSERT, UPDATE, DELETE, and MERGE then fails with INTERNAL_ERROR_QUERY_ENGINE (awslkhs-cdq).
+# Writers that run DML through Athena use this opt-in workgroup, which has no result encryption
+# setting. Its results still use the tenant's KMS key: the results bucket encrypts header-less
+# uploads with it by default, and its policy denies any other key.
+resource "aws_athena_workgroup" "dml" {
+  # checkov:skip=CKV_AWS_159:A result encryption setting breaks Athena DML into S3 Tables (awslkhs-cdq); the results bucket encrypts with the tenant's KMS key by default and denies other keys
+  count = local.dml_workgroup_enabled ? 1 : 0
+
+  name          = "${local.name_prefix}-${var.name}-dml"
+  description   = "DML workgroup for tenant ${var.name}"
+  force_destroy = true # same reason as the tenant workgroup
+
+  configuration {
+    enforce_workgroup_configuration    = true
+    bytes_scanned_cutoff_per_query     = local.bytes_scanned_cutoff_per_query
+    publish_cloudwatch_metrics_enabled = local.effective.monitoring_enabled
+
+    engine_version {
+      selected_engine_version = "Athena engine version 3"
+    }
+
+    result_configuration {
+      output_location       = "s3://${local.results.bucket_name}/${local.results.prefix}dml/"
+      expected_bucket_owner = local.account_id
     }
   }
 

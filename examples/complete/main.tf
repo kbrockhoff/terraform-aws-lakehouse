@@ -49,7 +49,6 @@ module "main" {
   zones_config           = var.zones_config
   storage_config         = var.storage_config
   query_config           = var.query_config
-  required_tags_config   = var.required_tags_config
 
   catalog_integration_config = var.catalog_integration_config
 

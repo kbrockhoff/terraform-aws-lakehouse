@@ -251,6 +251,12 @@ Platform defaults derive from `environment_type`.
 - **FR-015**: Infrastructure MUST provide one serverless query workgroup per tenant. The workgroup
   configuration MUST be enforced, so clients cannot override the result location, encryption, or
   scan limit.
+  - When enabled for the platform or a tenant, infrastructure MUST also provide a tenant DML
+    workgroup for data changes, because the query engine cannot change table data through a
+    workgroup with a result encryption setting. It is off by default, reachable only by writers,
+    carries no result encryption setting, and keeps the tenant's results location, scan limit,
+    and alarms. Its results MUST still be encrypted with the tenant's customer-managed key
+    (FR-016, FR-019).
 - **FR-016**: Infrastructure MUST provide a dedicated query-results object storage location. It
   MUST be encrypted with a customer-managed key, block all public access, deny non-TLS requests,
   and expire results automatically after an environment-type-dependent period.
@@ -275,9 +281,12 @@ Platform defaults derive from `environment_type`.
 - **FR-021**: Infrastructure MUST derive these defaults from `environment_type`: table maintenance
   retention, query-result expiration, scan limits, key deletion window, writer table-drop rights,
   monitoring, and alarms. `None` uses explicit configuration values.
-- **FR-022**: Infrastructure MUST apply tags as follows:
+- **FR-022**: Infrastructure MUST apply tags as follows, using the Brockhoff Cloud tagging standard:
   - Common tags go on all resources.
-  - Tenant-specific resources also carry a `Tenant` resource tag and the tenant's owner.
+  - Data tags go only on resources containing data-at-rest (storage containers and query-results
+    locations), never on encryption keys or other resources.
+  - Tenant-specific resources also carry a `Tenant` resource tag and the tenant's owner. On tenant
+    storage, the tenant's owner takes precedence over a platform-level data owner.
   - Data storage resources carry a data classification tag:
     - a dedicated storage container carries its tenant's sensitivity ceiling;
     - shared storage containers and the shared query-results location carry the platform's
@@ -287,7 +296,9 @@ Platform defaults derive from `environment_type`.
     shared-storage classification. The tenant unit validates this against the platform contract.
 
   In Enhanced environment types, the plan MUST fail unless the common tags include a cost center
-  and a data owner. Every tenant's sensitivity ceiling, regulations, and domain MUST be among the
+  and either the common tags or the data tags include a data owner. The tag keys are fixed by the
+  standard (`CostCenter`, `DataOwner`, `DataClassification`, `Tenant`) and are not configurable.
+  `None` does not enforce required tags. Every tenant's sensitivity ceiling, regulations, and domain MUST be among the
   configured values.
 - **FR-023**: When monitoring or alarms are enabled, infrastructure MUST raise alarms per tenant
   workgroup on query failures and on scanned-data volume exceeding a configurable threshold. Alarms
@@ -555,7 +566,8 @@ All code validation runs through `make` targets. Do not invoke `terraform`, `tfl
   - a tenant regulation that is not configured, or HIPAA or PCI DSS data without the matching
     designation;
   - a scan limit below the minimum;
-  - an Enhanced environment type missing a required tag.
+  - an Enhanced environment type missing a required tag, or with the cost center only in the
+    data tags.
 - [ ] Tests run by `make test` confirm the cost estimate contract:
   - the defaults example's idle estimate is within the Baseline budget;
   - the complete example's idle estimate is within the Enhanced budget plus the per-tenant
@@ -754,3 +766,13 @@ All code validation runs through `make` targets. Do not invoke `terraform`, `tfl
 - Amended 2026-10-14 after the third multi-tenant `/iac.analyze`: the Desired State mentions both
   entry points (F4). The operational cost criterion became a manual plausibility review,
   because the cost contract is tested under Code Validation (D1). Long lines were rewrapped (L1).
+- Amended 2026-11-14 (awslkhs-76ea, required tags): tags follow the Brockhoff Cloud standard
+  (FR-022). Data tags go only on resources containing data-at-rest, so encryption keys carry
+  common tags only. The data owner may come from the data tags; the cost center must be in the
+  common tags. The configurable tag-key and enforcement input was removed: keys are fixed and
+  enforcement follows the environment type, with `None` not enforcing.
+- Amended 2026-11-14 (awslkhs-cdq, Athena writes): a workgroup result encryption setting makes
+  every Athena DML statement into S3 Tables fail with an internal engine error. Read workgroups
+  keep it; an opt-in DML workgroup without it was added (FR-015, awslkhs-vpuy). Results locations now
+  allow uploads without encryption headers, which get the platform or tenant key by default, and
+  deny any header that names a different key (FR-019).

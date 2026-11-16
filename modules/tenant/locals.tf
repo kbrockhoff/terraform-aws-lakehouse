@@ -74,6 +74,11 @@ locals {
     { for r, key in var.platform.lf_tags.regulations : key => contains(var.tenant.regulations, r) ? ["no", "yes"] : ["no"] },
     { (var.platform.lf_tags.domain.key) = var.platform.lf_tags.domain.values },
   )
+  # Stewards also decide which tables metadata writers may alter (writers may not)
+  steward_label_scope = merge(
+    local.label_scope,
+    local.metadata_writer_tag_key == null ? {} : { (local.metadata_writer_tag_key) = ["yes"] },
+  )
 
   # Persona grants: one account-level grant per persona, limited to its zones by the zone tag
   # (Lake Formation rejects LF-tag policy grants scoped to a bucket catalog)
@@ -100,16 +105,42 @@ locals {
   }
   row_filters = var.tenant.row_filters
 
+  # Metadata personas (FR-012): schema access without data. Metadata writers alter and drop only
+  # tables that stewards tag with the tenant's metadata-writer key; tables they create are theirs
+  # through Lake Formation's creator permissions.
+  metadata_reader_grants = {
+    for k, m in var.tenant.metadata_readers : k => {
+      principal_arn = m.principal_arn
+      zones         = sort(coalesce(m.zones, tolist(local.zones)))
+    }
+  }
+  metadata_writer_grants = {
+    for k, m in var.tenant.metadata_writers : k => {
+      principal_arn = m.principal_arn
+      zones         = sort(coalesce(m.zones, tolist(local.zones)))
+    }
+  }
+  metadata_writer_tag_key = length(var.tenant.metadata_writers) > 0 ? "${local.tenant_tag_key}-meta" : null
+
   bytes_scanned_cutoff_per_query = coalesce(var.tenant.bytes_scanned_cutoff_per_query, local.effective.bytes_scanned_cutoff_per_query)
   scanned_bytes_alarm_threshold  = coalesce(var.tenant.scanned_bytes_alarm_threshold, local.effective.scanned_bytes_alarm_threshold)
+  dml_workgroup_enabled          = coalesce(var.tenant.dml_workgroup_enabled, local.effective.dml_workgroup_enabled)
+  workgroup_count                = local.dml_workgroup_enabled ? 2 : 1
 
-  tags = merge(var.platform.common_tags, var.tags, {
-    (var.platform.required_tags.tenant_key)     = var.name
-    (var.platform.required_tags.data_owner_key) = var.tenant.owner
-  })
-  data_tags = merge(local.tags, var.platform.data_tags, {
-    (var.platform.required_tags.data_classification_key) = var.tenant.sensitivity
-    }, local.designated ? {
+  # Failed-query alarms sum these Athena query types (UTILITY, such as SHOW, is left out)
+  alarmed_query_types = ["DML", "DDL"]
+
+  # Tenant identity wins over platform data_tags, which may carry a platform-level data owner
+  tenant_tags = {
+    Tenant    = var.name
+    DataOwner = var.tenant.owner
+  }
+  tags = merge(var.platform.common_tags, var.tags, local.tenant_tags)
+  # Compliance-only resources (the tenant key and its data) carry the designation
+  compliance_tags = local.designated ? {
     ComplianceFrameworks = join(" ", sort(tolist(var.tenant.compliance_frameworks)))
-  } : {})
+  } : {}
+  data_tags = merge(local.tags, var.platform.data_tags, local.tenant_tags, {
+    DataClassification = var.tenant.sensitivity
+  }, local.compliance_tags)
 }

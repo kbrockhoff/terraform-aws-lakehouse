@@ -18,9 +18,19 @@ output "tenant_tag_key" {
   value       = aws_lakeformation_lf_tag.tenant.key
 }
 
+output "metadata_writer_tag_key" {
+  description = "LF-tag key stewards set to \"yes\" on the tables metadata writers may alter and drop; null without metadata writers."
+  value       = local.metadata_writer_tag_key
+}
+
 output "workgroup_name" {
   description = "Name of the tenant Athena workgroup."
   value       = aws_athena_workgroup.this.name
+}
+
+output "dml_workgroup_name" {
+  description = "Name of the tenant DML workgroup for INSERT, UPDATE, DELETE, and MERGE, or null when dml_workgroup_enabled is off."
+  value       = one(aws_athena_workgroup.dml[*].name)
 }
 
 output "query_results_location" {

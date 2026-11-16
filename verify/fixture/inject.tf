@@ -4,8 +4,9 @@
 
 # Each flag is read where the affected grant is defined:
 # - extra_grant: grants-named.tf (n_gamma) and the label grant below (gamma tenant)
-# - missing_grant: grants-named.tf filters out the persona's grants; platform.tf drops admin or
-#   roadmin from the settings lists
+# - missing_grant: grants-named.tf filters out the persona's grants; platform.tf drops a reader or
+#   writer from the module tenants (removing its LF-tag grants) and admin or roadmin from the
+#   settings lists
 # - drop_column_restriction: platform.tf (reader_cols sensitivity) and grants-named.tf
 # - drop_row_filter: platform.tf (row_filters) and grants-named.tf
 # - open_default: the IAM_ALLOWED_PRINCIPALS grant below

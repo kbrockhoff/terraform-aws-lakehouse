@@ -269,14 +269,14 @@ verify-probe-audit: check-aws verify-build ## List change events from a probe ru
 	@$(LFVERIFY) audit --run-id $(RUN_ID) $(if $(SINCE),--since $(SINCE),)
 
 ##@ Documentation
+# terraform-docs runs pinned through go run, like gosec: output differs between versions, and CI
+# fails when the generated READMEs are not current (awslkhs-8fi7)
+TERRAFORM_DOCS_VERSION := v0.24.0
+
 docs: ## Generate documentation
-	@echo "$(CYAN)Generating documentation...$(RESET)"
-	@if command -v terraform-docs >/dev/null 2>&1; then \
-		terraform-docs .; \
-		echo "$(GREEN)✓ Documentation generated$(RESET)"; \
-	else \
-		echo "$(YELLOW)⚠ terraform-docs not installed, skipping$(RESET)"; \
-	fi
+	@echo "$(CYAN)Generating documentation with terraform-docs $(TERRAFORM_DOCS_VERSION)...$(RESET)"
+	@go run github.com/terraform-docs/terraform-docs@$(TERRAFORM_DOCS_VERSION) .
+	@echo "$(GREEN)✓ Documentation generated$(RESET)"
 
 ##@ Examples
 plan-examples: check-aws ## Plan all examples (useful for verification)

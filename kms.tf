@@ -12,7 +12,7 @@ resource "aws_kms_key" "main" {
 
   policy = data.aws_iam_policy_document.kms_key_policy[0].json
 
-  tags = merge(local.common_data_tags, {
+  tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-cmk"
   })
 }

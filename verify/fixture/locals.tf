@@ -10,13 +10,13 @@ locals {
 
   # Persona keys are shared by Terraform, the manifest, matrix files, and session names.
   # module_docs lists the tenant persona_policy_json documents attached as identity policies;
-  # personas the module does not model reuse a reader's document, so Lake Formation alone
-  # decides their access (FR-020).
+  # the control persona, which the module does not model, reuses a reader's document, so Lake
+  # Formation alone decides its access (FR-020).
   personas = {
     admin         = { kind = "admin", module_docs = [] }
     roadmin       = { kind = "roadmin", module_docs = [] }
-    meta_reader   = { kind = "meta", module_docs = [["alpha", "reader/reader_multi"], ["beta", "reader/reader_multi"]] }
-    meta_writer   = { kind = "meta", module_docs = [["alpha", "reader/reader_single"]] }
+    meta_reader   = { kind = "meta", module_docs = [["alpha", "metadata_reader/meta_reader"], ["beta", "metadata_reader/meta_reader"]] }
+    meta_writer   = { kind = "meta", module_docs = [["alpha", "metadata_writer/meta_writer"]] }
     reader_multi  = { kind = "reader", module_docs = [["alpha", "reader/reader_multi"], ["beta", "reader/reader_multi"]] }
     reader_single = { kind = "reader", module_docs = [["alpha", "reader/reader_single"]] }
     writer_multi  = { kind = "writer", module_docs = [["alpha", "writer/writer_multi"], ["beta", "writer/writer_multi"]] }
@@ -32,9 +32,27 @@ locals {
   # and cannot be merged into one policy
   persona_module_docs = merge([
     for p, v in local.personas : {
-      for d in v.module_docs : "${p}/${d[0]}" => { persona = p, tenant = d[0], doc_key = d[1] }
+      for d in v.module_docs : "${p}/${d[0]}" => {
+        persona = p
+        tenant  = d[0]
+        # Documents depend only on the persona kind, so when missing_grant drops a persona from
+        # the module, another document in the tenant (same kind first) keeps its IAM access and
+        # Lake Formation alone denies it
+        doc_key = contains(local.tenant_doc_keys[d[0]], d[1]) ? d[1] : concat(
+          [for k in local.tenant_doc_keys[d[0]] : k if split("/", k)[0] == split("/", d[1])[0]],
+          local.tenant_doc_keys[d[0]],
+        )[0]
+      }
     }
   ]...)
+
+  # persona_policy_json keys each tenant's module config produces, stewards aside
+  tenant_doc_keys = { for t, c in local.tenants : t => concat(
+    [for k in keys(try(c.readers, {})) : "reader/${k}"],
+    [for k in keys(try(c.writers, {})) : "writer/${k}"],
+    [for k in keys(try(c.metadata_readers, {})) : "metadata_reader/${k}"],
+    [for k in keys(try(c.metadata_writers, {})) : "metadata_writer/${k}"],
+  ) }
 
   # Fixture tables, created by lfverify seed in every namespace of both styles. ssn is the
   # restricted column, order_date the partition column, and attrs the map column that row

@@ -38,7 +38,8 @@ module "cost_estimation" {
   compliance_kms_key_count = local.designated ? 1 : 0 # the tenant key exists only for the designation (FR-024)
   table_bucket_count       = local.dedicated ? length(local.zones) : 0
   s3_bucket_count          = local.designated ? 1 : 0
-  athena_workgroup_count   = 1
-  cloudwatch_metric_count  = local.effective.monitoring_enabled ? 2 : 0
-  alarm_count              = local.effective.alarms_enabled ? 2 : 0
+  athena_workgroup_count   = local.workgroup_count
+  cloudwatch_metric_count  = local.effective.monitoring_enabled ? 2 * local.workgroup_count : 0
+  # Alarms are billed per metric: the failure alarm has one per query type, scanned bytes one
+  alarm_count = local.effective.alarms_enabled ? (length(local.alarmed_query_types) + 1) * local.workgroup_count : 0
 }

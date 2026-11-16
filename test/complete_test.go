@@ -182,6 +182,10 @@ func TestTerraformCompleteExample(t *testing.T) {
 		loc := block(block(wg, "configuration"), "result_configuration")["output_location"].(string)
 		assert.True(t, strings.HasSuffix(loc, "/"+tn+"/"), loc)
 	}
+	// The DML workgroup is opt-in (awslkhs-vpuy)
+	for addr, rc := range withPrefix(changes, shared+"module.tenant[") {
+		assert.False(t, strings.HasPrefix(rc.Name, "dml"), "%s: no DML workgroups or alarms by default", addr)
+	}
 	claimsWG := after(changes[tenantPrefix("claims")+"aws_athena_workgroup.this"])
 	claimsLoc := block(block(claimsWG, "configuration"), "result_configuration")["output_location"].(string)
 	assert.Equal(t, "s3://"+name+"-claims-athena-results-", claimsLoc[:len("s3://"+name+"-claims-athena-results-")])
@@ -196,6 +200,16 @@ func TestTerraformCompleteExample(t *testing.T) {
 	for tn := range tenantOwners {
 		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.query_failures[0]")
 		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.scanned_bytes[0]")
+
+		// Failed DDL publishes under its own QueryType, so the failure alarm sums DML and DDL
+		var queryTypes []string
+		for _, q := range list(after(changes[tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.query_failures[0]"])["metric_query"]) {
+			if dims, ok := block(q.(map[string]interface{}), "metric")["dimensions"].(map[string]interface{}); ok {
+				assert.Equal(t, "FAILED", dims["QueryState"], tn)
+				queryTypes = append(queryTypes, dims["QueryType"].(string))
+			}
+		}
+		assert.ElementsMatch(t, []string{"DML", "DDL"}, queryTypes, tn)
 	}
 
 	// Tags (FR-022)
@@ -216,6 +230,10 @@ func TestTerraformCompleteExample(t *testing.T) {
 		assert.Equal(t, "restricted", tg["DataClassification"], addr)
 		assert.Equal(t, "HIPAA", tg["ComplianceFrameworks"], addr)
 	}
+	// The tenant key carries the designation but no data tags (awslkhs-jgzf)
+	keyTags, _ := tags(changes[tenantPrefix("claims")+"aws_kms_key.this[0]"])
+	assert.Equal(t, "HIPAA", keyTags["ComplianceFrameworks"])
+	assert.NotContains(t, keyTags, "DataClassification")
 	for addr, rc := range changes {
 		if strings.HasPrefix(addr, shared+"aws_s3tables_table_bucket.zone[") || addr == shared+"aws_s3_bucket.query_results[0]" {
 			tg, _ := tags(rc)
@@ -225,6 +243,141 @@ func TestTerraformCompleteExample(t *testing.T) {
 
 	// Production budget: platform 10, three tenants at 0.50, plus 2 for the designated key
 	assert.LessOrEqual(t, number(outputAfter(plan, "monthly_cost_estimate")), 10+3*0.50+2)
+}
+
+// TestDataTagsOnlyOnDataAtRest checks that data_tags may supply the data owner, and that they
+// reach only resources containing data-at-rest, never KMS keys.
+func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
+	t.Parallel()
+	vars := completeVars(generateTestNamePrefix("dtag"))
+	vars["tags"] = map[string]interface{}{"Environment": "Production", "CostCenter": "data-platform"}
+	vars["data_tags"] = map[string]interface{}{"DataOwner": "platform-data@example.com", "DataAtRest": "true"}
+	changes := managedChanges(planExample(t, "complete", vars))
+
+	dataAtRest := map[string]bool{
+		"aws_s3tables_table_bucket": true,
+		"aws_s3_bucket":             true,
+	}
+	kmsKeys := 0
+	for addr, rc := range changes {
+		tg, ok := tags(rc)
+		if !ok {
+			continue
+		}
+		if rc.Type == "aws_kms_key" {
+			kmsKeys++
+		}
+		if dataAtRest[rc.Type] {
+			assert.Equal(t, "true", tg["DataAtRest"], addr)
+		} else {
+			assert.NotContains(t, tg, "DataAtRest", addr)
+		}
+		if tn := tenantOf(addr); tn != "" {
+			assert.Equal(t, tenantOwners[tn], tg["DataOwner"], addr)
+		}
+	}
+	assert.GreaterOrEqual(t, kmsKeys, 2, "platform and designated tenant KMS keys")
+}
+
+// TestDMLWorkgroupOptIn checks awslkhs-vpuy: with dml_workgroup_enabled, each tenant gets a DML
+// workgroup without a result encryption setting (it breaks Athena DML into S3 Tables), the read
+// workgroup keeps SSE_KMS, and a tenant can opt out.
+// TestMetadataPersonas checks the schema-only personas (awslkhs-lfj): metadata readers get DESCRIBE,
+// metadata writers CREATE_TABLE plus ALTER on steward-tagged tables (no DROP in Production), and
+// neither gets data permissions.
+func TestMetadataPersonas(t *testing.T) {
+	t.Parallel()
+	name := generateTestNamePrefix("meta")
+	plan := planExample(t, "complete", completeVars(name))
+	changes := managedChanges(plan)
+	sales := shared + `module.tenant["sales"].`
+	zoneKey := name + "-zone"
+
+	tenantKey, _ := after(changes[sales+"aws_lakeformation_lf_tag.tenant"])["key"].(string)
+	require.NotEmpty(t, tenantKey)
+	metaKey := tenantKey + "-meta"
+	tag := after(changes[sales+"aws_lakeformation_lf_tag.metadata_writer[0]"])
+	assert.Equal(t, metaKey, tag["key"])
+	assert.Equal(t, []string{"yes"}, strs(tag["values"]))
+	assert.NotContains(t, changes, shared+`module.tenant["finance"].aws_lakeformation_lf_tag.metadata_writer[0]`, "only tenants with metadata writers get the key")
+
+	for _, rt := range []string{"DATABASE", "TABLE"} {
+		rc := changes[sales+`aws_lakeformation_permissions.metadata_reader["catalog/`+rt+`"]`]
+		require.NotNil(t, rc, rt)
+		assert.Equal(t, []string{"DESCRIBE"}, strs(after(rc)["permissions"]), rt)
+		assert.Equal(t, []string{"consumption", "curated", "raw"}, lfExpression(rc)[zoneKey], rt)
+	}
+
+	db := changes[sales+`aws_lakeformation_permissions.metadata_writer_database["schema"]`]
+	require.NotNil(t, db)
+	assert.Equal(t, []string{"CREATE_TABLE", "DESCRIBE"}, strs(after(db)["permissions"]))
+	assert.Equal(t, []string{"curated"}, lfExpression(db)[zoneKey])
+
+	tbl := changes[sales+`aws_lakeformation_permissions.metadata_writer_table["schema"]`]
+	require.NotNil(t, tbl)
+	assert.Equal(t, []string{"ALTER", "DESCRIBE"}, strs(after(tbl)["permissions"]), "no DROP in Production")
+	assert.Equal(t, []string{"yes"}, lfExpression(tbl)[metaKey], "only tables stewards tag")
+
+	// Stewards may associate the key; writers may not
+	assert.Contains(t, changes, sales+`aws_lakeformation_permissions.steward_label["arn:aws:iam::123456789012:role/sales-steward/`+metaKey+`"]`)
+	for addr := range withPrefix(changes, sales+"aws_lakeformation_permissions.writer_label[") {
+		assert.NotContains(t, addr, metaKey, addr)
+	}
+
+	docs := dataChanges(plan)
+	sids := func(key string) []string {
+		rc := docs[sales+`data.aws_iam_policy_document.persona["`+key+`"]`]
+		require.NotNil(t, rc, key)
+		var out []string
+		for _, s := range list(after(rc)["statement"]) {
+			sm := s.(map[string]interface{})
+			out = append(out, sm["sid"].(string))
+			if sm["sid"] == "MetadataWriterTables" {
+				assert.NotContains(t, strs(sm["actions"]), "glue:DeleteTable", "no DROP in Production")
+			}
+		}
+		return out
+	}
+	reader, writer := sids("metadata_reader/catalog"), sids("metadata_writer/schema")
+	assert.NotContains(t, reader, "MetadataWriterTables")
+	assert.Contains(t, writer, "MetadataWriterTables")
+	for _, s := range [][]string{reader, writer} {
+		assert.NotContains(t, s, "Labeling", "metadata personas do not label")
+	}
+}
+
+func TestDMLWorkgroupOptIn(t *testing.T) {
+	t.Parallel()
+	name := generateTestNamePrefix("dml")
+	vars := completeVars(name)
+	vars["query_config"] = map[string]interface{}{"dml_workgroup_enabled": true}
+	vars["extra_tenants"] = map[string]interface{}{
+		"nodml": map[string]interface{}{"owner": "x@example.com", "sensitivity": "internal", "dml_workgroup_enabled": false},
+	}
+	plan := planExample(t, "complete", vars)
+	changes := managedChanges(plan)
+	tenantPrefix := func(tn string) string { return shared + `module.tenant["` + tn + `"].` }
+
+	for tn := range tenantOwners {
+		read := block(block(after(changes[tenantPrefix(tn)+"aws_athena_workgroup.this"]), "configuration"), "result_configuration")
+		assert.Equal(t, "SSE_KMS", block(read, "encryption_configuration")["encryption_option"], tn)
+
+		require.Contains(t, changes, tenantPrefix(tn)+"aws_athena_workgroup.dml[0]")
+		dml := after(changes[tenantPrefix(tn)+"aws_athena_workgroup.dml[0]"])
+		assert.Equal(t, name+"-"+tn+"-dml", dml["name"])
+		res := block(block(dml, "configuration"), "result_configuration")
+		assert.Nil(t, block(res, "encryption_configuration"), "%s DML workgroup must not set result encryption", tn)
+		assert.True(t, strings.HasSuffix(res["output_location"].(string), "dml/"), res["output_location"])
+
+		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.dml_query_failures[0]")
+		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.dml_scanned_bytes[0]")
+	}
+	assert.NotContains(t, changes, tenantPrefix("nodml")+"aws_athena_workgroup.dml[0]", "tenant override wins")
+	assert.Contains(t, changes, tenantPrefix("nodml")+"aws_athena_workgroup.this")
+
+	contract, _ := outputAfter(plan, "platform_contract").(map[string]interface{})
+	effective, _ := contract["effective"].(map[string]interface{})
+	assert.Equal(t, true, effective["dml_workgroup_enabled"])
 }
 
 func TestCompleteExampleSecurityControls(t *testing.T) {
@@ -265,9 +418,12 @@ func TestCompleteExampleSecurityControls(t *testing.T) {
 		}
 		statements := list(after(rc)["statement"])
 		isBucketPolicy := regexp.MustCompile(`\.(zone_bucket|dedicated_bucket|query_results|results)\b`).MatchString(addr)
-		hasTLSDeny := false
+		hasTLSDeny, hasSseCDeny := false, false
 		for _, s := range statements {
 			sm := s.(map[string]interface{})
+			if sm["sid"] == "DenySseC" && sm["effect"] == "Deny" {
+				hasSseCDeny = true
+			}
 			for _, c := range list(sm["condition"]) {
 				cm := c.(map[string]interface{})
 				if sm["effect"] == "Deny" && cm["variable"] == "aws:SecureTransport" && strs(cm["values"])[0] == "false" {
@@ -284,6 +440,10 @@ func TestCompleteExampleSecurityControls(t *testing.T) {
 		if isBucketPolicy {
 			bucketPolicyDocs++
 			assert.True(t, hasTLSDeny, "%s must deny insecure transport", addr)
+		}
+		// SSE-C uploads would skip the results key (awslkhs-pdpf)
+		if regexp.MustCompile(`\.(query_results|results)\b`).MatchString(addr) {
+			assert.True(t, hasSseCDeny, "%s must deny SSE-C uploads", addr)
 		}
 	}
 	assert.GreaterOrEqual(t, bucketPolicyDocs, 4, "zone, dedicated, shared results, and tenant results policies")

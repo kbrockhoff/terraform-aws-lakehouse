@@ -7,6 +7,8 @@ locals {
     { for arn in var.tenant.stewards : "steward/${arn}" => { persona = "steward" } },
     { for k in keys(var.tenant.writers) : "writer/${k}" => { persona = "writer" } },
     { for k in keys(var.tenant.readers) : "reader/${k}" => { persona = "reader" } },
+    { for k in keys(var.tenant.metadata_readers) : "metadata_reader/${k}" => { persona = "metadata_reader" } },
+    { for k in keys(var.tenant.metadata_writers) : "metadata_writer/${k}" => { persona = "metadata_writer" } },
   )
   results_object_arn = "${local.results.bucket_arn}/${local.results.prefix}*"
 
@@ -58,7 +60,11 @@ data "aws_iam_policy_document" "persona" {
       "athena:StopQueryExecution",
       "athena:GetWorkGroup",
     ]
-    resources = [aws_athena_workgroup.this.arn]
+    # Only writers reach the DML workgroup
+    resources = concat(
+      [aws_athena_workgroup.this.arn],
+      each.value.persona == "writer" ? aws_athena_workgroup.dml[*].arn : [],
+    )
   }
 
   statement {
@@ -100,6 +106,20 @@ data "aws_iam_policy_document" "persona" {
     for_each = each.value.persona == "writer" ? [1] : []
     content {
       sid    = "WriterTables"
+      effect = "Allow"
+      actions = concat(
+        ["glue:CreateTable", "glue:UpdateTable"],
+        local.effective.writer_drop_enabled ? ["glue:DeleteTable"] : [],
+      )
+      resources = local.glue_arns
+    }
+  }
+
+  # Metadata writers create through Athena DDL or Glue; Lake Formation limits which tables
+  dynamic "statement" {
+    for_each = each.value.persona == "metadata_writer" ? [1] : []
+    content {
+      sid    = "MetadataWriterTables"
       effect = "Allow"
       actions = concat(
         ["glue:CreateTable", "glue:UpdateTable"],

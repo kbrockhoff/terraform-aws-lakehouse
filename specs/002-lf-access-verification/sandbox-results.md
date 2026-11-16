@@ -7,20 +7,20 @@ adds the named-resource baseline, 13 persona roles, and seeded synthetic tables.
 the runs are committed; see plan.md, Deviations found during implementation.
 
 **Result: 211 cases, 197 pass, 0 fail, 14 not run** (run `77dc1f`, the reference run below). The
-14 not-run cases are Athena DML cases blocked by `awslkhs-cdq`. A full run takes about 15 minutes
+14 not-run cases were Athena DML cases blocked by `awslkhs-cdq`: a workgroup result encryption
+setting breaks Athena DML into S3 Tables. With the opt-in DML workgroup (awslkhs-vpuy), run `c59e08`
+on 2026-11-14 passed all 211 cases, 0 not run. Run `1b69b0` on 2026-11-16 passed all 219 cases,
+including the eight Lake Formation denial cases of plan.md D24, and run `50370f` passed all 222
+after `rm-insert-lf`, `rm-update-lf`, and `rm-delete-lf` were added. Run `73163a` passed all 222
+with the metadata personas granted by the module instead of the fixture. A full run takes about 15 minutes
 end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Target: 30 minutes.
 
 ## Not verified in these runs
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Writer `INSERT`, `UPDATE`, and `DELETE` (11 cases) | Athena DML into S3 Tables fails with `INTERNAL_ERROR_QUERY_ENGINE`, so the cases report not run | awslkhs-cdq |
-| Reader `UPDATE` and `DELETE` are denied (`rm-update`, `rm-delete`, both styles) | Same engine error; a denial cannot be told apart from the engine fault | awslkhs-cdq |
-| Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22) | awslkhs-ptos |
-| Missing-grant detection in the label style | The label-style grants belong to the module, so `missing_grant` overlays remove only named grants. Label detection is covered by `drop_column_restriction`, `drop_row_filter`, and `open_default` | awslkhs-sr2a |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
-| Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
 | Bucket-catalog `DESCRIBE` grant from Terraform | `lfverify seed` makes it, because the provider cannot | awslkhs-qrp |
 
 ## Runs
@@ -39,6 +39,11 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `d66355`, `3aebc6`, `3215bf`, `166f1f`, `14f318`, `623dbd`, `71a0ea`, `4b3990`, `ddc587` | full | 11-12 | 211 each | 197 | 0 | 14 | — | T049 runs 2–10 |
 | `17cab2` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 repository probe, against fixture `e58e2f` |
 | `621c38` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 standalone probe from the CI-built archive, same fixture |
+| `c59e08` | full | 11-14 | 211 | 211 | 0 | 0 | — | First run with the tenant DML workgroups (awslkhs-vpuy): all 14 Athena DML cases run and pass. Matrix 8 min 19 s, 930 s end to end |
+| `1b69b0` | full | 11-16 | 219 | 219 | 0 | 0 | — | Adds `*-select-gamma-lf` and `rs-insert-lf` (plan.md D24, awslkhs-ptos): all eight denied by Lake Formation (`Insufficient Lake Formation permission(s)`, `does not have any privilege`), while their `/label` counterparts are still refused by IAM. 1017 s end to end |
+| `b2f91a` | detect | 11-16 | — | — | — | — | — | 17 of 17 detected, every `missing_grant` and `extra_grant` overlay now in both styles; see Detection (`b2f91a`). About 61 min |
+| `50370f` | full | 11-16 | 222 | 222 | 0 | 0 | — | Adds `rm-insert-lf`, `rm-update-lf`, `rm-delete-lf`: all denied by Lake Formation (`does not have any privilege`) under the stricter `denied_by` evidence check (awslkhs-90vk). 1018 s end to end |
+| `73163a` | full | 11-16 | 222 | 222 | 0 | 0 | — | First run with the metadata personas as module personas (awslkhs-lfj, plan.md D25): all 36 `mr-*` and `mw-*` cases pass unchanged, including `mw-alter-scratch` allowed and `mw-alter-customers` denied through the module's `-meta` tag. 1078 s end to end |
 
 | `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
 | `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |
@@ -120,6 +125,33 @@ The detect run took about 75 minutes, mostly Terraform applies between overlays 
 minutes). Rerunning the affected cases took about 2 minutes in total. Teardown destroyed 180
 resources with no sweep needed.
 
+## Detection (`b2f91a`, 2026-11-16)
+
+After plan.md D23 and D24, every reader and writer overlay is detected in the label style too:
+`missing_grant` now drops the persona from the module tenants, and the `*-select-gamma-lf` cases
+reach Lake Formation, so the label-style `extra_grant` on gamma shows. 17 of 17 detected in about
+61 minutes; teardown destroyed 184 resources.
+
+| Overlay | Persona | Failing cases |
+|---------|---------|---------------|
+| `extra_grant` | `reader_multi` | `rm-select-gamma/named`, `rm-select-gamma-lf`, `rm-list-databases-gamma/named` |
+| `missing_grant` | `reader_multi` | `rm-count-alpha`, `rm-count-beta`, `rm-select-customers` (both styles) |
+| `extra_grant` | `reader_single` | `rs-select-gamma/named`, `rs-select-gamma-lf` |
+| `missing_grant` | `reader_single` | `rs-count-alpha` (both styles) |
+| `extra_grant` | `writer_multi` | `wm-select-gamma/named`, `wm-select-gamma-lf` |
+| `missing_grant` | `writer_multi` | `wm-count-alpha` (both styles) |
+| `extra_grant` | `writer_single` | `ws-select-gamma/named`, `ws-select-gamma-lf` |
+| `missing_grant` | `writer_single` | `ws-count-alpha` (both styles) |
+| `extra_grant` | `reader_cols` | `rc-select-gamma/named`, `rc-select-gamma-lf` |
+| `missing_grant` | `reader_cols` | `rc-schema`, `rc-permitted-columns`, `rc-customers` (both styles) |
+| `extra_grant` | `reader_rows` | `rr-select-gamma/named`, `rr-select-gamma-lf` |
+| `missing_grant` | `reader_rows` | `rr-count-union`, `rr-rows-match` (both styles) |
+| `extra_grant` | `reader_cells` | `rce-select-gamma/named`, `rce-select-gamma-lf` |
+| `missing_grant` | `reader_cells` | `rce-count`, `rce-schema`, `rce-cells` (both styles) |
+| `drop_column_restriction` | `reader_cols` | `rc-schema`, `rc-restricted-column`, `rc-select-star` (both styles) |
+| `drop_row_filter` | `reader_rows` | `rr-count-union`, `rr-rows-match` (both styles) |
+| `open_default` | — | Preflight refused: `IAM_ALLOWED_PRINCIPALS holds permissions on …/n_alpha` (FR-008) |
+
 ## Determinism (T049, Determinism SLO)
 
 **Met.** Ten consecutive `make verify-full` runs against an unchanged configuration
@@ -176,7 +208,14 @@ through its pull-request dry run (run 43445934193, 2026-11-13, version `dev-1`):
 - the publish job was skipped, because a dry run has no tag;
 - all six downloaded archives verify against the downloaded `SHA256SUMS`.
 
-The second half of T071, assets attached to a real release, waits for the first release after merge.
+**Release v0.2.0 (T071, second half).** Release Please run 43482740482 (2026-11-13) called
+`lfverify-release.yml` with tag `v0.2.0`. Jobs ran in order: unit tests and gosec (2 min 42 s),
+build (9 min 56 s), five smoke tests (darwin/arm64, darwin/amd64, linux/arm64, linux/amd64,
+windows/amd64), then "Attach archives to the release", which started only after every smoke job
+passed. The release page carries all six archives and `SHA256SUMS`. On 2026-11-14 all six downloaded
+archives verified against it, and the extracted darwin/arm64 archive (executable, `docs/`,
+`LICENSE`, `probe.example.yaml`) reported `lfverify v0.2.0 (6cbcec8) go1.26.11 darwin/arm64`.
+windows/arm64 is built and checksummed but has no smoke runner.
 
 **Standalone acceptance (T072).** Fixture `e58e2f` was deployed with the repository and a temporary
 probe runner role `lfverify-probe-runner`, set up by following `verify/docs/user-guide.md`:
@@ -296,7 +335,7 @@ All 17 criteria are met.
 
 | Criterion | Met | Evidence |
 |-----------|-----|----------|
-| A release carries six archives plus a checksum file they all verify against | Not yet | The dry run built all six, and all verify against `SHA256SUMS`; the assets on a real release are confirmed after the first release (T071). |
+| A release carries six archives plus a checksum file they all verify against | Yes | Release v0.2.0: six archives and `SHA256SUMS` on the release page, all verify (T071). |
 | The executable reports version and commit and writes the example matrix on Linux, macOS, and Windows | Yes | Dry-run smoke tests on five runners (Standalone distribution section). |
 | From an empty directory with only an archive and its docs, a probe run matches the repository's | Yes | T072: `621c38` and `17cab2` agree on all 105 cases. |
-| A failed build or smoke test publishes nothing | By design | `publish` needs `smoke`, which needs `build`, which needs `check`; GitHub skips dependent jobs on failure. Not yet exercised with a failing job (T071, second half). |
+| A failed build or smoke test publishes nothing | Yes, by job dependency | `publish` needs `smoke`, which needs `build`, which needs `check`; GitHub skips dependent jobs on failure. Release v0.2.0 shows the order: publish started only after all five smoke jobs passed. Not exercised with a deliberately failing job. |

@@ -46,7 +46,11 @@ locals {
       row_filter_expression = "region = 'EU'"
       column_names          = [for c in local.tables.orders.columns : c.name if c.name != local.tables.orders.restricted_column]
     }
-  } : k => f if var.stage == 2 && !local.inject_drop_row_filter }
+  } : k => f if var.stage == 2 && !local.inject_drop_row_filter && f.reader != local.inject_dropped_persona }
+
+  # missing_grant on a reader or writer drops it from the tenants below, which removes the module's
+  # LF-tag grants (inject.tf). locals.tf keeps an identity policy attached.
+  inject_dropped_persona = local.inject_missing_grant ? var.inject_persona : ""
 
   reader = { for k in ["reader_single", "reader_rows", "reader_cells"] : k => {
     principal_arn      = local.role_arn[k]
@@ -60,11 +64,11 @@ locals {
       sensitivity = "restricted"
       zones       = ["raw", "curated"]
       stewards    = [local.role_arn["steward"]]
-      writers = {
+      writers = { for k, w in {
         writer_multi  = { principal_arn = local.role_arn["writer_multi"], zones = ["curated"] }
         writer_single = { principal_arn = local.role_arn["writer_single"], zones = ["curated"] }
-      }
-      readers = merge(local.reader, {
+      } : k => w if k != local.inject_dropped_persona }
+      readers = { for k, r in merge(local.reader, {
         reader_multi = {
           principal_arn      = local.role_arn["reader_multi"]
           zones              = ["curated"]
@@ -76,21 +80,31 @@ locals {
           zones              = ["curated"]
           sensitivity_values = local.inject_drop_column_restriction ? local.all_sensitivity : ["public", "internal", "confidential"]
         }
-      })
+      }) : k => r if k != local.inject_dropped_persona }
+      # Metadata personas (FR-011, FR-012); labels.tf tags scratch for the metadata writer
+      metadata_readers = {
+        meta_reader = { principal_arn = local.role_arn["meta_reader"], zones = ["curated"] }
+      }
+      metadata_writers = {
+        meta_writer = { principal_arn = local.role_arn["meta_writer"], zones = ["curated"] }
+      }
       row_filters = local.alpha_row_filters
     }
     beta = {
       owner       = "lfverify@example.com"
       sensitivity = "restricted"
       zones       = ["curated"]
-      writers = {
+      writers = { for k, w in {
         writer_multi = { principal_arn = local.role_arn["writer_multi"] }
-      }
-      readers = {
+      } : k => w if k != local.inject_dropped_persona }
+      readers = { for k, r in {
         reader_multi = {
           principal_arn      = local.role_arn["reader_multi"]
           sensitivity_values = local.all_sensitivity
         }
+      } : k => r if k != local.inject_dropped_persona }
+      metadata_readers = {
+        meta_reader = { principal_arn = local.role_arn["meta_reader"] }
       }
     }
     gamma = {
@@ -120,6 +134,11 @@ module "lakehouse" {
 
   cost_estimation_config = {
     enabled = false
+  }
+
+  # Writer cases run INSERT, UPDATE, and DELETE through the tenant DML workgroups (awslkhs-cdq)
+  query_config = {
+    dml_workgroup_enabled = true
   }
 
   governance_config = {

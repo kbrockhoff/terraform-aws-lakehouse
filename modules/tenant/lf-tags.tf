@@ -50,6 +50,24 @@ resource "aws_lakeformation_lf_tag" "row_filter" {
   depends_on = [terraform_data.admin_guard]
 }
 
+# Metadata-writer key: stewards set it to "yes" on the tables metadata writers may alter and drop.
+# Tables without it never match, so a new table is out of reach until a steward tags it.
+resource "aws_lakeformation_lf_tag" "metadata_writer" {
+  count = local.metadata_writer_tag_key == null ? 0 : 1
+
+  key    = local.metadata_writer_tag_key
+  values = ["yes"]
+
+  lifecycle {
+    precondition {
+      condition     = length(local.metadata_writer_tag_key) <= 128
+      error_message = "Tenant ${var.name}: LF-tag key ${local.metadata_writer_tag_key} exceeds 128 characters."
+    }
+  }
+
+  depends_on = [terraform_data.admin_guard]
+}
+
 # Marks each row-filtered table for its reader, so the reader's tag grant skips it and the data
 # cells filter is the reader's only access. Like row filters, it needs the table to exist.
 resource "aws_lakeformation_resource_lf_tags" "row_filtered_table" {

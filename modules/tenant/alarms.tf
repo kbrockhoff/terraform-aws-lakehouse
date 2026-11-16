@@ -10,19 +10,38 @@ resource "aws_cloudwatch_metric_alarm" "query_failures" {
 
   alarm_name          = "${local.name_prefix}-${var.name}-query-failures"
   alarm_description   = "Failed queries in the ${var.name} tenant workgroup"
-  namespace           = "AWS/Athena"
-  metric_name         = "TotalExecutionTime"
-  statistic           = "SampleCount"
-  period              = 300
   evaluation_periods  = 1
   threshold           = 0
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
-  dimensions = {
-    WorkGroup  = aws_athena_workgroup.this.name
-    QueryState = "FAILED"
-    QueryType  = "DML"
+  # Failed DDL publishes under its own QueryType, so the alarm sums both query types
+  dynamic "metric_query" {
+    for_each = local.alarmed_query_types
+
+    content {
+      id = lower(metric_query.value)
+
+      metric {
+        namespace   = "AWS/Athena"
+        metric_name = "TotalExecutionTime"
+        stat        = "SampleCount"
+        period      = 300
+
+        dimensions = {
+          WorkGroup  = aws_athena_workgroup.this.name
+          QueryState = "FAILED"
+          QueryType  = metric_query.value
+        }
+      }
+    }
+  }
+
+  metric_query {
+    id          = "failed"
+    label       = "Failed queries"
+    expression  = "FILL(dml, 0) + FILL(ddl, 0)"
+    return_data = true
   }
 
   alarm_actions = [var.platform.alarm_sns_topic_arn]
@@ -47,6 +66,78 @@ resource "aws_cloudwatch_metric_alarm" "scanned_bytes" {
 
   dimensions = {
     WorkGroup  = aws_athena_workgroup.this.name
+    QueryState = "SUCCEEDED"
+    QueryType  = "DML"
+  }
+
+  alarm_actions = [var.platform.alarm_sns_topic_arn]
+  ok_actions    = [var.platform.alarm_sns_topic_arn]
+
+  tags = local.tags
+}
+
+# The DML workgroup gets its own pair, so each workgroup is held to the tenant threshold
+resource "aws_cloudwatch_metric_alarm" "dml_query_failures" {
+  count = local.effective.alarms_enabled && local.dml_workgroup_enabled ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-${var.name}-dml-query-failures"
+  alarm_description   = "Failed queries in the ${var.name} tenant DML workgroup"
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  # Failed DDL publishes under its own QueryType, so the alarm sums both query types
+  dynamic "metric_query" {
+    for_each = local.alarmed_query_types
+
+    content {
+      id = lower(metric_query.value)
+
+      metric {
+        namespace   = "AWS/Athena"
+        metric_name = "TotalExecutionTime"
+        stat        = "SampleCount"
+        period      = 300
+
+        dimensions = {
+          WorkGroup  = aws_athena_workgroup.dml[0].name
+          QueryState = "FAILED"
+          QueryType  = metric_query.value
+        }
+      }
+    }
+  }
+
+  metric_query {
+    id          = "failed"
+    label       = "Failed queries"
+    expression  = "FILL(dml, 0) + FILL(ddl, 0)"
+    return_data = true
+  }
+
+  alarm_actions = [var.platform.alarm_sns_topic_arn]
+  ok_actions    = [var.platform.alarm_sns_topic_arn]
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "dml_scanned_bytes" {
+  count = local.effective.alarms_enabled && local.dml_workgroup_enabled ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-${var.name}-dml-scanned-bytes"
+  alarm_description   = "Bytes scanned per day by the ${var.name} tenant DML workgroup above the threshold"
+  namespace           = "AWS/Athena"
+  metric_name         = "ProcessedBytes"
+  statistic           = "Sum"
+  period              = 86400
+  evaluation_periods  = 1
+  threshold           = local.scanned_bytes_alarm_threshold
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    WorkGroup  = aws_athena_workgroup.dml[0].name
     QueryState = "SUCCEEDED"
     QueryType  = "DML"
   }

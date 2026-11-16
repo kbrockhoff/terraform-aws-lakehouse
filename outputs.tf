@@ -66,7 +66,9 @@ output "tenants" {
       catalog_ids             = t.catalog_ids
       table_bucket_arns       = t.table_bucket_arns
       tenant_tag_key          = t.tenant_tag_key
+      metadata_writer_tag_key = t.metadata_writer_tag_key
       workgroup_name          = t.workgroup_name
+      dml_workgroup_name      = t.dml_workgroup_name
       query_results_location  = t.query_results_location
       kms_key_arn             = t.kms_key_arn
       persona_policy_json     = t.persona_policy_json

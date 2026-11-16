@@ -97,6 +97,7 @@ func (r *Runner) dispatch(ctx context.Context, pc *ops.Clients, inst matrix.Inst
 		return pc.CountRows(ctx, t, exists), obs
 
 	case matrix.Insert, matrix.Update, matrix.Delete:
+		t = t.ForDML()
 		cols, err := r.cols(t.Table)
 		if err != nil {
 			return errResult(err), obs

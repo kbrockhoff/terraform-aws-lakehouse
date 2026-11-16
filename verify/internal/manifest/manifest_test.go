@@ -15,7 +15,7 @@ const sample = `{
   "styles": {
     "label": {"namespaces": {"alpha/curated": {"catalog_id": "111122223333:s3tablescatalog/lfv-abc123-curated", "database": "alpha",
       "table_bucket_arn": "arn:aws:s3tables:us-east-1:111122223333:bucket/lfv-abc123-curated", "workgroup": "lfv-abc123-alpha",
-      "results_location": "s3://r/alpha/"}}, "tag_keys": {"zone": "lfv-abc123-zone", "mw": "lfv-abc123-mw"}, "filters": {"rows_eu": "alpha-rows_eu"}},
+      "dml_workgroup": "lfv-abc123-alpha-dml", "results_location": "s3://r/alpha/"}}, "tag_keys": {"zone": "lfv-abc123-zone", "mw": "lfv-abc123-mw"}, "filters": {"rows_eu": "alpha-rows_eu"}},
     "named": {"namespaces": {"n_alpha": {"catalog_id": "111122223333:s3tablescatalog/lfv-abc123-named", "database": "n_alpha",
       "table_bucket_arn": "arn:aws:s3tables:us-east-1:111122223333:bucket/lfv-abc123-named", "workgroup": "lfv-abc123-named",
       "results_location": "s3://n/"}}, "filters": {}}
@@ -53,6 +53,20 @@ func TestResolve(t *testing.T) {
 	}
 	if n.Database != "n_alpha" || n.Exists {
 		t.Errorf("named target: %+v", n)
+	}
+	if d := l.ForDML(); d.Workgroup != "lfv-abc123-alpha-dml" || l.Workgroup != "lfv-abc123-alpha" {
+		t.Errorf("label DML workgroup: %s (read %s)", d.Workgroup, l.Workgroup)
+	}
+	if d := n.ForDML(); d.Workgroup != "lfv-abc123-named" {
+		t.Errorf("without a DML workgroup the read workgroup is kept: %s", d.Workgroup)
+	}
+	// via named keeps the label namespace but queries through the named baseline's workgroup
+	v, err := m.Resolve(matrix.Label, matrix.Resource{Tenant: "alpha", Table: "orders", Via: matrix.Named})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Database != "alpha" || v.Workgroup != "lfv-abc123-named" || v.ForDML().Workgroup != "lfv-abc123-named" || v.ResultsLocation != "s3://n/" {
+		t.Errorf("via named target: %+v", v)
 	}
 	if _, err := m.Resolve(matrix.Label, matrix.Resource{Tenant: "zeta"}); err == nil {
 		t.Error("unknown tenant must fail")
