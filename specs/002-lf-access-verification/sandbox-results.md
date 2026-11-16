@@ -10,14 +10,14 @@ the runs are committed; see plan.md, Deviations found during implementation.
 14 not-run cases were Athena DML cases blocked by `awslkhs-cdq`: a workgroup result encryption
 setting breaks Athena DML into S3 Tables. With the opt-in DML workgroup (awslkhs-vpuy), run `c59e08`
 on 2026-11-14 passed all 211 cases, 0 not run. Run `1b69b0` on 2026-11-16 passed all 219 cases,
-including the eight Lake Formation denial cases of plan.md D24. A full run takes about 15 minutes
+including the eight Lake Formation denial cases of plan.md D24, and run `50370f` passed all 222
+after `rm-insert-lf`, `rm-update-lf`, and `rm-delete-lf` were added. A full run takes about 15 minutes
 end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Target: 30 minutes.
 
 ## Not verified in these runs
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Label-style Lake Formation denial of `rm-insert`, `rm-update`, `rm-delete` | DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial, and `rs-insert-lf` shows it in the label style for one reader (run `1b69b0`). `rm-insert-lf`, `rm-update-lf`, and `rm-delete-lf` were added afterwards and have not run yet | — |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
@@ -42,6 +42,7 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `c59e08` | full | 11-14 | 211 | 211 | 0 | 0 | — | First run with the tenant DML workgroups (awslkhs-vpuy): all 14 Athena DML cases run and pass. Matrix 8 min 19 s, 930 s end to end |
 | `1b69b0` | full | 11-16 | 219 | 219 | 0 | 0 | — | Adds `*-select-gamma-lf` and `rs-insert-lf` (plan.md D24, awslkhs-ptos): all eight denied by Lake Formation (`Insufficient Lake Formation permission(s)`, `does not have any privilege`), while their `/label` counterparts are still refused by IAM. 1017 s end to end |
 | `b2f91a` | detect | 11-16 | — | — | — | — | — | 17 of 17 detected, every `missing_grant` and `extra_grant` overlay now in both styles; see Detection (`b2f91a`). About 61 min |
+| `50370f` | full | 11-16 | 222 | 222 | 0 | 0 | — | Adds `rm-insert-lf`, `rm-update-lf`, `rm-delete-lf`: all denied by Lake Formation (`does not have any privilege`) under the stricter `denied_by` evidence check (awslkhs-90vk). 1018 s end to end |
 
 | `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
 | `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |
