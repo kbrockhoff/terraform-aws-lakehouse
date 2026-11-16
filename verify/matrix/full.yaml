@@ -351,18 +351,45 @@ personas:
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no INSERT
+      - id: rm-insert-lf
+        style: label
+        phase: scenario
+        op: insert
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no INSERT, and Lake Formation refuses it
+        note: rm-insert/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation
       - id: rm-update
         phase: scenario
         op: update
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no INSERT
+      - id: rm-update-lf
+        style: label
+        phase: scenario
+        op: update
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no INSERT, and Lake Formation refuses it
+        note: rm-update/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation
       - id: rm-delete
         phase: scenario
         op: delete
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: SELECT grants no DELETE
+      - id: rm-delete-lf
+        style: label
+        phase: scenario
+        op: delete
+        resource: { tenant: alpha, table: customers, via: named }
+        expect: denied
+        denied_by: lake_formation
+        rule: SELECT grants no DELETE, and Lake Formation refuses it
+        note: rm-delete/label is refused by IAM (no DML workgroup for readers); the named DML workgroup reaches Lake Formation
       - id: rm-alter
         phase: scenario
         op: alter_table

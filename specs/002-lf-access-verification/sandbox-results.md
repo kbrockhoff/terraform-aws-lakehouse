@@ -17,7 +17,7 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Label-style Lake Formation denial of `rm-insert`, `rm-update`, `rm-delete` | DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial, and `rs-insert-lf` shows it in the label style for one reader (run `1b69b0`) | — |
+| Label-style Lake Formation denial of `rm-insert`, `rm-update`, `rm-delete` | DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial, and `rs-insert-lf` shows it in the label style for one reader (run `1b69b0`). `rm-insert-lf`, `rm-update-lf`, and `rm-delete-lf` were added afterwards and have not run yet | — |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
