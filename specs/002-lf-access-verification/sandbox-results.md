@@ -11,7 +11,8 @@ the runs are committed; see plan.md, Deviations found during implementation.
 setting breaks Athena DML into S3 Tables. With the opt-in DML workgroup (awslkhs-vpuy), run `c59e08`
 on 2026-11-14 passed all 211 cases, 0 not run. Run `1b69b0` on 2026-11-16 passed all 219 cases,
 including the eight Lake Formation denial cases of plan.md D24, and run `50370f` passed all 222
-after `rm-insert-lf`, `rm-update-lf`, and `rm-delete-lf` were added. A full run takes about 15 minutes
+after `rm-insert-lf`, `rm-update-lf`, and `rm-delete-lf` were added. Run `73163a` passed all 222
+with the metadata personas granted by the module instead of the fixture. A full run takes about 15 minutes
 end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Target: 30 minutes.
 
 ## Not verified in these runs
@@ -20,7 +21,6 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 |-------|--------|----------|
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
-| Metadata-only personas as module inputs | In these runs the module did not model them and the fixture granted them directly. Since awslkhs-lfj (plan.md D25) they are module personas; no sandbox run has exercised them yet | awslkhs-lfj |
 | Bucket-catalog `DESCRIBE` grant from Terraform | `lfverify seed` makes it, because the provider cannot | awslkhs-qrp |
 
 ## Runs
@@ -43,6 +43,7 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `1b69b0` | full | 11-16 | 219 | 219 | 0 | 0 | — | Adds `*-select-gamma-lf` and `rs-insert-lf` (plan.md D24, awslkhs-ptos): all eight denied by Lake Formation (`Insufficient Lake Formation permission(s)`, `does not have any privilege`), while their `/label` counterparts are still refused by IAM. 1017 s end to end |
 | `b2f91a` | detect | 11-16 | — | — | — | — | — | 17 of 17 detected, every `missing_grant` and `extra_grant` overlay now in both styles; see Detection (`b2f91a`). About 61 min |
 | `50370f` | full | 11-16 | 222 | 222 | 0 | 0 | — | Adds `rm-insert-lf`, `rm-update-lf`, `rm-delete-lf`: all denied by Lake Formation (`does not have any privilege`) under the stricter `denied_by` evidence check (awslkhs-90vk). 1018 s end to end |
+| `73163a` | full | 11-16 | 222 | 222 | 0 | 0 | — | First run with the metadata personas as module personas (awslkhs-lfj, plan.md D25): all 36 `mr-*` and `mw-*` cases pass unchanged, including `mw-alter-scratch` allowed and `mw-alter-customers` denied through the module's `-meta` tag. 1078 s end to end |
 
 | `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
 | `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |
