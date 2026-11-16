@@ -9,16 +9,15 @@ the runs are committed; see plan.md, Deviations found during implementation.
 **Result: 211 cases, 197 pass, 0 fail, 14 not run** (run `77dc1f`, the reference run below). The
 14 not-run cases were Athena DML cases blocked by `awslkhs-cdq`: a workgroup result encryption
 setting breaks Athena DML into S3 Tables. With the opt-in DML workgroup (awslkhs-vpuy), run `c59e08`
-on 2026-11-14 passed all 211 cases, 0 not run. A full run takes about 15 minutes
+on 2026-11-14 passed all 211 cases, 0 not run. Run `1b69b0` on 2026-11-16 passed all 219 cases,
+including the eight Lake Formation denial cases of plan.md D24. A full run takes about 15 minutes
 end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Target: 30 minutes.
 
 ## Not verified in these runs
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Label-style Lake Formation denial of reader DML (`rs-insert`, `rm-insert`, `rm-update`, `rm-delete`) | Since run `c59e08`, DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial. `rs-insert-lf` (plan.md D24) now covers it but has not run yet | awslkhs-ptos |
-| Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22). The `*-select-gamma-lf` cases (plan.md D24) now cover it but have not run yet | awslkhs-ptos |
-| Missing-grant detection in the label style | In these runs the label-style grants belonged to the module, so `missing_grant` overlays removed only named grants. Label detection was covered by `drop_column_restriction`, `drop_row_filter`, and `open_default`. Since `awslkhs-sr2a` (plan.md D23) the overlay also drops the persona from the module tenants and detect requires a failing `/label` case; no detect run has exercised it yet | awslkhs-sr2a |
+| Label-style Lake Formation denial of `rm-insert`, `rm-update`, `rm-delete` | DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial, and `rs-insert-lf` shows it in the label style for one reader (run `1b69b0`) | — |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
@@ -41,6 +40,8 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 | `17cab2` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 repository probe, against fixture `e58e2f` |
 | `621c38` | probe | 11-13 | 105 | 101 | 0 | 0 | 4 | T072 standalone probe from the CI-built archive, same fixture |
 | `c59e08` | full | 11-14 | 211 | 211 | 0 | 0 | — | First run with the tenant DML workgroups (awslkhs-vpuy): all 14 Athena DML cases run and pass. Matrix 8 min 19 s, 930 s end to end |
+| `1b69b0` | full | 11-16 | 219 | 219 | 0 | 0 | — | Adds `*-select-gamma-lf` and `rs-insert-lf` (plan.md D24, awslkhs-ptos): all eight denied by Lake Formation (`Insufficient Lake Formation permission(s)`, `does not have any privilege`), while their `/label` counterparts are still refused by IAM. 1017 s end to end |
+| `b2f91a` | detect | 11-16 | — | — | — | — | — | 17 of 17 detected, every `missing_grant` and `extra_grant` overlay now in both styles; see Detection (`b2f91a`). About 61 min |
 
 | `67009c` | recovery | 11-12 | — | — | — | — | — | T052 attempt 1: no leftovers, but cleanup exited 1 on the all-tables grant revoke |
 | `86aeab` | recovery | 11-12 | — | — | — | — | — | T052: interrupted after seed, state deleted, swept clean |
@@ -121,6 +122,33 @@ Every injected misconfiguration made at least one case fail, with the failing ca
 The detect run took about 75 minutes, mostly Terraform applies between overlays (one took 18
 minutes). Rerunning the affected cases took about 2 minutes in total. Teardown destroyed 180
 resources with no sweep needed.
+
+## Detection (`b2f91a`, 2026-11-16)
+
+After plan.md D23 and D24, every reader and writer overlay is detected in the label style too:
+`missing_grant` now drops the persona from the module tenants, and the `*-select-gamma-lf` cases
+reach Lake Formation, so the label-style `extra_grant` on gamma shows. 17 of 17 detected in about
+61 minutes; teardown destroyed 184 resources.
+
+| Overlay | Persona | Failing cases |
+|---------|---------|---------------|
+| `extra_grant` | `reader_multi` | `rm-select-gamma/named`, `rm-select-gamma-lf`, `rm-list-databases-gamma/named` |
+| `missing_grant` | `reader_multi` | `rm-count-alpha`, `rm-count-beta`, `rm-select-customers` (both styles) |
+| `extra_grant` | `reader_single` | `rs-select-gamma/named`, `rs-select-gamma-lf` |
+| `missing_grant` | `reader_single` | `rs-count-alpha` (both styles) |
+| `extra_grant` | `writer_multi` | `wm-select-gamma/named`, `wm-select-gamma-lf` |
+| `missing_grant` | `writer_multi` | `wm-count-alpha` (both styles) |
+| `extra_grant` | `writer_single` | `ws-select-gamma/named`, `ws-select-gamma-lf` |
+| `missing_grant` | `writer_single` | `ws-count-alpha` (both styles) |
+| `extra_grant` | `reader_cols` | `rc-select-gamma/named`, `rc-select-gamma-lf` |
+| `missing_grant` | `reader_cols` | `rc-schema`, `rc-permitted-columns`, `rc-customers` (both styles) |
+| `extra_grant` | `reader_rows` | `rr-select-gamma/named`, `rr-select-gamma-lf` |
+| `missing_grant` | `reader_rows` | `rr-count-union`, `rr-rows-match` (both styles) |
+| `extra_grant` | `reader_cells` | `rce-select-gamma/named`, `rce-select-gamma-lf` |
+| `missing_grant` | `reader_cells` | `rce-count`, `rce-schema`, `rce-cells` (both styles) |
+| `drop_column_restriction` | `reader_cols` | `rc-schema`, `rc-restricted-column`, `rc-select-star` (both styles) |
+| `drop_row_filter` | `reader_rows` | `rr-count-union`, `rr-rows-match` (both styles) |
+| `open_default` | — | Preflight refused: `IAM_ALLOWED_PRINCIPALS holds permissions on …/n_alpha` (FR-008) |
 
 ## Determinism (T049, Determinism SLO)
 
