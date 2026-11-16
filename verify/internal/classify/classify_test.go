@@ -55,6 +55,26 @@ func TestIAMRefusal(t *testing.T) {
 	}
 }
 
+func TestLakeFormationDenial(t *testing.T) {
+	cases := []struct {
+		ev   Evidence
+		want bool
+	}{
+		{Evidence{Message: "Insufficient permissions to execute the query. Insufficient Lake Formation permission(s): Required Describe on gamma"}, true},
+		{Evidence{Message: "Insufficient permissions to execute the query. Principal does not have any privilege on specified resource"}, true},
+		{Evidence{Code: "SCHEMA_NOT_FOUND", Message: "SCHEMA_NOT_FOUND: line 1:15: Schema 'gamma' does not exist"}, true},
+		{Evidence{Code: "EntityNotFoundException", Message: "Table orders not found."}, true},
+		{Evidence{Message: "Access denied when writing output to url: s3://r/alpha/x.csv"}, false},
+		{Evidence{Code: "AccessDenied", Message: "Access Denied"}, false},
+		{Evidence{Code: "AccessDeniedException", Message: "You are not authorized to perform: athena:StartQueryExecution on the resource."}, false},
+	}
+	for _, c := range cases {
+		if got := LakeFormationDenial(c.ev); got != c.want {
+			t.Errorf("%q: got %v, want %v", c.ev.Message, got, c.want)
+		}
+	}
+}
+
 func TestQueryFailure(t *testing.T) {
 	both := Exists{Resource: true, Column: true}
 	cases := []struct {

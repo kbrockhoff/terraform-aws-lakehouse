@@ -66,6 +66,21 @@ func IAMRefusal(ev Evidence) bool {
 	return iamRefusal.MatchString(ev.Message)
 }
 
+// lfEvidence is wording only Lake Formation produces, as observed in runs 36ea41 and 1b69b0
+var lfEvidence = regexp.MustCompile(`(?i)lake formation permission|does not have any privilege`)
+
+// LakeFormationDenial reports whether a denial is attributable to Lake Formation: its permission
+// messages, or a "not found" for an object that exists (the caller already classified it as a
+// denial only when the manifest says the object exists). Generic "access denied" wording, such as
+// an S3 refusal on the results location, does not count.
+func LakeFormationDenial(ev Evidence) bool {
+	if IAMRefusal(ev) {
+		return false
+	}
+	return lfEvidence.MatchString(ev.Message) || notFoundCodes[ev.Code] ||
+		tableNotFound.MatchString(ev.Message) || columnNotFound.MatchString(ev.Message)
+}
+
 // Classify maps an SDK error to an outcome. A nil error is ALLOWED.
 func Classify(err error, exists Exists) (Outcome, Evidence) {
 	if err == nil {

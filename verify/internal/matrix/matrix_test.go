@@ -60,6 +60,7 @@ func TestInvalid(t *testing.T) {
 		{"unsafe persona key", "mode: full\npersonas:\n  - key: \"a; rm -rf x\"\n    cases: []\n", "must match"},
 		{"path in persona key", "mode: full\npersonas:\n  - key: ../a\n    cases: []\n", "must match"},
 		{"denied_by without denial", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: alpha, table: t}, expect: allowed, denied_by: lake_formation}\n", "denied_by needs expect: denied"},
+		{"denied_by on storage_read", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: storage_read, resource: {tenant: alpha, table: t}, expect: denied, denied_by: lake_formation}\n", "does not apply to storage_read"},
 		{"unknown denied_by", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: alpha, table: t}, expect: denied, denied_by: iam}\n", `unknown denied_by "iam"`},
 		{"via on both styles", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: gamma, table: t, via: named}, expect: denied}\n", "applies only to label-style query cases"},
 		{"via on a catalog op", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, style: label, op: get_table, resource: {tenant: gamma, table: t, via: named}, expect: denied}\n", "applies only to label-style query cases"},

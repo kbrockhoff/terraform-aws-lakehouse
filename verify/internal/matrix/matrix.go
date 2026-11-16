@@ -351,6 +351,9 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Expect != Denied {
 			add("denied_by needs expect: denied")
 		}
+		if c.Op == StorageRead {
+			add("denied_by does not apply to storage_read, which bypasses Lake Formation")
+		}
 	}
 	if c.RowPredicate != nil {
 		if err := c.RowPredicate.Validate(); err != nil {
