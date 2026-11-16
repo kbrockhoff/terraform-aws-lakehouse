@@ -24,6 +24,19 @@ tenants = {
         regulations        = ["gdpr"]
       }
     }
+    # Schema-only personas: a catalog browser, and a migration role that creates tables and alters
+    # the ones stewards tag with the tenant's metadata-writer key
+    metadata_readers = {
+      catalog = {
+        principal_arn = "arn:aws:iam::123456789012:role/data-catalog-browser"
+      }
+    }
+    metadata_writers = {
+      schema = {
+        principal_arn = "arn:aws:iam::123456789012:role/sales-schema-migrator"
+        zones         = ["curated"]
+      }
+    }
     row_filters = {
       eu = {
         reader                = "gdpranalyst"

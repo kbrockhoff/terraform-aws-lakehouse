@@ -481,6 +481,18 @@ All grants and tag permissions below are created by the tenant submodule. The no
 | Readers | `DATABASE` | `tenant = T` | `DESCRIBE` | — |
 | Readers | `TABLE` | `tenant = T` AND `sensitivity ∈ S(reader)` AND `R(reader)` AND, when set, `domain ∈ D(reader)` | `SELECT`, `DESCRIBE` | — |
 | Readers, row-filtered | `aws_lakeformation_data_cells_filter` on a named table, then a `data_cells_filter` grant | — | `SELECT` | — |
+| Stewards | LF-tag `tenant-T-meta` (tenants with metadata writers) | `["yes"]` | `DESCRIBE`, `ASSOCIATE`, `GRANT_WITH_LF_TAG_EXPRESSION` | — |
+| Metadata readers | `DATABASE`, `TABLE` | `tenant = T` | `DESCRIBE` | — |
+| Metadata writers | `DATABASE` | `tenant = T` | `CREATE_TABLE`, `DESCRIBE` | — |
+| Metadata writers | `TABLE` | `tenant = T` AND `tenant-T-meta = yes` | `ALTER`, `DESCRIBE`, plus `DROP` only when `writer_drop_enabled` | — |
+
+- **Metadata personas (awslkhs-lfj, added 2026-11-16)**: schema access without data, for catalog
+  browsers and schema-migration roles. Every row above also carries `zone ∈ Z(persona)`.
+  Stewards choose the tables a metadata writer may alter by tagging them `tenant-T-meta = yes`;
+  writers cannot associate that key. Lake Formation gives a table's creator every permission on
+  it, so a metadata writer can read and grant the tables it creates itself (README, Grants per
+  persona). The persona IAM documents match a reader's, plus Glue table writes for metadata
+  writers, without labeling.
 
 - **Column-level control (FR-011)**: LF-TBAC evaluates column tags. A column whose sensitivity,
   regulation, or domain falls outside a reader's expression is excluded from the reader's

@@ -67,7 +67,14 @@ func TestVerifyFixture(t *testing.T) {
 		for addr := range a {
 			assert.NotContains(t, addr, "aws_lakeformation_data_cells_filter.this", "module row filters need tables")
 		}
-		assert.Equal(t, 4, countWithPrefix(a, "aws_lakeformation_permissions.meta_reader["), "DATABASE and TABLE in alpha and beta")
+		// Metadata personas are module personas (awslkhs-lfj): DATABASE and TABLE in alpha and beta
+		for _, tn := range []string{"alpha", "beta"} {
+			assert.Equal(t, 2, countWithPrefix(a, `module.lakehouse.module.tenant["`+tn+`"].aws_lakeformation_permissions.metadata_reader[`), tn)
+		}
+		assert.Contains(t, a, `module.lakehouse.module.tenant["alpha"].aws_lakeformation_permissions.metadata_writer_table["meta_writer"]`)
+		assert.Contains(t, a, `module.lakehouse.module.tenant["alpha"].aws_lakeformation_lf_tag.metadata_writer[0]`)
+		assert.NotContains(t, a, `module.lakehouse.module.tenant["beta"].aws_lakeformation_lf_tag.metadata_writer[0]`, "only tenants with metadata writers get the key")
+		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_permissions.meta_"), "no fixture-owned metadata grants")
 	})
 
 	t.Run("stage2", func(t *testing.T) {

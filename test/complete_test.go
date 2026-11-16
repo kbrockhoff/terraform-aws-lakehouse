@@ -282,6 +282,70 @@ func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
 // TestDMLWorkgroupOptIn checks awslkhs-vpuy: with dml_workgroup_enabled, each tenant gets a DML
 // workgroup without a result encryption setting (it breaks Athena DML into S3 Tables), the read
 // workgroup keeps SSE_KMS, and a tenant can opt out.
+// TestMetadataPersonas checks the schema-only personas (awslkhs-lfj): metadata readers get DESCRIBE,
+// metadata writers CREATE_TABLE plus ALTER on steward-tagged tables (no DROP in Production), and
+// neither gets data permissions.
+func TestMetadataPersonas(t *testing.T) {
+	t.Parallel()
+	name := generateTestNamePrefix("meta")
+	plan := planExample(t, "complete", completeVars(name))
+	changes := managedChanges(plan)
+	sales := shared + `module.tenant["sales"].`
+	zoneKey := name + "-zone"
+
+	tenantKey, _ := after(changes[sales+"aws_lakeformation_lf_tag.tenant"])["key"].(string)
+	require.NotEmpty(t, tenantKey)
+	metaKey := tenantKey + "-meta"
+	tag := after(changes[sales+"aws_lakeformation_lf_tag.metadata_writer[0]"])
+	assert.Equal(t, metaKey, tag["key"])
+	assert.Equal(t, []string{"yes"}, strs(tag["values"]))
+	assert.NotContains(t, changes, shared+`module.tenant["finance"].aws_lakeformation_lf_tag.metadata_writer[0]`, "only tenants with metadata writers get the key")
+
+	for _, rt := range []string{"DATABASE", "TABLE"} {
+		rc := changes[sales+`aws_lakeformation_permissions.metadata_reader["catalog/`+rt+`"]`]
+		require.NotNil(t, rc, rt)
+		assert.Equal(t, []string{"DESCRIBE"}, strs(after(rc)["permissions"]), rt)
+		assert.Equal(t, []string{"consumption", "curated", "raw"}, lfExpression(rc)[zoneKey], rt)
+	}
+
+	db := changes[sales+`aws_lakeformation_permissions.metadata_writer_database["schema"]`]
+	require.NotNil(t, db)
+	assert.Equal(t, []string{"CREATE_TABLE", "DESCRIBE"}, strs(after(db)["permissions"]))
+	assert.Equal(t, []string{"curated"}, lfExpression(db)[zoneKey])
+
+	tbl := changes[sales+`aws_lakeformation_permissions.metadata_writer_table["schema"]`]
+	require.NotNil(t, tbl)
+	assert.Equal(t, []string{"ALTER", "DESCRIBE"}, strs(after(tbl)["permissions"]), "no DROP in Production")
+	assert.Equal(t, []string{"yes"}, lfExpression(tbl)[metaKey], "only tables stewards tag")
+
+	// Stewards may associate the key; writers may not
+	assert.Contains(t, changes, sales+`aws_lakeformation_permissions.steward_label["arn:aws:iam::123456789012:role/sales-steward/`+metaKey+`"]`)
+	for addr := range withPrefix(changes, sales+"aws_lakeformation_permissions.writer_label[") {
+		assert.NotContains(t, addr, metaKey, addr)
+	}
+
+	docs := dataChanges(plan)
+	sids := func(key string) []string {
+		rc := docs[sales+`data.aws_iam_policy_document.persona["`+key+`"]`]
+		require.NotNil(t, rc, key)
+		var out []string
+		for _, s := range list(after(rc)["statement"]) {
+			sm := s.(map[string]interface{})
+			out = append(out, sm["sid"].(string))
+			if sm["sid"] == "MetadataWriterTables" {
+				assert.NotContains(t, strs(sm["actions"]), "glue:DeleteTable", "no DROP in Production")
+			}
+		}
+		return out
+	}
+	reader, writer := sids("metadata_reader/catalog"), sids("metadata_writer/schema")
+	assert.NotContains(t, reader, "MetadataWriterTables")
+	assert.Contains(t, writer, "MetadataWriterTables")
+	for _, s := range [][]string{reader, writer} {
+		assert.NotContains(t, s, "Labeling", "metadata personas do not label")
+	}
+}
+
 func TestDMLWorkgroupOptIn(t *testing.T) {
 	t.Parallel()
 	name := generateTestNamePrefix("dml")

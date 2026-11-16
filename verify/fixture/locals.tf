@@ -10,13 +10,13 @@ locals {
 
   # Persona keys are shared by Terraform, the manifest, matrix files, and session names.
   # module_docs lists the tenant persona_policy_json documents attached as identity policies;
-  # personas the module does not model reuse a reader's document, so Lake Formation alone
-  # decides their access (FR-020).
+  # the control persona, which the module does not model, reuses a reader's document, so Lake
+  # Formation alone decides its access (FR-020).
   personas = {
     admin         = { kind = "admin", module_docs = [] }
     roadmin       = { kind = "roadmin", module_docs = [] }
-    meta_reader   = { kind = "meta", module_docs = [["alpha", "reader/reader_multi"], ["beta", "reader/reader_multi"]] }
-    meta_writer   = { kind = "meta", module_docs = [["alpha", "reader/reader_single"]] }
+    meta_reader   = { kind = "meta", module_docs = [["alpha", "metadata_reader/meta_reader"], ["beta", "metadata_reader/meta_reader"]] }
+    meta_writer   = { kind = "meta", module_docs = [["alpha", "metadata_writer/meta_writer"]] }
     reader_multi  = { kind = "reader", module_docs = [["alpha", "reader/reader_multi"], ["beta", "reader/reader_multi"]] }
     reader_single = { kind = "reader", module_docs = [["alpha", "reader/reader_single"]] }
     writer_multi  = { kind = "writer", module_docs = [["alpha", "writer/writer_multi"], ["beta", "writer/writer_multi"]] }
@@ -46,10 +46,12 @@ locals {
     }
   ]...)
 
-  # persona_policy_json keys each tenant's module config produces for readers and writers
+  # persona_policy_json keys each tenant's module config produces, stewards aside
   tenant_doc_keys = { for t, c in local.tenants : t => concat(
     [for k in keys(try(c.readers, {})) : "reader/${k}"],
     [for k in keys(try(c.writers, {})) : "writer/${k}"],
+    [for k in keys(try(c.metadata_readers, {})) : "metadata_reader/${k}"],
+    [for k in keys(try(c.metadata_writers, {})) : "metadata_writer/${k}"],
   ) }
 
   # Fixture tables, created by lfverify seed in every namespace of both styles. ssn is the

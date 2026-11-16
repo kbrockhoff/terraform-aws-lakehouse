@@ -31,7 +31,7 @@ output "manifest" {
           sensitivity = local.sensitivity_tag_key
           domain      = module.lakehouse.lf_tag_vocabulary.domain.key
           regulations = { for r, v in module.lakehouse.lf_tag_vocabulary.regulations : r => v.key }
-          mw          = aws_lakeformation_lf_tag.mw.key
+          mw          = module.lakehouse.tenants["alpha"].metadata_writer_tag_key
         }
         filters = { for k, f in local.alpha_row_filters : k => "alpha-${k}" }
       }

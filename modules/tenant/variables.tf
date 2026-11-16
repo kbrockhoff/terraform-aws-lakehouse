@@ -96,6 +96,14 @@ variable "tenant" {
       regulations        = optional(set(string), [])
       domains            = optional(list(string))
     })), {})
+    metadata_readers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
+    metadata_writers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
     row_filters = optional(map(object({
       reader                = string
       zone                  = string
@@ -115,9 +123,11 @@ variable "tenant" {
         coalesce(var.tenant.zones, keys(var.platform.zones)),
         flatten([for w in values(var.tenant.writers) : coalesce(w.zones, [])]),
         flatten([for r in values(var.tenant.readers) : coalesce(r.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_readers) : coalesce(m.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_writers) : coalesce(m.zones, [])]),
       ) : contains(keys(var.platform.zones), z)
     ])
-    error_message = "Tenant ${var.name}: every tenant, writer, and reader zone must be a platform zone (${join(", ", keys(var.platform.zones))})."
+    error_message = "Tenant ${var.name}: every tenant and persona zone must be a platform zone (${join(", ", keys(var.platform.zones))})."
   }
 
   validation {
@@ -125,9 +135,11 @@ variable "tenant" {
       for z in concat(
         flatten([for w in values(var.tenant.writers) : coalesce(w.zones, [])]),
         flatten([for r in values(var.tenant.readers) : coalesce(r.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_readers) : coalesce(m.zones, [])]),
+        flatten([for m in values(var.tenant.metadata_writers) : coalesce(m.zones, [])]),
       ) : contains(coalesce(var.tenant.zones, keys(var.platform.zones)), z)
     ])
-    error_message = "Tenant ${var.name}: writer and reader zones must be among the tenant's zones."
+    error_message = "Tenant ${var.name}: writer, reader, and metadata persona zones must be among the tenant's zones."
   }
 
   validation {
@@ -136,9 +148,11 @@ variable "tenant" {
         var.tenant.stewards,
         [for w in values(var.tenant.writers) : w.principal_arn],
         [for r in values(var.tenant.readers) : r.principal_arn],
+        [for m in values(var.tenant.metadata_readers) : m.principal_arn],
+        [for m in values(var.tenant.metadata_writers) : m.principal_arn],
       ) : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))
     ])
-    error_message = "Tenant ${var.name}: every steward, writer, and reader principal must be an IAM role or user ARN."
+    error_message = "Tenant ${var.name}: every steward, writer, reader, and metadata persona principal must be an IAM role or user ARN."
   }
 
   validation {

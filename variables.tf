@@ -192,6 +192,14 @@ variable "tenants" {
       regulations        = optional(set(string), [])
       domains            = optional(list(string))
     })), {})
+    metadata_readers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
+    metadata_writers = optional(map(object({
+      principal_arn = string
+      zones         = optional(list(string))
+    })), {})
     row_filters = optional(map(object({
       reader                = string
       zone                  = string

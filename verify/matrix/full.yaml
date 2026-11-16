@@ -458,7 +458,7 @@ personas:
         op: add_lf_tags
         resource: { tenant: alpha, table: customers }
         expect: denied
-        rule: Writers hold ASSOCIATE only on the platform labels within their limits, not fixture tags
+        rule: Writers hold ASSOCIATE only on the platform labels within their limits, not the metadata-writer key
       - id: wm-grant
         op: grant
         resource: { tenant: alpha, table: customers, grantee: control }

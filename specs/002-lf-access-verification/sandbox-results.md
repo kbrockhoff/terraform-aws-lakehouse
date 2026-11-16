@@ -20,7 +20,7 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 |-------|--------|----------|
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
-| Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
+| Metadata-only personas as module inputs | In these runs the module did not model them and the fixture granted them directly. Since awslkhs-lfj (plan.md D25) they are module personas; no sandbox run has exercised them yet | awslkhs-lfj |
 | Bucket-catalog `DESCRIBE` grant from Terraform | `lfverify seed` makes it, because the provider cannot | awslkhs-qrp |
 
 ## Runs

@@ -19,7 +19,7 @@ locals {
   )
 
   steward_label_permissions = {
-    for pair in setproduct(var.tenant.stewards, keys(local.label_scope)) : "${pair[0]}/${pair[1]}" => {
+    for pair in setproduct(var.tenant.stewards, keys(local.steward_label_scope)) : "${pair[0]}/${pair[1]}" => {
       principal_arn = pair[0]
       key           = pair[1]
     }
@@ -107,10 +107,10 @@ resource "aws_lakeformation_permissions" "steward_label" {
 
   lf_tag {
     key    = each.value.key
-    values = local.label_scope[each.value.key]
+    values = local.steward_label_scope[each.value.key]
   }
 
-  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.metadata_writer, terraform_data.admin_guard]
 }
 
 resource "aws_lakeformation_permissions" "steward_tenant_tag" {
@@ -244,6 +244,89 @@ resource "aws_lakeformation_permissions" "reader_table" {
   }
 
   depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter, terraform_data.admin_guard]
+}
+
+# Metadata readers: DESCRIBE on the databases and tables in their zones. DESCRIBE shows the full
+# schema, sensitivity labels included, and grants no data access.
+
+resource "aws_lakeformation_permissions" "metadata_reader" {
+  for_each = {
+    for pair in setproduct(keys(local.metadata_reader_grants), ["DATABASE", "TABLE"]) : "${pair[0]}/${pair[1]}" => {
+      principal_arn = local.metadata_reader_grants[pair[0]].principal_arn
+      zones         = local.metadata_reader_grants[pair[0]].zones
+      resource_type = pair[1]
+    }
+  }
+
+  principal   = each.value.principal_arn
+  permissions = ["DESCRIBE"]
+
+  lf_tag_policy {
+    catalog_id    = local.account_id
+    resource_type = each.value.resource_type
+    dynamic "expression" {
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
+      content {
+        key    = expression.value.key
+        values = expression.value.values
+      }
+    }
+  }
+
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
+}
+
+# Metadata writers: create tables in their zones, and alter (and in Baseline drop) the tables
+# stewards tag for them. The creator of a table receives every permission on it, SELECT included,
+# so a metadata writer can read the tables it creates itself.
+
+resource "aws_lakeformation_permissions" "metadata_writer_database" {
+  for_each = local.metadata_writer_grants
+
+  principal   = each.value.principal_arn
+  permissions = ["CREATE_TABLE", "DESCRIBE"]
+
+  lf_tag_policy {
+    catalog_id    = local.account_id
+    resource_type = "DATABASE"
+    dynamic "expression" {
+      for_each = [local.tenant_term, { key = local.zone_key, values = each.value.zones }]
+      content {
+        key    = expression.value.key
+        values = expression.value.values
+      }
+    }
+  }
+
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
+}
+
+resource "aws_lakeformation_permissions" "metadata_writer_table" {
+  for_each = local.metadata_writer_grants
+
+  principal = each.value.principal_arn
+  permissions = concat(
+    ["ALTER", "DESCRIBE"],
+    local.effective.writer_drop_enabled ? ["DROP"] : [],
+  )
+
+  lf_tag_policy {
+    catalog_id    = local.account_id
+    resource_type = "TABLE"
+    dynamic "expression" {
+      for_each = [
+        local.tenant_term,
+        { key = local.zone_key, values = each.value.zones },
+        { key = aws_lakeformation_lf_tag.metadata_writer[0].key, values = ["yes"] },
+      ]
+      content {
+        key    = expression.value.key
+        values = expression.value.values
+      }
+    }
+  }
+
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, terraform_data.admin_guard]
 }
 
 # ----

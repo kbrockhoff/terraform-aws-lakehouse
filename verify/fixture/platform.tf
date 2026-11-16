@@ -81,6 +81,13 @@ locals {
           sensitivity_values = local.inject_drop_column_restriction ? local.all_sensitivity : ["public", "internal", "confidential"]
         }
       }) : k => r if k != local.inject_dropped_persona }
+      # Metadata personas (FR-011, FR-012); labels.tf tags scratch for the metadata writer
+      metadata_readers = {
+        meta_reader = { principal_arn = local.role_arn["meta_reader"], zones = ["curated"] }
+      }
+      metadata_writers = {
+        meta_writer = { principal_arn = local.role_arn["meta_writer"], zones = ["curated"] }
+      }
       row_filters = local.alpha_row_filters
     }
     beta = {
@@ -96,6 +103,9 @@ locals {
           sensitivity_values = local.all_sensitivity
         }
       } : k => r if k != local.inject_dropped_persona }
+      metadata_readers = {
+        meta_reader = { principal_arn = local.role_arn["meta_reader"] }
+      }
     }
     gamma = {
       owner       = "lfverify@example.com"

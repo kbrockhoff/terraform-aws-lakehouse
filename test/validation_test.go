@@ -55,7 +55,14 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"tenant zone not a platform zone", override("finance", map[string]interface{}{"zones": []string{"gold"}}),
 			"must be a platform zone"},
 		{"writer zone outside tenant zones", override("sales", map[string]interface{}{"zones": []string{"raw"}}),
-			"writer and reader zones must be among the tenant's zones"},
+			"writer, reader, and metadata persona zones must be among the tenant's zones"},
+		{"metadata writer zone outside tenant zones", override("finance", map[string]interface{}{
+			"zones":            []string{"curated"},
+			"metadata_writers": map[string]interface{}{"m": map[string]interface{}{"principal_arn": "arn:aws:iam::123456789012:role/m", "zones": []string{"raw"}}}}),
+			"metadata persona zones must be among the tenant's zones"},
+		{"metadata reader not an IAM ARN", override("finance", map[string]interface{}{
+			"metadata_readers": map[string]interface{}{"m": map[string]interface{}{"principal_arn": "m"}}}),
+			"must be an IAM role or user ARN"},
 		{"empty principal ARN", override("sales", map[string]interface{}{"stewards": []string{""}}),
 			"must be an IAM role or user ARN"},
 		{"reader above tenant ceiling", override("finance", reader(map[string]interface{}{

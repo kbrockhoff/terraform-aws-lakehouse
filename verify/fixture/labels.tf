@@ -87,7 +87,7 @@ resource "aws_lakeformation_resource_lf_tags" "scratch_mw" {
   }
 
   lf_tag {
-    key   = aws_lakeformation_lf_tag.mw.key
+    key   = module.lakehouse.tenants["alpha"].metadata_writer_tag_key
     value = "yes"
   }
 
