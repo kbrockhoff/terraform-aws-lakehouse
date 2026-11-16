@@ -57,8 +57,9 @@ var (
 )
 
 // iamRefusal is IAM's phrasing when no identity policy allows the call, as opposed to a Lake
-// Formation denial
-var iamRefusal = regexp.MustCompile(`is not authorized to perform: [a-z0-9-]+:[A-Za-z]+`)
+// Formation denial. Athena says "You are not authorized to perform: athena:StartQueryExecution"
+// (run 1b69b0, 2026-11-16); other services name the principal ("User: ... is not authorized").
+var iamRefusal = regexp.MustCompile(`not authorized to perform: [a-z0-9-]+:[A-Za-z]+`)
 
 // IAMRefusal reports whether a denial came from IAM, before Lake Formation was consulted.
 func IAMRefusal(ev Evidence) bool {

@@ -184,7 +184,7 @@ Optional checks are:
 - `setup`, a scenario mutation that is applied and reverted around the case:
   `relabel_column_restricted`, `relabel_table_restricted`, `late_table`, or `all_rows_filter`;
 - `denied_by: lake_formation`, used with `expect: denied`: the case fails when IAM refused the
-  call (`is not authorized to perform`) before Lake Formation was consulted;
+  call (`not authorized to perform: <action>`) before Lake Formation was consulted;
 - `resource.via: named` (full mode, `style: label` query cases): runs the query through the
   named baseline's workgroups, which every persona reaches, so a label-style denial comes from
   Lake Formation rather than the module's workgroup-scoped IAM policy.

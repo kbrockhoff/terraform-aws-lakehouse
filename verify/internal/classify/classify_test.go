@@ -39,8 +39,11 @@ func TestClassify(t *testing.T) {
 
 func TestIAMRefusal(t *testing.T) {
 	iam := Evidence{Code: "AccessDeniedException", Message: "User: arn:aws:sts::1:assumed-role/r/s is not authorized to perform: athena:StartQueryExecution on resource: arn:aws:athena:us-east-1:1:workgroup/w because no identity-based policy allows the athena:StartQueryExecution action"}
-	if !IAMRefusal(iam) {
-		t.Error("IAM refusal not recognized")
+	athena := Evidence{Code: "AccessDeniedException", Message: "You are not authorized to perform: athena:StartQueryExecution on the resource. After your AWS administrator or you have updated your permissions, please try again."}
+	for _, ev := range []Evidence{iam, athena} {
+		if !IAMRefusal(ev) {
+			t.Errorf("IAM refusal not recognized: %s", ev.Message)
+		}
 	}
 	for _, msg := range []string{
 		"Insufficient Lake Formation permission(s) on orders (Service: LakeFormation)",
