@@ -111,7 +111,24 @@ data "aws_iam_policy_document" "query_results" {
   # Uploads without encryption headers get the bucket default key, which a workgroup without a
   # result encryption setting needs (awslkhs-cdq). These statements deny only explicit headers that
   # name something other than the key. "aws:kms" without a key ID would use the AWS managed
-  # aws/s3 key, not the bucket default, so it is denied as well.
+  # aws/s3 key, not the bucket default, so it is denied as well. SSE-C uploads send their own
+  # headers instead and would skip the key, so any SSE-C header is denied.
+  statement {
+    sid    = "DenySseC"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.query_results[0].arn}/*"]
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-customer-algorithm"
+      values   = ["false"]
+    }
+  }
+
   statement {
     sid    = "DenyNonKmsEncryption"
     effect = "Deny"
