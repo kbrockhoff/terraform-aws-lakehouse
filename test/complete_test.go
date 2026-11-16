@@ -230,6 +230,10 @@ func TestTerraformCompleteExample(t *testing.T) {
 		assert.Equal(t, "restricted", tg["DataClassification"], addr)
 		assert.Equal(t, "HIPAA", tg["ComplianceFrameworks"], addr)
 	}
+	// The tenant key carries the designation but no data tags (awslkhs-jgzf)
+	keyTags, _ := tags(changes[tenantPrefix("claims")+"aws_kms_key.this[0]"])
+	assert.Equal(t, "HIPAA", keyTags["ComplianceFrameworks"])
+	assert.NotContains(t, keyTags, "DataClassification")
 	for addr, rc := range changes {
 		if strings.HasPrefix(addr, shared+"aws_s3tables_table_bucket.zone[") || addr == shared+"aws_s3_bucket.query_results[0]" {
 			tg, _ := tags(rc)
@@ -350,9 +354,12 @@ func TestCompleteExampleSecurityControls(t *testing.T) {
 		}
 		statements := list(after(rc)["statement"])
 		isBucketPolicy := regexp.MustCompile(`\.(zone_bucket|dedicated_bucket|query_results|results)\b`).MatchString(addr)
-		hasTLSDeny := false
+		hasTLSDeny, hasSseCDeny := false, false
 		for _, s := range statements {
 			sm := s.(map[string]interface{})
+			if sm["sid"] == "DenySseC" && sm["effect"] == "Deny" {
+				hasSseCDeny = true
+			}
 			for _, c := range list(sm["condition"]) {
 				cm := c.(map[string]interface{})
 				if sm["effect"] == "Deny" && cm["variable"] == "aws:SecureTransport" && strs(cm["values"])[0] == "false" {
@@ -369,6 +376,10 @@ func TestCompleteExampleSecurityControls(t *testing.T) {
 		if isBucketPolicy {
 			bucketPolicyDocs++
 			assert.True(t, hasTLSDeny, "%s must deny insecure transport", addr)
+		}
+		// SSE-C uploads would skip the results key (awslkhs-pdpf)
+		if regexp.MustCompile(`\.(query_results|results)\b`).MatchString(addr) {
+			assert.True(t, hasSseCDeny, "%s must deny SSE-C uploads", addr)
 		}
 	}
 	assert.GreaterOrEqual(t, bucketPolicyDocs, 4, "zone, dedicated, shared results, and tenant results policies")

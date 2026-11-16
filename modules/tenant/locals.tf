@@ -114,9 +114,11 @@ locals {
     DataOwner = var.tenant.owner
   }
   tags = merge(var.platform.common_tags, var.tags, local.tenant_tags)
+  # Compliance-only resources (the tenant key and its data) carry the designation
+  compliance_tags = local.designated ? {
+    ComplianceFrameworks = join(" ", sort(tolist(var.tenant.compliance_frameworks)))
+  } : {}
   data_tags = merge(local.tags, var.platform.data_tags, local.tenant_tags, {
     DataClassification = var.tenant.sensitivity
-    }, local.designated ? {
-    ComplianceFrameworks = join(" ", sort(tolist(var.tenant.compliance_frameworks)))
-  } : {})
+  }, local.compliance_tags)
 }
