@@ -37,6 +37,21 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+func TestIAMRefusal(t *testing.T) {
+	iam := Evidence{Code: "AccessDeniedException", Message: "User: arn:aws:sts::1:assumed-role/r/s is not authorized to perform: athena:StartQueryExecution on resource: arn:aws:athena:us-east-1:1:workgroup/w because no identity-based policy allows the athena:StartQueryExecution action"}
+	if !IAMRefusal(iam) {
+		t.Error("IAM refusal not recognized")
+	}
+	for _, msg := range []string{
+		"Insufficient Lake Formation permission(s) on orders (Service: LakeFormation)",
+		"SCHEMA_NOT_FOUND: line 1:15: Schema 'gamma' does not exist",
+	} {
+		if IAMRefusal(Evidence{Message: msg}) {
+			t.Errorf("Lake Formation denial taken for IAM: %s", msg)
+		}
+	}
+}
+
 func TestQueryFailure(t *testing.T) {
 	both := Exists{Resource: true, Column: true}
 	cases := []struct {

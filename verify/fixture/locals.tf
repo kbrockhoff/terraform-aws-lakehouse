@@ -32,9 +32,25 @@ locals {
   # and cannot be merged into one policy
   persona_module_docs = merge([
     for p, v in local.personas : {
-      for d in v.module_docs : "${p}/${d[0]}" => { persona = p, tenant = d[0], doc_key = d[1] }
+      for d in v.module_docs : "${p}/${d[0]}" => {
+        persona = p
+        tenant  = d[0]
+        # Documents depend only on the persona kind, so when missing_grant drops a persona from
+        # the module, another document in the tenant (same kind first) keeps its IAM access and
+        # Lake Formation alone denies it
+        doc_key = contains(local.tenant_doc_keys[d[0]], d[1]) ? d[1] : concat(
+          [for k in local.tenant_doc_keys[d[0]] : k if split("/", k)[0] == split("/", d[1])[0]],
+          local.tenant_doc_keys[d[0]],
+        )[0]
+      }
     }
   ]...)
+
+  # persona_policy_json keys each tenant's module config produces for readers and writers
+  tenant_doc_keys = { for t, c in local.tenants : t => concat(
+    [for k in keys(try(c.readers, {})) : "reader/${k}"],
+    [for k in keys(try(c.writers, {})) : "writer/${k}"],
+  ) }
 
   # Fixture tables, created by lfverify seed in every namespace of both styles. ssn is the
   # restricted column, order_date the partition column, and attrs the map column that row

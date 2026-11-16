@@ -31,6 +31,9 @@ func Evaluate(c matrix.Case, res ops.Result, obs Observation) (report.Status, st
 	switch c.Expect {
 	case matrix.Denied:
 		if res.Outcome == classify.Denied {
+			if c.DeniedBy == matrix.LakeFormation && classify.IAMRefusal(res.Evidence) {
+				return report.Fail, "denied by IAM, so Lake Formation was not consulted: " + firstLine(res.Evidence.Message)
+			}
 			return report.Pass, ""
 		}
 		return report.Fail, fmt.Sprintf("expected denial, got %s", res.Outcome)

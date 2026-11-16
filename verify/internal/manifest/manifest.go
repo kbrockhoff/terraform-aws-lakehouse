@@ -166,6 +166,15 @@ func (m *Manifest) Resolve(style matrix.Style, r matrix.Resource) (Target, error
 	if !ok {
 		return Target{}, fmt.Errorf("no %s namespace %q in manifest", style, key)
 	}
+	if r.Via == matrix.Named {
+		// Every named namespace shares the baseline workgroups and results location
+		via, ok := m.Styles.Named.Namespaces["n_alpha"]
+		if !ok {
+			return Target{}, fmt.Errorf("no named namespace %q in manifest for via", "n_alpha")
+		}
+		ns.Workgroup, ns.DMLWorkgroup, ns.ResultsLocation = via.Workgroup, via.DMLWorkgroup, via.ResultsLocation
+		key += " via " + string(matrix.Named)
+	}
 	_, known := m.Tables[r.Table]
 	return Target{
 		Namespace: ns,

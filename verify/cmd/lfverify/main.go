@@ -35,7 +35,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/identity"
-	matrixfiles "github.com/kbrockhoff/terraform-aws-lakehouse/verify/matrix"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/inspect"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/manifest"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/matrix"
@@ -45,6 +44,7 @@ import (
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/runner"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/seed"
 	"github.com/kbrockhoff/terraform-aws-lakehouse/verify/internal/snapshot"
+	matrixfiles "github.com/kbrockhoff/terraform-aws-lakehouse/verify/matrix"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -568,6 +568,19 @@ func detectScenarios(personas []string) [][2]string {
 	return append(out, [2]string{"drop_column_restriction", "reader_cols"}, [2]string{"drop_row_filter", "reader_rows"}, [2]string{"open_default", ""})
 }
 
+// detected reports whether an overlay made enough cases fail. missing_grant removes both the
+// named grants and the persona's module (label) grants, so each style must show a failing case.
+func detected(inject string, failing []report.Result) bool {
+	if inject != "missing_grant" {
+		return len(failing) > 0
+	}
+	styles := map[string]bool{}
+	for _, res := range failing {
+		styles[res.Style] = true
+	}
+	return styles[string(matrix.Label)] && styles[string(matrix.Named)]
+}
+
 func cmdDetect(ctx context.Context, f *flags) error {
 	man, err := f.loadManifest()
 	if err != nil {
@@ -632,14 +645,17 @@ func cmdDetect(ctx context.Context, f *flags) error {
 			if err := preflight.NoOpenDefaults(ctx, lakeformation.NewFromConfig(e.cfg), dbs); err != nil {
 				o.Failing = []string{"preflight: " + err.Error()}
 			}
+			o.Detected = len(o.Failing) > 0
 		} else {
+			var failing []report.Result
 			for _, res := range r.Run(ctx).Results {
 				if res.Status == report.Fail {
+					failing = append(failing, res)
 					o.Failing = append(o.Failing, res.ID)
 				}
 			}
+			o.Detected = detected(sc[0], failing)
 		}
-		o.Detected = len(o.Failing) > 0
 		if !o.Detected {
 			missed++
 		}

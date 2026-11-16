@@ -31,6 +31,8 @@ func TestEvaluate(t *testing.T) {
 	}{
 		{"error is not run", matrix.Case{Expect: matrix.Denied}, ops.Result{Outcome: classify.Error, Evidence: classify.Evidence{Code: "INTERNAL_ERROR_QUERY_ENGINE"}}, Observation{}, report.NotRun, "INTERNAL_ERROR"},
 		{"denied as expected", matrix.Case{Expect: matrix.Denied}, ops.Result{Outcome: classify.Denied}, Observation{}, report.Pass, ""},
+		{"denied by lake formation", matrix.Case{Expect: matrix.Denied, DeniedBy: matrix.LakeFormation}, ops.Result{Outcome: classify.Denied, Evidence: classify.Evidence{Message: "SCHEMA_NOT_FOUND: Schema 'gamma' does not exist"}}, Observation{}, report.Pass, ""},
+		{"denied by iam instead", matrix.Case{Expect: matrix.Denied, DeniedBy: matrix.LakeFormation}, ops.Result{Outcome: classify.Denied, Evidence: classify.Evidence{Code: "AccessDeniedException", Message: "User: x is not authorized to perform: athena:StartQueryExecution on resource: w"}}, Observation{}, report.Fail, "denied by IAM"},
 		{"over-permissive", matrix.Case{Expect: matrix.Denied}, allowed(nil), Observation{}, report.Fail, "expected denial"},
 		{"rejected", matrix.Case{Expect: matrix.Rejected}, ops.Result{Outcome: classify.Rejected}, Observation{}, report.Pass, ""},
 		{"rejection accepted", matrix.Case{Expect: matrix.Rejected}, allowed(nil), Observation{}, report.Fail, "accepted"},

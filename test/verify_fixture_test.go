@@ -99,6 +99,23 @@ func TestVerifyFixture(t *testing.T) {
 		assert.NotContains(t, a, `aws_lakeformation_permissions.named_filter["n_rows_eu"]`)
 		assert.NotContains(t, a, `aws_lakeformation_permissions.named_database["reader_rows/database/n_alpha"]`)
 		assert.Contains(t, a, `aws_lakeformation_permissions.named_filter["n_cells_eu"]`, "other personas keep their grants")
+
+		// The label style drops the persona from the module tenant, keeping its identity policy
+		alpha := `module.lakehouse.module.tenant["alpha"].`
+		assert.NotContains(t, a, alpha+`aws_lakeformation_permissions.reader_table["reader_rows"]`)
+		assert.Contains(t, a, alpha+`aws_lakeformation_permissions.reader_table["reader_cells"]`)
+		assert.Equal(t, 1, countWithPrefix(a, alpha+"aws_lakeformation_data_cells_filter.this["), "only the cells filter remains")
+		assert.Contains(t, a, `aws_iam_role_policy.module_doc["reader_rows/alpha"]`)
+	})
+
+	// beta has one reader and one writer, so a dropped writer falls back to the reader's document
+	t.Run("inject_missing_grant_label_fallback", func(t *testing.T) {
+		t.Parallel()
+		a := addresses(t, map[string]interface{}{"stage": 2, "inject": "missing_grant", "inject_persona": "writer_multi"})
+		for _, tn := range []string{"alpha", "beta"} {
+			assert.NotContains(t, a, `module.lakehouse.module.tenant["`+tn+`"].aws_lakeformation_permissions.writer_table["writer_multi"]`)
+			assert.Contains(t, a, `aws_iam_role_policy.module_doc["writer_multi/`+tn+`"]`)
+		}
 	})
 
 	t.Run("inject_requires_persona", func(t *testing.T) {

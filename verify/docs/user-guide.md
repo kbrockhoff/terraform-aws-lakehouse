@@ -153,7 +153,7 @@ personas:
 | `expect` | Passes when |
 |---|---|
 | `allowed` | The call succeeds, and every optional check below holds |
-| `denied` | Lake Formation or IAM denies the call, or hides the resource |
+| `denied` | Lake Formation or IAM denies the call, or hides the resource. With `denied_by: lake_formation`, an IAM refusal fails the case |
 | `absent` | The named columns (`absent_columns`), or the listed object, are not returned |
 | `inspect` | For write operations: the persona's effective permissions on the table include every entry in `expect_permissions`, for example `[INSERT, DELETE]`. Nothing is attempted |
 

@@ -60,6 +60,14 @@ func TestResolve(t *testing.T) {
 	if d := n.ForDML(); d.Workgroup != "lfv-abc123-named" {
 		t.Errorf("without a DML workgroup the read workgroup is kept: %s", d.Workgroup)
 	}
+	// via named keeps the label namespace but queries through the named baseline's workgroup
+	v, err := m.Resolve(matrix.Label, matrix.Resource{Tenant: "alpha", Table: "orders", Via: matrix.Named})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Database != "alpha" || v.Workgroup != "lfv-abc123-named" || v.ForDML().Workgroup != "lfv-abc123-named" || v.ResultsLocation != "s3://n/" {
+		t.Errorf("via named target: %+v", v)
+	}
 	if _, err := m.Resolve(matrix.Label, matrix.Resource{Tenant: "zeta"}); err == nil {
 		t.Error("unknown tenant must fail")
 	}

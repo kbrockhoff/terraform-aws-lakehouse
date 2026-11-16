@@ -16,9 +16,9 @@ end to end: 898 s for `77dc1f`, of which the matrix itself took 7 min 17 s. Targ
 
 | Check | Reason | Tracking |
 |-------|--------|----------|
-| Label-style Lake Formation denial of reader DML (`rs-insert`, `rm-insert`, `rm-update`, `rm-delete`) | Since run `c59e08`, DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial | awslkhs-ptos |
-| Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22) | awslkhs-ptos |
-| Missing-grant detection in the label style | The label-style grants belong to the module, so `missing_grant` overlays remove only named grants. Label detection is covered by `drop_column_restriction`, `drop_row_filter`, and `open_default` | awslkhs-sr2a |
+| Label-style Lake Formation denial of reader DML (`rs-insert`, `rm-insert`, `rm-update`, `rm-delete`) | Since run `c59e08`, DML runs through the tenant DML workgroup, which readers cannot reach, so IAM refuses these before Lake Formation is consulted. The named style shows the Lake Formation denial. `rs-insert-lf` (plan.md D24) now covers it but has not run yet | awslkhs-ptos |
+| Label-style Lake Formation denial on the gamma tenant | Gamma queries are refused by IAM (no access to gamma's workgroup) before Lake Formation is consulted. The named style shows the Lake Formation denial (plan.md D22). The `*-select-gamma-lf` cases (plan.md D24) now cover it but have not run yet | awslkhs-ptos |
+| Missing-grant detection in the label style | In these runs the label-style grants belonged to the module, so `missing_grant` overlays removed only named grants. Label detection was covered by `drop_column_restriction`, `drop_row_filter`, and `open_default`. Since `awslkhs-sr2a` (plan.md D23) the overlay also drops the persona from the module tenants and detect requires a failing `/label` case; no detect run has exercised it yet | awslkhs-sr2a |
 | Writes and grants in probe mode | By design (FR-029): verified by inspecting effective permissions, never attempted | — |
 | Steward persona | Not in the v1 matrix; covered by 001's T076 | — |
 | Metadata-only personas as module inputs | The module does not model them; the fixture grants them directly | awslkhs-lfj |
