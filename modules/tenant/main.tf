@@ -40,5 +40,6 @@ module "cost_estimation" {
   s3_bucket_count          = local.designated ? 1 : 0
   athena_workgroup_count   = local.workgroup_count
   cloudwatch_metric_count  = local.effective.monitoring_enabled ? 2 * local.workgroup_count : 0
-  alarm_count              = local.effective.alarms_enabled ? 2 * local.workgroup_count : 0
+  # Alarms are billed per metric: the failure alarm has one per query type, scanned bytes one
+  alarm_count = local.effective.alarms_enabled ? (length(local.alarmed_query_types) + 1) * local.workgroup_count : 0
 }

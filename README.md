@@ -288,9 +288,9 @@ CloudWatch alarms, and Athena results). Tenant keys for designated tenants are a
 
 Each tenant gets the Athena workgroup `<prefix>-<tenant>` with enforced settings: results under
 `s3://<shared results bucket>/<tenant>/` (or the designated tenant's own bucket), SSE-KMS, the scan cutoff, and
-CloudWatch metrics. When alarms are enabled, `query_failures` and `scanned_bytes` alarms per tenant notify the
-platform SNS topic. The shared results bucket policy has no per-tenant statements; persona IAM policies limit each
-persona to its own workgroup and results prefix.
+CloudWatch metrics. When alarms are enabled, `query_failures` (failed DML and DDL) and `scanned_bytes` alarms per tenant
+notify the platform SNS topic. The shared results bucket policy has no per-tenant statements; persona IAM policies
+limit each persona to its own workgroup and results prefix.
 
 ### Writing Through Athena
 

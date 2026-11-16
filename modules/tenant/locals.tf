@@ -105,6 +105,9 @@ locals {
   dml_workgroup_enabled          = coalesce(var.tenant.dml_workgroup_enabled, local.effective.dml_workgroup_enabled)
   workgroup_count                = local.dml_workgroup_enabled ? 2 : 1
 
+  # Failed-query alarms sum these Athena query types (UTILITY, such as SHOW, is left out)
+  alarmed_query_types = ["DML", "DDL"]
+
   # Tenant identity wins over platform data_tags, which may carry a platform-level data owner
   tenant_tags = {
     Tenant    = var.name

@@ -200,6 +200,16 @@ func TestTerraformCompleteExample(t *testing.T) {
 	for tn := range tenantOwners {
 		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.query_failures[0]")
 		assert.Contains(t, changes, tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.scanned_bytes[0]")
+
+		// Failed DDL publishes under its own QueryType, so the failure alarm sums DML and DDL
+		var queryTypes []string
+		for _, q := range list(after(changes[tenantPrefix(tn)+"aws_cloudwatch_metric_alarm.query_failures[0]"])["metric_query"]) {
+			if dims, ok := block(q.(map[string]interface{}), "metric")["dimensions"].(map[string]interface{}); ok {
+				assert.Equal(t, "FAILED", dims["QueryState"], tn)
+				queryTypes = append(queryTypes, dims["QueryType"].(string))
+			}
+		}
+		assert.ElementsMatch(t, []string{"DML", "DDL"}, queryTypes, tn)
 	}
 
 	// Tags (FR-022)
