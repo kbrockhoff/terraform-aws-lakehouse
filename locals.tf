@@ -16,7 +16,6 @@ locals {
       force_destroy                 = false
       table_storage_class           = var.storage_config.table_storage_class
       writer_drop_enabled           = var.governance_config.writer_drop_enabled
-      required_tags_enforced        = false
       scanned_bytes_alarm_threshold = var.alarms_config.scanned_bytes_threshold
     }
     Ephemeral = {
@@ -32,7 +31,6 @@ locals {
       force_destroy                  = true
       table_storage_class            = "STANDARD"
       writer_drop_enabled            = true
-      required_tags_enforced         = false
       scanned_bytes_alarm_threshold  = 100 * 1073741824 # 100 GB
     }
     Development = {
@@ -48,7 +46,6 @@ locals {
       force_destroy                  = false
       table_storage_class            = "STANDARD"
       writer_drop_enabled            = true
-      required_tags_enforced         = false
       scanned_bytes_alarm_threshold  = 100 * 1073741824 # 100 GB
     }
     Testing = {
@@ -64,7 +61,6 @@ locals {
       force_destroy                  = false
       table_storage_class            = "STANDARD"
       writer_drop_enabled            = true
-      required_tags_enforced         = false
       scanned_bytes_alarm_threshold  = 100 * 1073741824 # 100 GB
     }
     UAT = {
@@ -80,7 +76,6 @@ locals {
       force_destroy                  = false
       table_storage_class            = "INTELLIGENT_TIERING"
       writer_drop_enabled            = false
-      required_tags_enforced         = true
       scanned_bytes_alarm_threshold  = 10 * 1099511627776 # 10 TB
     }
     Production = {
@@ -96,7 +91,6 @@ locals {
       force_destroy                  = false
       table_storage_class            = "INTELLIGENT_TIERING"
       writer_drop_enabled            = false
-      required_tags_enforced         = true
       scanned_bytes_alarm_threshold  = 10 * 1099511627776 # 10 TB
     }
     MissionCritical = {
@@ -112,7 +106,6 @@ locals {
       force_destroy                  = false
       table_storage_class            = "INTELLIGENT_TIERING"
       writer_drop_enabled            = false
-      required_tags_enforced         = true
       scanned_bytes_alarm_threshold  = 10 * 1099511627776 # 10 TB
     }
   }
@@ -191,11 +184,6 @@ locals {
     var.governance_config.shared_storage_classification,
     local.sensitivity_values[length(local.sensitivity_values) - 1],
   )
-
-  # Brockhoff Cloud tag keys
-  cost_center_key         = "CostCenter"
-  data_owner_key          = "DataOwner"
-  data_classification_key = "DataClassification"
 
   # Versioned public interface consumed by modules/tenant (plan.md: Tenant Submodule and Platform
   # Contract). Identifiers and effective settings only, never resource objects. Adding a field is

@@ -99,12 +99,6 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"integration disabled without role", map[string]interface{}{"catalog_integration_config": map[string]interface{}{
 			"enabled": false, "data_access_role_arn": "", "allow_full_table_external_data_access": false}},
 			"valid IAM role ARN when enabled is false"},
-		{"production without DataOwner tag", map[string]interface{}{"tags": map[string]interface{}{"CostCenter": "data-platform"}},
-			`"DataOwner" tag`},
-		{"CostCenter only in data_tags", map[string]interface{}{
-			"tags":      map[string]interface{}{"DataOwner": "platform-data@example.com"},
-			"data_tags": map[string]interface{}{"CostCenter": "data-platform"}},
-			`"CostCenter" tag`},
 		{"zone with underscore", map[string]interface{}{"zones_config": map[string]interface{}{"zones": []string{"raw", "raw_v2"}}},
 			"no underscores"},
 		{"dedicated bucket name too long", merged(map[string]interface{}{"name_prefix": longPrefix},

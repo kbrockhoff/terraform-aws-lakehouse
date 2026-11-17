@@ -130,17 +130,6 @@ locals {
   # Failed-query alarms sum these Athena query types (UTILITY, such as SHOW, is left out)
   alarmed_query_types = ["DML", "DDL"]
 
-  # Tenant identity wins over platform data_tags, which may carry a platform-level data owner
-  tenant_tags = {
-    Tenant    = var.name
-    DataOwner = var.tenant.owner
-  }
-  tags = merge(var.platform.common_tags, var.tags, local.tenant_tags)
-  # Compliance-only resources (the tenant key and its data) carry the designation
-  compliance_tags = local.designated ? {
-    ComplianceFrameworks = join(" ", sort(tolist(var.tenant.compliance_frameworks)))
-  } : {}
-  data_tags = merge(local.tags, var.platform.data_tags, local.tenant_tags, {
-    DataClassification = var.tenant.sensitivity
-  }, local.compliance_tags)
+  tags      = merge(var.platform.common_tags, var.tags)
+  data_tags = merge(local.tags, var.platform.data_tags)
 }

@@ -121,7 +121,7 @@ under Complexity Tracking.
 | Embed Compliance into the Architecture | ✅ | No-cost controls always apply: KMS CMK, TLS-deny policies, public access block, residency (no replication), tenant isolation, tag-based sensitivity and regulation labels, and erasure through unreferenced-file removal windows. Cost-incurring framework controls are gated per tenant. A `check` block warns when a designated tenant exists in a Baseline environment type. |
 | Optimize for Cost Efficiency | ✅ | Serverless only: S3 Tables, Glue Data Catalog, Lake Formation, and Athena. Non-designated tenants share zone buckets and add $0 idle cost. Each tenant workgroup has a `bytes_scanned_cutoff_per_query`, and the results bucket has lifecycle expiration. Per-tenant workgroups give usage attribution. The cost estimate is extended. Enhanced table buckets default new tables to the S3 Tables Intelligent-Tiering storage class (FR-005), which moves data to Infrequent Access after 30 days and Archive Instant Access after 90. Baseline uses Standard because its data is short-lived. Query results expire instead of tiering. |
 | Protect Data Durability and Recoverability | ✅ | The S3 Tables snapshot management default (max snapshot age 120 h) is at least every environment type's RPO. Writers get `DROP` only in Baseline (`writer_drop_enabled`). In Enhanced only data-lake admins and stewards can drop tables. A table bucket cannot be deleted while it holds tables, and `force_destroy` is set only for Ephemeral. Enhanced uses a 30-day KMS deletion window. |
-| Establish Resource Identity and Accountability | ✅ | `name_prefix` naming on every resource, and `common_tags` on all. Tenant resources also carry the `Tenant` tag and `DataOwner = tenant.owner`. Storage carries a computed `DataClassification` (FR-022). Compliance-only resources carry `ComplianceFrameworks`. In Enhanced, a precondition requires `CostCenter` in `tags` and `DataOwner` in `tags` or `data_tags`. KMS keys carry common tags only; `data_tags` go only on data-at-rest. |
+| Establish Resource Identity and Accountability | ✅ | `name_prefix` naming on every resource, and `common_tags` on all. The module adds only `Name`, `ModuleName`, `ModuleVersion`, and `ModuleEnvType`; every other tag is caller-supplied (awslkhs-bavj). KMS keys carry common tags only; `data_tags` go only on data-at-rest. |
 | Define Small, Validated Module Contracts | ✅ | Inputs are grouped in `*_config` objects plus one `tenants` map, all with `validation` blocks. Account-level singletons live in `modules/catalog-integration`, and everything tenant-scoped lives in `modules/tenant`. That submodule is applied by the root or called standalone through the typed `platform_contract`. Outputs are ARNs, names, and policy JSON only. The unused `networktags_name` input is removed. |
 | Secure by Construction | ✅ | All policies use `aws_iam_policy_document`. Service trusts use `aws:SourceAccount` and `aws:SourceArn` conditions. Bucket and table bucket policies deny `aws:SecureTransport = false` for non-service principals. Results buckets encrypt with their key by default and deny uploads whose encryption headers name anything else, including `aws:kms` without a key ID (which would use `aws/s3`) and any SSE-C header. No wildcard principals in Allow statements. |
 | Validate Before Merge | ✅ | Every validation step in tasks uses `make` targets. New plan-only tests cover tenancy, each feature flag, per-tenant designation, and invalid inputs. The CI workflow is switched to the same `make` targets, with TFLint and terraform-docs installed. |
@@ -268,9 +268,8 @@ No provisioned compute. All processing is serverless and billed per use:
   `unreferenced_days` and `non_current_days` from environment defaults.
 - Default storage class for new tables: the effective `table_storage_class` (FR-005).
 - `force_destroy = true` only for `Ephemeral`.
-- The `DataClassification` tag is `local.shared_storage_classification`, a platform setting that
-  never depends on tenants (FR-022). The tenant unit rejects non-dedicated tenants whose ceiling
-  ranks above it.
+- `local.shared_storage_classification` is a platform setting that never depends on tenants
+  (FR-022). The tenant unit rejects non-dedicated tenants whose ceiling ranks above it.
 
 **Dedicated tenant storage (FR-002, FR-028): `aws_s3tables_table_bucket.dedicated`, tenant submodule**
 - One per tenant zone, created when `local.dedicated = var.tenant.dedicated_storage ||
@@ -280,7 +279,6 @@ No provisioned compute. All processing is serverless and billed per use:
   Maintenance, default storage class, and `force_destroy` match the shared buckets.
 - Dedicated storage gives the tenant its own 10,000-table quota per zone, for large tenants
   (spec, Scalability). It has no idle cost.
-- Tags add `Tenant`, the tenant's `DataOwner`, and, only when designated, `ComplianceFrameworks`.
 - Validation:
   - `length(name_prefix) + length(zone) + length(tenant) + 2 <= 63`;
   - no dedicated bucket name equals a shared bucket name. For example, a zone `raw-x` would
@@ -577,7 +575,7 @@ Lake Formation itself limits these actions to the tenant scope above.
   - Athena and S3 for results, via `kms:ViaService`.
 - Designated tenants add `aws_kms_key.this` with an alias in the tenant submodule. Its policy has the same
   three statements, with the maintenance condition limited to that tenant's dedicated bucket ARNs
-  (from the submodule's `local.dedicated_bucket_names`). It carries the `Tenant` and `ComplianceFrameworks` tags.
+  (from the submodule's `local.dedicated_bucket_names`). It carries common tags and `Name` only.
 - Rotation enabled; deletion window taken from `environment_defaults`.
 - When the consumer supplies the platform key (`encryption_config.create_kms_key = false`), the
   module can't edit its policy. It outputs `required_kms_key_policy_json` for the consumer to merge
@@ -665,7 +663,7 @@ Resource scoping:
 ### Environment Configuration
 
 These keys are added to `locals.environment_defaults`. `None` takes the explicit `*_config`
-values, except `required_tags_enforced`, which is always false under `None`.
+values.
 
 | Key | Ephemeral | Development | Testing | UAT | Production | MissionCritical |
 |-----|-----------|-------------|---------|-----|------------|-----------------|
@@ -675,7 +673,6 @@ values, except `required_tags_enforced`, which is always false under `None`.
 | `force_destroy` | true | false | false | false | false | false |
 | `table_storage_class` | STANDARD | STANDARD | STANDARD | INTELLIGENT_TIERING | INTELLIGENT_TIERING | INTELLIGENT_TIERING |
 | `writer_drop_enabled` | true | true | true | false | false | false |
-| `required_tags_enforced` | false | false | false | true | true | true |
 | `scanned_bytes_alarm_threshold` (per day, per tenant) | 100 GB | 100 GB | 100 GB | 10 TB | 10 TB | 10 TB |
 | `monitoring_enabled` / `alarms_enabled` | existing | existing | existing | existing | existing | existing |
 | `kms_key_deletion_window_days` | existing | existing | existing | existing | existing | existing |
@@ -735,13 +732,8 @@ New inputs, with validation:
 - **`tags` and `data_tags`** (Brockhoff Cloud tagging standard, FR-022): `tags` go on every
   resource; `data_tags` go only on resources containing data-at-rest (zone and dedicated table
   buckets, results buckets), never on KMS keys. There is no tag configuration input.
-  - Tag keys are fixed in locals: `CostCenter`, `DataOwner`, `DataClassification`, `Tenant`.
-  - The module writes `DataClassification` itself (FR-022): the platform's
-    `shared_storage_classification` on shared storage, and the tenant's ceiling on dedicated
-    storage.
-  - Enforcement is a `lifecycle.precondition` on `terraform_data.required_tags_guard`, created
-    when `required_tags_enforced` (Enhanced only). It checks that `tags` has `CostCenter` and that
-    `merge(tags, data_tags)` has `DataOwner`.
+  - The module adds only `Name`, `ModuleName`, `ModuleVersion`, and `ModuleEnvType` (awslkhs-bavj); it
+    neither writes nor enforces any other tag.
 - **`storage_config`**: `{ table_storage_class = string }`. Nullable, so the environment default
   applies. Validated against `["STANDARD", "INTELLIGENT_TIERING"]`.
 - **`query_config`**: `{ bytes_scanned_cutoff_per_query = number, results_expiration_days =

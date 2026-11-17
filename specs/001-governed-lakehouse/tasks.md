@@ -90,10 +90,10 @@ data resource depends on.
   - Validation: cutoff `>= 10485760` when not null, and expiration between 1 and 3650 days when not null.
   - Add `scanned_bytes_threshold` to the `alarms_config` object (number, default `null`).
   - Add `storage_config` as `object({ table_storage_class = string })`, default `{ table_storage_class = null }`, validated against `["STANDARD", "INTELLIGENT_TIERING"]` (FR-005).
-- [x] T008 Define the Brockhoff Cloud tag keys as locals in `locals.tf` (FR-022): `cost_center_key = "CostCenter"`, `data_owner_key = "DataOwner"`, `data_classification_key = "DataClassification"`. There is no tag configuration input (the earlier `required_tags_config` variable was removed in awslkhs-76ea). Enforcement itself is the T023 precondition.
+- [x] T008 Tagging (FR-022): there is no tag configuration input (the earlier `required_tags_config` variable was removed in awslkhs-76ea). The module adds only `Name`, `ModuleName`, `ModuleVersion`, and `ModuleEnvType`; it defines no other tag keys and enforces no required tags (awslkhs-bavj).
 - [x] T009 Extend `locals.environment_defaults` in `locals.tf` with the keys and values from the plan.md Environment Configuration table:
   - `query_results_expiration_days`, `bytes_scanned_cutoff_per_query`, `unreferenced_days`, `non_current_days`, `force_destroy`;
-  - `writer_drop_enabled`, `required_tags_enforced` (always false under `None`), `scanned_bytes_alarm_threshold`;
+  - `writer_drop_enabled`, `scanned_bytes_alarm_threshold`;
   - `table_storage_class`: `STANDARD` for Baseline and `INTELLIGENT_TIERING` for Enhanced (FR-005).
   - The `None` entry reads every key from its `*_config` input, and a validation requires the nullable inputs to be non-null when `environment_type = "None"`.
   - For other environment types, a non-null input overrides the default (`coalesce(input, default)`).
@@ -156,7 +156,7 @@ data resource depends on.
 ### Guards and platform LF-tags (FR-009, FR-022)
 
 - [x] T022 Add `resource "terraform_data" "secondary_admin_guard"` to `main.tf`, with `count` matching the T002 data source and a `lifecycle.precondition` that `contains(data.aws_lakeformation_data_lake_settings.current[0].admins, local.deployer_role_arn)`. The error message tells the operator to add the role to the owning deployment's `admin_principal_arns`.
-- [x] T023 Add `resource "terraform_data" "required_tags_guard"` to `main.tf` with `count = var.enabled && local.effective_config.required_tags_enforced ? 1 : 0`. Its preconditions check that `CostCenter` is non-empty in `var.tags` and `DataOwner` is non-empty in `merge(var.tags, var.data_tags)`. Error messages name the missing key. Every storage resource in Phase 3 `depends_on` this guard.
+- [x] T023 ~~Required-tags guard~~: removed in awslkhs-bavj. The module enforces no required tags.
 - [x] T024 Create `lf-tags.tf` with the platform-owned LF-tags:
   - `aws_lakeformation_lf_tag.sensitivity`: key `"${local.name_prefix}-sensitivity"`, values `governance_config.sensitivity_values`;
   - `aws_lakeformation_lf_tag.regulation` (`for_each = var.enabled ? toset(regulation_values) : []`): key `"${local.name_prefix}-reg-${each.key}"`, values `["no", "yes"]`. Comment that one key per regulation is required because a resource holds one value per LF-tag key;
@@ -177,7 +177,7 @@ tenant submodule consumes.
   - `maintenance_configuration.iceberg_unreferenced_file_removal` enabled, with `unreferenced_days` and `non_current_days` from `local.effective_config`;
   - the default storage class for new tables set to `local.effective_config.table_storage_class`, using the provider argument confirmed in T049;
   - `force_destroy = local.effective_config.force_destroy`;
-  - `tags = merge(local.common_data_tags, { (data_classification_key) = local.shared_storage_classification })`.
+  - `tags = local.common_data_tags`.
 
   Add `aws_s3tables_table_bucket_policy.zone`, built with `aws_iam_policy_document`. It grants nothing and has three deny statements:
   - `DenyInsecureTransport`: `s3tables:*` on the bucket and `bucket/*`, conditions `Bool aws:SecureTransport = false` and `Bool aws:PrincipalIsAWSService = false`;
@@ -190,7 +190,7 @@ tenant submodule consumes.
   - SSE `aws:kms` with `local.kms_key_arn` and `bucket_key_enabled = true`;
   - a lifecycle that expires objects after `local.effective_config.query_results_expiration_days` days and aborts incomplete multipart uploads after 1 day;
   - a bucket policy denying non-TLS requests from non-service principals, and uploads whose encryption headers name anything but the platform key (non-KMS encryption, `aws:kms` without a key ID, which would use the `aws/s3` key, or another key ID). Uploads without encryption headers are allowed and get the bucket default key (awslkhs-cdq);
-  - `force_destroy` from effective config, and `tags = merge(local.common_data_tags, { (data_classification_key) = local.shared_storage_classification })`. Comment that results expire instead of tiering (FR-005).
+  - `force_destroy` from effective config, and `tags = local.common_data_tags`. Comment that results expire instead of tiering (FR-005).
   Comment that the policy has no per-tenant statements, so standalone tenants never edit it.
 - [x] T028 Add `local.platform_contract` to `locals.tf` with exactly the fields in the plan.md platform contract table, including `cost_estimation_enabled`, `shared_storage_classification`, and `effective.table_storage_class`: identifiers, effective settings, zones with bucket names, ARNs, and catalog IDs, the LF-tag vocabulary, the regulation-designation map, the platform key, the data-access role, the results bucket, the SNS topic, and tag settings. Add the `platform_contract` output in `outputs.tf`, with a description stating that it is a versioned public interface (plan.md: Versioning). When `enabled = false` it is `null`.
 - [x] T029 **Checkpoint**: run `make check`, then `make lint`.
@@ -240,20 +240,20 @@ file below lives in `modules/tenant/`. Resource addresses must not depend on the
   - `label_scope` (`L(T)`): sensitivity levels up to the ceiling; per regulation, `["no", "yes"]` if declared and `["no"]` otherwise; and all domain values;
   - persona maps: `steward_grants` keyed `"<zone>/<arn>"`, `writer_grants` and `reader_grants` keyed `"<key>/<zone>"`, and `row_filters`;
   - effective cutoff and alarm threshold, from the tenant value or `var.platform.effective`;
-  - `tags`: `merge(var.platform.common_tags, var.tags, { Tenant = var.name, DataOwner = owner })`;
-  - `data_tags`: `merge(local.tags, var.platform.data_tags, { Tenant, DataOwner }, { DataClassification = sensitivity })`, re-applying the tenant identity so a platform `DataOwner` in `data_tags` cannot override the tenant owner.
+  - `tags`: `merge(var.platform.common_tags, var.tags)`;
+  - `data_tags`: `merge(local.tags, var.platform.data_tags)`.
 
 ### Encryption and storage (FR-019, FR-028)
 
 - [x] T034 Create `modules/tenant/kms.tf`: `aws_kms_key.this` and `aws_kms_alias.this`, with `count = local.designated ? 1 : 0`.
   - The policy statements match the platform's T020 statements: maintenance (scoped to `local.dedicated_bucket_names` ARNs), `var.platform.data_access_role_arn`, and Athena and S3 via `kms:ViaService`.
   - Rotation is on, and the deletion window comes from the platform effective settings.
-  - Tags are `local.tags` (common tags only, never data tags) plus `ComplianceFrameworks`.
+  - Tags are `local.tags` (common tags only, never data tags) plus `Name`.
 - [x] T035 Create `modules/tenant/storage.tf`:
   - `aws_s3tables_table_bucket.dedicated` (`for_each = local.dedicated ? local.zones : []`):
     - encrypted with `local.kms_key_arn`, which is the tenant key when designated and the platform key otherwise;
     - maintenance, default storage class (`var.platform.effective.table_storage_class`), and `force_destroy` from the platform effective settings;
-    - tags with `DataClassification` set to the tenant ceiling, plus `ComplianceFrameworks` when designated;
+    - `local.data_tags`;
   - `aws_s3tables_table_bucket_policy.dedicated`, with the same three deny statements as T026, keyed to `local.kms_key_arn`;
   - `aws_s3tables_namespace.this` (`for_each = local.zones`), with `namespace = var.name` and `table_bucket_arn = local.bucket_arn[each.key]`.
 
@@ -397,7 +397,7 @@ Validation), for both tenant entry points.
     - `claims`: domain `health`, sensitivity `restricted`, regulations `["hipaa", "gdpr"]`, and `compliance_frameworks` from a variable defaulting to `["HIPAA"]`;
   - the same semantic-layer principal listed as a consumption reader in `sales` and `finance`;
   - `environment_type = "Production"`, with alarms enabled;
-  - `tags` with `CostCenter` and `DataOwner`;
+  - `tags` with `Environment` and `Example`;
   - the same caller-default admin list pattern as T055.
   The tenant definitions live in `tenants.auto.tfvars`, so `examples/standalone-tenant` can reuse the `sales` definition.
 - [x] T057 [P] Create `examples/secondary/` (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `terraform.auto.tfvars`, `README.md`) with `catalog_integration_config = { enabled = false, data_access_role_arn = <variable> }` and one tenant. The README states that the deploying role must be in the owning deployment's admin list.
@@ -418,7 +418,7 @@ Validation), for both tenant entry points.
     - `module.main.module.catalog_integration[0].aws_glue_catalog.s3tables`;
   - absent: any root-level `aws_lakeformation_lf_tag.tenant`, any `aws_kms_key.this` or `aws_s3tables_table_bucket.dedicated` in a tenant module, and any `aws_cloudwatch_metric_alarm`;
   - the planned `monthly_cost_estimate` output is greater than 0 and at most 5 (Baseline budget);
-  - the zone buckets set the `STANDARD` default storage class, and carry `DataClassification` equal to the most sensitive `sensitivity_values` entry.
+  - the zone buckets set the `STANDARD` default storage class, carry `ModuleEnvType = Development`, and carry no `DataClassification` tag.
   Add `TestCostEstimationDisabled`, which plans `examples/defaults` with `cost_estimation_config = { enabled = false }`. It asserts:
   - `monthly_cost_estimate = 0`;
   - no tenant `module.cost_estimation` data sources;
@@ -443,12 +443,10 @@ Validation), for both tenant entry points.
   - keeps `TestEnabledFalse`, asserting no resources to add.
 
   Tag assertions (FR-022) in `TestTerraformCompleteExample`:
-  - every planned resource that supports tags carries the `CostCenter` and `DataOwner` common tags;
-  - every resource under `module.tenant["<t>"]` that supports tags carries `Tenant = <t>` and `DataOwner = <tenant owner>`;
-  - `module.tenant["claims"]` dedicated buckets carry `DataClassification = restricted` and `ComplianceFrameworks = HIPAA`;
-  - zone buckets and the shared results bucket carry `DataClassification` equal to `shared_storage_classification`.
+  - every planned resource that supports tags carries `ModuleName`, `ModuleVersion`, and `ModuleEnvType = Production`;
+  - no resource carries any tag other than the caller's `tags`, `Name`, and those three module tags (awslkhs-bavj).
 
-  Add `TestDataTagsOnlyOnDataAtRest` (awslkhs-76ea), which plans `examples/complete` with `DataOwner` only in `data_tags` plus a marker data tag, and asserts the plan succeeds, the marker is on every `aws_s3tables_table_bucket` and `aws_s3_bucket` and on no other resource (including both KMS keys), and tenant resources keep `DataOwner = <tenant owner>`.
+  Add `TestDataTagsOnlyOnDataAtRest` (awslkhs-76ea), which plans `examples/complete` with a marker data tag, and asserts the plan succeeds and the marker is on every `aws_s3tables_table_bucket` and `aws_s3_bucket` and on no other resource (including both KMS keys).
 
   Add `TestCompleteExampleSecurityControls`, which plans `examples/complete` and asserts:
   - every `aws_s3tables_table_bucket` has `encryption_configuration.sse_algorithm = "aws:kms"` with a non-empty key ARN;
@@ -495,12 +493,10 @@ Validation), for both tenant entry points.
   - `bytes_scanned_cutoff_per_query = 1000` at the platform or tenant level;
   - an unknown compliance framework;
   - integration disabled without a role ARN;
-  - `environment_type = "Production"` without the `DataOwner` tag;
   - a zone named `raw_v2` (underscore);
   - a designated tenant whose dedicated bucket name exceeds 63 characters or collides with a shared bucket;
   - a non-dedicated tenant whose `sensitivity` ranks above `shared_storage_classification`;
-  - `storage_config.table_storage_class = "GLACIER"`;
-  - `CostCenter` supplied only in `data_tags`.
+  - `storage_config.table_storage_class = "GLACIER"`.
   Add `TestRegulatedDataInBaselineWarns`, which plans `examples/complete` with `environment_type = "Development"` and asserts the plan succeeds and its output contains the `regulated_data_in_baseline` warning naming `claims` (FR-030).
 - [x] T068 Add `test-tenancy`, `test-standalone`, `test-deployer`, `test-secondary`, and `test-validation` targets to `Makefile`, following the existing `test-complete` pattern. Add them to `make help` output via `##` comments.
 - [x] T069 **Checkpoint**: run `make test`. All plan-only tests must pass. Fix failures and rerun the single failing target.

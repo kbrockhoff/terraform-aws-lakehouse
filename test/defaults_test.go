@@ -50,11 +50,12 @@ func TestTerraformDefaultsExample(t *testing.T) {
 	assert.Greater(t, cost, 0.0)
 	assert.LessOrEqual(t, cost, 5.0, "Baseline budget")
 
-	// Shared storage carries the platform classification, the most sensitive value by default
+	// The module adds only its own metadata tags (awslkhs-bavj)
 	for _, zone := range []string{"raw", "curated", "consumption"} {
 		zoneTags, ok := tags(changes[`module.main.aws_s3tables_table_bucket.zone["`+zone+`"]`])
 		if assert.True(t, ok) {
-			assert.Equal(t, "restricted", zoneTags["DataClassification"])
+			assert.Equal(t, "Development", zoneTags["ModuleEnvType"])
+			assert.NotContains(t, zoneTags, "DataClassification")
 		}
 	}
 

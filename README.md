@@ -278,17 +278,15 @@ The module creates no CloudTrail trail. Configure one in the account with:
 ## Compliance Designation
 
 Set `compliance_frameworks` (`SOC2`, `HIPAA`, `PCI_DSS`) on a tenant to designate it. A designated tenant gets
-dedicated table buckets, its own KMS key, and its own results bucket, tagged `ComplianceFrameworks`; their cost is
+dedicated table buckets, its own KMS key, and its own results bucket; their cost is
 reported as `compliance_monthly_cost`. A tenant with the `hipaa` or `pci_dss` regulation must carry the matching
 designation. A `regulated_data_in_baseline` check warns when a designated tenant runs in a Baseline environment.
 
-## Required Tags
+## Tags
 
-In Enhanced environments (`UAT`, `Production`, `MissionCritical`), `tags` must include `CostCenter`, and `tags` or
-`data_tags` must include `DataOwner`, or the plan fails. `tags` go on every resource; `data_tags` go only on resources
-containing data-at-rest (the S3 and S3 Tables buckets), not on KMS keys. The module writes `DataClassification`
-itself: the platform's `shared_storage_classification` on shared storage, and the tenant's ceiling on dedicated
-storage. Tenant resources also carry `Tenant` and the tenant's `DataOwner`.
+`tags` go on every resource; `data_tags` go only on resources containing data-at-rest (the S3 and S3 Tables buckets),
+not on KMS keys. The module adds only `Name` (on some resources), `ModuleName`, `ModuleVersion`, and `ModuleEnvType`; any other tag, such as a
+cost center or data owner, must come from `tags` or `data_tags`.
 
 ## Bring Your Own KMS Key
 
@@ -417,7 +415,6 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | [aws_s3tables_table_bucket.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3tables_table_bucket) | resource |
 | [aws_s3tables_table_bucket_policy.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3tables_table_bucket_policy) | resource |
 | [aws_sns_topic.alarms](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic) | resource |
-| [terraform_data.required_tags_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.secondary_admin_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 
 ## Inputs

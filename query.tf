@@ -13,11 +13,7 @@ resource "aws_s3_bucket" "query_results" {
   bucket        = "${local.name_prefix}-athena-results-${local.account_id}"
   force_destroy = local.effective_config.force_destroy
 
-  tags = merge(local.common_data_tags, {
-    (local.data_classification_key) = local.shared_storage_classification
-  })
-
-  depends_on = [terraform_data.required_tags_guard]
+  tags = local.common_data_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "query_results" {
