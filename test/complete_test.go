@@ -212,32 +212,21 @@ func TestTerraformCompleteExample(t *testing.T) {
 		assert.ElementsMatch(t, []string{"DML", "DDL"}, queryTypes, tn)
 	}
 
-	// Tags (FR-022)
+	// Tags: the caller's tags plus only the module metadata tags (awslkhs-bavj)
+	allowedTags := map[string]bool{
+		"Environment": true, "Example": true,
+		"Name": true, "ModuleName": true, "ModuleVersion": true, "ModuleEnvType": true,
+	}
 	for addr, rc := range changes {
 		tg, ok := tags(rc)
 		if !ok {
 			continue
 		}
-		assert.Equal(t, "data-platform", tg["CostCenter"], addr)
-		assert.NotEmpty(t, tg["DataOwner"], addr)
-		if tn := tenantOf(addr); tn != "" {
-			assert.Equal(t, tn, tg["Tenant"], addr)
-			assert.Equal(t, tenantOwners[tn], tg["DataOwner"], addr)
-		}
-	}
-	for addr, rc := range withPrefix(changes, tenantPrefix("claims")+"aws_s3tables_table_bucket.dedicated[") {
-		tg, _ := tags(rc)
-		assert.Equal(t, "restricted", tg["DataClassification"], addr)
-		assert.Equal(t, "HIPAA", tg["ComplianceFrameworks"], addr)
-	}
-	// The tenant key carries the designation but no data tags (awslkhs-jgzf)
-	keyTags, _ := tags(changes[tenantPrefix("claims")+"aws_kms_key.this[0]"])
-	assert.Equal(t, "HIPAA", keyTags["ComplianceFrameworks"])
-	assert.NotContains(t, keyTags, "DataClassification")
-	for addr, rc := range changes {
-		if strings.HasPrefix(addr, shared+"aws_s3tables_table_bucket.zone[") || addr == shared+"aws_s3_bucket.query_results[0]" {
-			tg, _ := tags(rc)
-			assert.Equal(t, "restricted", tg["DataClassification"], addr)
+		assert.Equal(t, "kbrockhoff/lakehouse/aws", tg["ModuleName"], addr)
+		assert.NotEmpty(t, tg["ModuleVersion"], addr)
+		assert.Equal(t, "Production", tg["ModuleEnvType"], addr)
+		for k := range tg {
+			assert.True(t, allowedTags[k], "%s: unexpected module-created tag %s", addr, k)
 		}
 	}
 
@@ -245,13 +234,13 @@ func TestTerraformCompleteExample(t *testing.T) {
 	assert.LessOrEqual(t, number(outputAfter(plan, "monthly_cost_estimate")), 10+3*0.50+2)
 }
 
-// TestDataTagsOnlyOnDataAtRest checks that data_tags may supply the data owner, and that they
-// reach only resources containing data-at-rest, never KMS keys.
+// TestDataTagsOnlyOnDataAtRest checks that data_tags reach only resources containing
+// data-at-rest, never KMS keys.
 func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
 	t.Parallel()
 	vars := completeVars(generateTestNamePrefix("dtag"))
-	vars["tags"] = map[string]interface{}{"Environment": "Production", "CostCenter": "data-platform"}
-	vars["data_tags"] = map[string]interface{}{"DataOwner": "platform-data@example.com", "DataAtRest": "true"}
+	vars["tags"] = map[string]interface{}{"Environment": "Production"}
+	vars["data_tags"] = map[string]interface{}{"DataAtRest": "true"}
 	changes := managedChanges(planExample(t, "complete", vars))
 
 	dataAtRest := map[string]bool{
@@ -271,9 +260,6 @@ func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
 			assert.Equal(t, "true", tg["DataAtRest"], addr)
 		} else {
 			assert.NotContains(t, tg, "DataAtRest", addr)
-		}
-		if tn := tenantOf(addr); tn != "" {
-			assert.Equal(t, tenantOwners[tn], tg["DataOwner"], addr)
 		}
 	}
 	assert.GreaterOrEqual(t, kmsKeys, 2, "platform and designated tenant KMS keys")

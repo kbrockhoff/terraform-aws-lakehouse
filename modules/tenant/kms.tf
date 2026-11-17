@@ -10,8 +10,8 @@ resource "aws_kms_key" "this" {
   enable_key_rotation     = true
   policy                  = data.aws_iam_policy_document.kms[0].json
 
-  # Common tags only, never data tags, plus the designation
-  tags = merge(local.tags, local.compliance_tags, {
+  # Common tags only, never data tags
+  tags = merge(local.tags, {
     Name = "${local.name_prefix}-${var.name}-cmk"
   })
 }

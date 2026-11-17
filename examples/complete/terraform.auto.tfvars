@@ -3,8 +3,6 @@ name_prefix = "complete-ex"
 tags = {
   Environment = "Production"
   Example     = "complete"
-  CostCenter  = "data-platform"
-  DataOwner   = "platform-data@example.com"
 }
 environment_type = "Production"
 cost_estimation_config = {

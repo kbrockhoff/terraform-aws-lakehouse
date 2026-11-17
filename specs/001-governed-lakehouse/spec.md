@@ -295,10 +295,8 @@ Platform defaults derive from `environment_type`.
   - A tenant without dedicated storage MUST have a sensitivity ceiling at or below the
     shared-storage classification. The tenant unit validates this against the platform contract.
 
-  In Enhanced environment types, the plan MUST fail unless the common tags include a cost center
-  and either the common tags or the data tags include a data owner. The tag keys are fixed by the
-  standard (`CostCenter`, `DataOwner`, `DataClassification`, `Tenant`) and are not configurable.
-  `None` does not enforce required tags. Every tenant's sensitivity ceiling, regulations, and domain MUST be among the
+  The module adds only the `Name`, `ModuleName`, `ModuleVersion`, and `ModuleEnvType` tags; all other
+  tags come from the caller's common tags and data tags (awslkhs-bavj). Every tenant's sensitivity ceiling, regulations, and domain MUST be among the
   configured values.
 - **FR-023**: When monitoring or alarms are enabled, infrastructure MUST raise alarms per tenant
   workgroup on query failures and on scanned-data volume exceeding a configurable threshold. Alarms
