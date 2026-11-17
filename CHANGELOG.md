@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.3.0...v0.3.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **tags:** remove module-created tags except Name and module metadata ([6683792](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/668379215031370f73c24deb417357ef66f70f35))
+* **tags:** remove module-created tags except Name and module metadata ([5e11abc](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/5e11abcd313b9135adddc58c2a63b9d67462fe1a))
+
 ## [0.3.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.2.0...v0.3.0) (2026-11-16)
 
 
