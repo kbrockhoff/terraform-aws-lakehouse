@@ -383,7 +383,7 @@ deployment is guarded.
 **Purpose**: Keep the platform key free of catalog statements, expose the catalog key, and add the
 bypass deny on shared buckets and the contract fields that tenants need.
 
-- [ ] T027 Edit `kms.tf` and `main.tf` to keep the catalog and storage keys separate (FR-009,
+- [x] T027 Edit `kms.tf` and `main.tf` to keep the catalog and storage keys separate (FR-009,
   FR-026):
   - **`kms.tf`**: add no statements to `data.aws_iam_policy_document.kms_key_policy` or
     `required_kms_statements`. Add a comment above the platform key: "Encrypts table buckets and
@@ -392,13 +392,13 @@ bypass deny on shared buckets and the contract fields that tenants need.
     a new `terraform_data.catalog_key_guard` with `count = var.enabled && local.settings_owner ? 1
     : 0`. When a catalog key is supplied, it must not equal any `kms_key_arn` in
     `module.tenant[*]` outputs (designated tenant keys).
-- [ ] T028 Edit `modules/account-settings/outputs.tf` and the root `outputs.tf`:
+- [x] T028 Edit `modules/account-settings/outputs.tf` and the root `outputs.tf`:
   - `catalog_kms_key_arn` (the created or supplied key);
   - `required_catalog_kms_key_policy_json`, from `required_catalog_key_statements`, for
     consumer-supplied catalog keys (FR-009). Its description says the root-access statement is
     the consumer's own responsibility;
   - update the `required_kms_key_policy_json` description to say it covers the platform key only.
-- [ ] T029 [P] Edit `table-buckets.tf` to add `DenyDirectTableAccess` to
+- [x] T029 [P] Edit `table-buckets.tf` to add `DenyDirectTableAccess` to
   `data.aws_iam_policy_document.zone_bucket` (FR-015 to FR-017):
   - **Effect and principal**: `Deny`, principal `*`.
   - **Actions**: `s3tables:GetTableData`, `s3tables:PutTableData`, `s3tables:CreateTable`,
@@ -411,7 +411,7 @@ bypass deny on shared buckets and the contract fields that tenants need.
   - **Comments**: the deny leaves S3 Tables maintenance and S3 metadata service principals
     unrestricted (R7), and namespace and bucket management stay with the deployer (FR-016).
   - Update the file's leading comment ("Grants nothing; ...") to mention the deny.
-- [ ] T030 Edit `locals.tf` to add to `local.platform_contract`:
+- [x] T030 Edit `locals.tf` to add to `local.platform_contract`:
   - `sharing = { consumer_accounts = var.sharing_config.consumer_accounts }`. Don't put the
     protocol version in the contract: a value copied at platform-apply time can be stale, so
     tenants read the live value instead (T034);
@@ -421,7 +421,7 @@ bypass deny on shared buckets and the contract fields that tenants need.
   Confirm that `data_access_role_arn` is already in the contract (it is, from 001). Mirror the new
   fields in the `platform` variable type in `modules/tenant/variables.tf`, and in
   `examples/standalone-tenant/platform_contract.auto.tfvars.json` with empty values.
-- [ ] T031 Run `make check` and `make lint`. This is the platform data checkpoint.
+- [x] T031 Run `make check` and `make lint`. This is the platform data checkpoint.
 
 **Checkpoint**: Catalog metadata is encrypted with a protected key, and shared buckets refuse
 direct access.

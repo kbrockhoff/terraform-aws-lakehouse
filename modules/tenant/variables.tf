@@ -55,6 +55,16 @@ variable "platform" {
     cost_estimation_enabled = bool
     common_tags             = map(string)
     data_tags               = map(string)
+    # Optional so contracts published before these fields still parse
+    sharing = optional(object({
+      consumer_accounts = map(object({
+        purpose              = string
+        outside_organization = optional(bool, false)
+      }))
+    }), { consumer_accounts = {} })
+    direct_access = optional(object({
+      exempt_principal_arns = list(string)
+    }), { exempt_principal_arns = [] })
   })
 
   validation {

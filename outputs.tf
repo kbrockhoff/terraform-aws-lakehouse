@@ -98,8 +98,18 @@ output "kms_alias_name" {
 }
 
 output "required_kms_key_policy_json" {
-  description = "Key policy statements the platform key needs (S3 Tables maintenance, Lake Formation data access, Athena results). Merge them into a consumer-supplied key's policy. Empty when enabled = false."
+  description = "Key policy statements the platform key needs (S3 Tables maintenance, Lake Formation data access, Athena results). Covers the platform key only; the catalog key has its own (required_catalog_kms_key_policy_json). Merge them into a consumer-supplied key's policy. Empty when enabled = false."
   value       = var.enabled ? data.aws_iam_policy_document.required_kms_statements[0].json : ""
+}
+
+output "catalog_kms_key_arn" {
+  description = "ARN of the dedicated Glue Data Catalog metadata key, created by this deployment or supplied. Empty when this deployment does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_kms_key_arn : ""
+}
+
+output "required_catalog_kms_key_policy_json" {
+  description = "Key policy statements a consumer-supplied catalog key needs (Glue grant creation, plus the catalog-encryption role or per-caller key users, plus deletion protection). Account-root access is the key owner's own responsibility. Empty when this deployment does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].required_catalog_kms_key_policy_json : ""
 }
 
 # ----

@@ -2,7 +2,8 @@
 # KMS Key for encryption
 # ----
 
-# KMS Key for encrypting SNS topics and other resources
+# KMS Key for encrypting SNS topics and other resources. Encrypts table buckets and query results
+# only; catalog metadata uses the dedicated key in modules/account-settings (FR-009).
 resource "aws_kms_key" "main" {
   count = var.enabled && var.encryption_config.create_kms_key ? 1 : 0
 

@@ -292,5 +292,14 @@ locals {
     cost_estimation_enabled = var.cost_estimation_config.enabled
     common_tags             = local.common_tags
     data_tags               = var.data_tags
+    # Approved consumer accounts for tenant shares (FR-022). No cross-account version: tenants read
+    # the live value, because a copy taken at platform-apply time can be stale.
+    sharing = {
+      consumer_accounts = var.sharing_config.consumer_accounts
+    }
+    # Principals exempt from the table-bucket deny on direct storage access (FR-015)
+    direct_access = {
+      exempt_principal_arns = var.governance_config.direct_access_exempt_principal_arns
+    }
   } : null
 }
