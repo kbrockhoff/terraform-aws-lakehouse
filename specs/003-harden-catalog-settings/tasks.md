@@ -526,7 +526,7 @@ LF-tag-bounded shares.
 
 ## Phase 6: Examples and Contract Tests (Plan-Only Terratest)
 
-- [ ] T043 [P] Edit `examples/complete` (`main.tf`, `variables.tf`, `terraform.auto.tfvars`,
+- [x] T043 [P] Edit `examples/complete` (`main.tf`, `variables.tf`, `terraform.auto.tfvars`,
   `tenants.auto.tfvars`):
   - set `studio_config = { enabled = true, integration_principal_arns = [<placeholder role ARN in
     the example account pattern used today>] }`;
@@ -535,9 +535,9 @@ LF-tag-bounded shares.
   - give one tenant a `shares` entry with `account_id = "111122223333"` and `sensitivity_values =
     ["public", "internal"]`;
   - set `governance_config.direct_access_exempt_principal_arns = []`.
-- [ ] T044 [P] Edit `examples/secondary` to set `account_settings_config = { owner = false }`
+- [x] T044 [P] Edit `examples/secondary` to set `account_settings_config = { owner = false }`
   explicitly, with a comment explaining the owner flag. Keep everything else unchanged.
-- [ ] T045 [P] Create `test/account_settings_test.go` with plan-only tests:
+- [x] T045 [P] Create `test/account_settings_test.go` with plan-only tests:
   - `TestOwnerFlagCombinations`: a table test over the four combinations of `owner` and
     `catalog_integration_config.enabled` against `examples/defaults` with `-var` overrides. Assert
     the presence or absence of `module.account_settings[0]`, `module.catalog_integration[0]`, and
@@ -563,7 +563,7 @@ LF-tag-bounded shares.
     - supplying the platform key ARN as `catalog_encryption.kms_key_arn` fails the plan.
 
   Use the helpers in `test/helpers_test.go`.
-- [ ] T046 [P] Create `test/sharing_test.go` with plan-only tests:
+- [x] T046 [P] Create `test/sharing_test.go` with plan-only tests:
   - `TestShareGrantsReadOnlyWithGrantOption`: the complete example plans `share_database` and
     `share_table` with exactly the permissions from T035, and the expressions include the tenant
     tag key.
@@ -574,7 +574,7 @@ LF-tag-bounded shares.
   - `TestShareTagDescribe`: each share plans `share_tag_describe` grants with exactly
     `DESCRIBE` and grant option `DESCRIBE`, for the tag keys and values in its expression.
   - `TestRemovingApprovedAccountStillReferencedFails`.
-- [ ] T047 Edit `test/validation_test.go` (`TestInvalidInputsFailPlan` table) to add cases:
+- [x] T047 Edit `test/validation_test.go` (`TestInvalidInputsFailPlan` table) to add cases:
   - `cross_account_version = 3`;
   - external filtering with an empty allow list;
   - a non-Deny `deny_policy_jsons`;
@@ -583,24 +583,24 @@ LF-tag-bounded shares.
   - a wildcard exempt principal;
   - a consumer account that isn't 12 digits;
   - an invalid `key_access_mode`.
-- [ ] T048 Edit `test/complete_test.go`:
+- [x] T048 Edit `test/complete_test.go`:
   - extend `TestCompleteExampleSecurityControls` to assert that `DenyDirectTableAccess` is in
     every zone and dedicated bucket policy, exempts `data_access_role_arn`, and carries the
     `aws:PrincipalIsAWSService` condition;
   - extend `TestDataTagsOnlyOnDataAtRest` to assert that the catalog-encryption role and the
     catalog key have no data tags.
-- [ ] T049 Edit `test/secondary_test.go` (`TestSecondaryExampleSkipsAccountIntegration`) to assert:
+- [x] T049 Edit `test/secondary_test.go` (`TestSecondaryExampleSkipsAccountIntegration`) to assert:
   - no `module.account_settings` resources;
   - `terraform_data.settings_guard` is present;
   - the plan contains the `aws_glue_data_catalog_encryption_settings.current` data source.
-- [ ] T050 Edit `test/standalone_test.go` and `examples/standalone-tenant` so the standalone tenant
+- [x] T050 Edit `test/standalone_test.go` and `examples/standalone-tenant` so the standalone tenant
   plan still matches the platform-applied plan with the new contract fields
   (`TestStandaloneTenantMatchesPlatformApplied`). Add a standalone `shares` rejection test
   against an empty contract `consumer_accounts`.
-- [ ] T051 Add a Makefile target `test-account-settings` in `Makefile`, modeled on
+- [x] T051 Add a Makefile target `test-account-settings` in `Makefile`, modeled on
   `test-tenancy`, running `-run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare'`.
   Add it to the `help` output.
-- [ ] T052 Run `make test`. This is the examples and tests checkpoint (use single targets for
+- [x] T052 Run `make test`. This is the examples and tests checkpoint (use single targets for
   reruns).
 
 **Checkpoint**: Every FR in this spec has a plan-time contract test.

@@ -28,6 +28,13 @@ module "main" {
     allow_full_table_external_data_access = false
   }
 
+  # Another deployment owns the account-wide Lake Formation and Glue settings. This deployment
+  # only checks the live values it depends on (data-lake admin, catalog encryption on). The owner
+  # flag defaults to catalog_integration_config.enabled; it is set here for clarity.
+  account_settings_config = {
+    owner = false
+  }
+
   # Admins are managed by the owning deployment; this list is not applied here
   governance_config = {
     admin_principal_arns = []

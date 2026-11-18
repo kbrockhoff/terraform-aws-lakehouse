@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -123,6 +123,11 @@ test-tenancy: check-aws ## Run only tenancy tests (tenant isolation, type sync, 
 	@echo "$(CYAN)Running tenancy tests (tenant isolation, type sync, zone override)...$(RESET)"
 	@cd test && go test -v -timeout 30m -run 'TestAddingTenantTouchesOnlyThatTenant|TestTenantTypeInSync|TestZoneOverrideWithoutConsumption'
 	@echo "$(GREEN)✓ test-tenancy passed$(RESET)"
+
+test-account-settings: check-aws ## Run only account settings and sharing tests (spec 003)
+	@echo "$(CYAN)Running account settings and sharing tests...$(RESET)"
+	@cd test && go test -v -timeout 45m -run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestEphemeral|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare|TestStandaloneTenantRejectsUnapprovedShare'
+	@echo "$(GREEN)✓ test-account-settings passed$(RESET)"
 
 test-standalone: check-aws ## Run only standalone tenant tests
 	@echo "$(CYAN)Running standalone tenant tests...$(RESET)"

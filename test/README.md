@@ -16,6 +16,14 @@ tests to **already be a Lake Formation data-lake admin** in the sandbox account.
 - without it, `TestSecondaryExampleSkipsAccountIntegration` is skipped;
 - without it, the standalone tests plan with `verify_deployer_admin = false`.
 
+`TestSecondaryExampleSkipsAccountIntegration` also needs Glue Data Catalog encryption turned on in
+that account, because a deployment that doesn't own the account settings checks for it.
+
+The account settings tests that supply a catalog key read it during planning, so it must exist. Set
+`LFVERIFY_CATALOG_KEY_ARN` to the long-lived sandbox catalog key (see `verify/README.md`). Without
+it, `TestEphemeralOwnerWarnsOnModuleCreatedCatalogKey` and the supplied-key part of
+`TestCatalogKeyDistinctFromPlatformKey` are skipped.
+
 The other tests pass the caller as the example's admin list, so they need no prior setup.
 
 ## Not covered at plan time

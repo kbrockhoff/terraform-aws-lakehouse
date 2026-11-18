@@ -33,6 +33,23 @@ func exampleOptions(t *testing.T, example string, vars map[string]interface{}) *
 	return opts
 }
 
+// exampleOptionsJSONVars is exampleOptions with some variables written to a .tfvars.json file.
+// Terratest renders -var values as HCL, which breaks strings that contain JSON.
+func exampleOptionsJSONVars(t *testing.T, example string, vars, jsonVars map[string]interface{}) *terraform.Options {
+	t.Helper()
+	opts := exampleOptions(t, example, vars)
+	body, err := json.Marshal(jsonVars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(opts.TerraformDir, "test.auto.tfvars.json")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts.VarFiles = append(opts.VarFiles, path)
+	return opts
+}
+
 // planExample runs init and a plan-only run and returns the parsed plan.
 func planExample(t *testing.T, example string, vars map[string]interface{}) *terraform.PlanStruct {
 	t.Helper()

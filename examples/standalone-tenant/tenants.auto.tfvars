@@ -45,5 +45,12 @@ tenants = {
         row_filter_expression = "region = 'EU'"
       }
     }
+    # Read-only, label-scoped share of the consumption zone with an approved consumer account
+    shares = {
+      partner = {
+        account_id         = "111122223333"
+        sensitivity_values = ["public", "internal"]
+      }
+    }
   }
 }

@@ -106,6 +106,18 @@ resource "terraform_data" "settings_guard" {
   }
 }
 
+# The approved consumer list never includes this account (FR-022)
+resource "terraform_data" "sharing_guard" {
+  count = var.enabled && length(var.sharing_config.consumer_accounts) > 0 ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = !contains(keys(var.sharing_config.consumer_accounts), local.account_id)
+      error_message = "sharing_config.consumer_accounts must not include this account (${local.account_id}); shares go only to other accounts."
+    }
+  }
+}
+
 # A supplied catalog key must not be a designated tenant's key (FR-009). The platform key is
 # checked inside modules/account-settings.
 resource "terraform_data" "catalog_key_guard" {

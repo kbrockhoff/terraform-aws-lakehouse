@@ -126,6 +126,24 @@ variable "catalog_integration_config" {
   }
 }
 
+variable "account_settings_config" {
+  description = "Account- and Region-wide Lake Formation and Glue Data Catalog settings; the module's account_settings_config variable enforces the type"
+  type        = any
+  default     = {}
+}
+
+variable "studio_config" {
+  description = "SageMaker Unified Studio support"
+  type        = any
+  default     = {}
+}
+
+variable "sharing_config" {
+  description = "Approved consumer accounts for same-Region cross-account shares"
+  type        = any
+  default     = {}
+}
+
 variable "governance_config" {
   description = "LF-tag vocabularies and settings, without admin_principal_arns (see admin_principal_arns)"
   type        = any

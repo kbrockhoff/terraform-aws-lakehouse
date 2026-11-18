@@ -61,11 +61,11 @@ locals {
   live_key_inspected = local.live_mode != "DISABLED" && local.live_catalog_key != ""
 }
 
-# Resolves an alias or key ID in the live settings to a key ARN and its manager
+# Resolves an alias or key ID in the live settings to a key ARN and its manager. No count: the live
+# settings can be unknown until apply (for example under a module-level depends_on), and a count
+# cannot depend on them. Without a live key it reads the catalog key, and the checks ignore it.
 data "aws_kms_key" "live_catalog" {
-  count = local.live_key_inspected ? 1 : 0
-
-  key_id = local.live_catalog_key
+  key_id = local.live_key_inspected ? local.live_catalog_key : local.catalog_key_arn
 }
 
 # Enabling encryption covers only objects written afterwards (FR-014). Disabling leaves existing
@@ -100,7 +100,7 @@ resource "aws_glue_data_catalog_encryption_settings" "this" {
     precondition {
       condition = !(
         local.service_role_mode && local.live_mode == "SSE-KMS" &&
-        try(data.aws_kms_key.live_catalog[0].key_manager, "CUSTOMER") == "AWS"
+        data.aws_kms_key.live_catalog.key_manager == "AWS"
       )
       error_message = "The catalog is encrypted with the AWS managed aws/glue key. Switching to SSE-KMS-WITH-SERVICE-ROLE would make existing catalog objects inaccessible. See the README section \"Migrating catalog encryption\"."
     }
@@ -109,9 +109,9 @@ resource "aws_glue_data_catalog_encryption_settings" "this" {
     precondition {
       condition = (
         var.environment_type == "Ephemeral" || !local.live_key_inspected ||
-        try(data.aws_kms_key.live_catalog[0].arn, "") == local.catalog_key_arn
+        data.aws_kms_key.live_catalog.arn == local.catalog_key_arn
       )
-      error_message = "The catalog is already encrypted with ${try(data.aws_kms_key.live_catalog[0].arn, local.live_catalog_key)}. Changing the catalog key after installation is not supported outside Ephemeral environments."
+      error_message = "The catalog is already encrypted with ${data.aws_kms_key.live_catalog.arn}. Changing the catalog key after installation is not supported outside Ephemeral environments."
     }
   }
 }
