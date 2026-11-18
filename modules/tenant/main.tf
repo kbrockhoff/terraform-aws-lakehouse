@@ -14,6 +14,35 @@ resource "terraform_data" "admin_guard" {
   }
 }
 
+# Shares go only to approved accounts in this Region, never to this account, and a designated
+# tenant must acknowledge that each consumer is in scope for its frameworks (FR-023, FR-025, FR-028)
+resource "terraform_data" "share_guard" {
+  count = length(var.tenant.shares) > 0 ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = alltrue([for s in values(var.tenant.shares) : contains(keys(var.platform.sharing.consumer_accounts), s.account_id)])
+      error_message = "Tenant ${var.name}: shares ${join(", ", sort([for k, s in var.tenant.shares : k if !contains(keys(var.platform.sharing.consumer_accounts), s.account_id)]))} target accounts that are not approved. Add them to the platform's sharing_config.consumer_accounts first."
+    }
+
+    precondition {
+      condition     = alltrue([for s in values(var.tenant.shares) : s.account_id != var.platform.account_id])
+      error_message = "Tenant ${var.name}: a share cannot target the platform's own account (${var.platform.account_id})."
+    }
+
+    precondition {
+      condition     = !local.designated || alltrue([for s in values(var.tenant.shares) : s.compliance_acknowledged])
+      error_message = "Tenant ${var.name} is designated (${join(", ", sort(tolist(var.tenant.compliance_frameworks)))}). Set compliance_acknowledged = true on each share to confirm the consumer is in scope for those frameworks."
+    }
+
+    # Read live, not from the contract: a copy taken at platform-apply time can be stale
+    precondition {
+      condition     = try(tonumber(data.aws_lakeformation_data_lake_settings.current[0].parameters["CROSS_ACCOUNT_VERSION"]), 0) >= 4
+      error_message = "Tenant ${var.name}: sharing S3 Tables needs Lake Formation cross-account version 4 or later, but the live version is ${try(data.aws_lakeformation_data_lake_settings.current[0].parameters["CROSS_ACCOUNT_VERSION"], "unset")}. Apply the deployment that owns the account settings first."
+    }
+  }
+}
+
 # FR-030: designated (regulated) tenants belong in Enhanced environments
 check "regulated_data_in_baseline" {
   assert {

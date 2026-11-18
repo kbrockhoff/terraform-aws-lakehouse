@@ -57,3 +57,15 @@ output "compliance_monthly_cost" {
   description = "Portion of the monthly estimate caused by the compliance designation (the tenant key)."
   value       = module.cost_estimation.compliance_monthly_cost
 }
+
+output "shares" {
+  description = "Cross-account shares, keyed by share name: the consumer account, and per shared zone the catalog ID and database, plus the table label expression. Consumers create resource links to these and grant locally."
+  value = {
+    for k, s in local.share_grants : k => {
+      account_id  = s.account_id
+      catalog_ids = { for z in s.zones : z => local.catalog_id[z] }
+      databases   = { for z in s.zones : z => aws_s3tables_namespace.this[z].namespace }
+      expression  = local.share_expressions[k]
+    }
+  }
+}

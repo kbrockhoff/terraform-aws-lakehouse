@@ -433,17 +433,17 @@ direct access.
 **Purpose**: Apply the bypass deny to dedicated buckets and add tenant-declared, read-only,
 LF-tag-bounded shares.
 
-- [ ] T032 [P] Edit `modules/tenant/storage.tf` to add the same `DenyDirectTableAccess` statement as
+- [x] T032 [P] Edit `modules/tenant/storage.tf` to add the same `DenyDirectTableAccess` statement as
   T029 to `data.aws_iam_policy_document.dedicated_bucket`. It uses
   `var.platform.data_access_role_arn` and `var.platform.direct_access.exempt_principal_arns`.
-- [ ] T033 Edit `modules/tenant/locals.tf`:
+- [x] T033 Edit `modules/tenant/locals.tf`:
   - Generalize the reader expression builder so the same code builds the LF-tag expression for a
     reader or a share: tenant term + zones + sensitivity + regulations + domains, with the
     fail-closed regulation handling of readers.
   - Add `local.share_grants`, `{ for k, s in var.tenant.shares : k => s }`, with the zones resolved
     against the tenant's zones.
   - Add `local.share_expressions`.
-- [ ] T034 Edit `modules/tenant/main.tf` to add preconditions on a new `terraform_data.share_guard`,
+- [x] T034 Edit `modules/tenant/main.tf` to add preconditions on a new `terraform_data.share_guard`,
   with `count = length(var.tenant.shares) > 0 ? 1 : 0` (FR-023, FR-025, FR-028):
   - every `account_id` is a key of `var.platform.sharing.consumer_accounts`. The message names the
     share and tells the user to add the account to the platform `sharing_config`;
@@ -456,7 +456,7 @@ LF-tag-bounded shares.
     `try(tonumber(parameters["CROSS_ACCOUNT_VERSION"]), 0)`. Update the existing admin-guard
     reference if its index expression changes. This covers platform-applied and standalone tenants
     against owner and non-owner platforms (I2).
-- [ ] T035 Create `modules/tenant/sharing.tf` with a section header and two grants per share
+- [x] T035 Create `modules/tenant/sharing.tf` with a section header and two grants per share
   (FR-021, FR-024):
   - **`aws_lakeformation_permissions.share_database`**: `principal = each.value.account_id`,
     `permissions = ["DESCRIBE"]`, `permissions_with_grant_option = ["DESCRIBE"]`, and
@@ -470,16 +470,16 @@ LF-tag-bounded shares.
     `terraform_data.admin_guard`. This revokes grants before tags or namespaces are destroyed (R11).
   - **Comment**: Lake Formation creates and reuses the RAM shares itself (FR-021), so the module
     never manages `aws_ram_*`.
-- [ ] T036 Edit `modules/tenant/sharing.tf` to add `aws_lakeformation_permissions.share_tag_describe`
+- [x] T036 Edit `modules/tenant/sharing.tf` to add `aws_lakeformation_permissions.share_tag_describe`
   (FR-024, label visibility). It grants `DESCRIBE`, with grant option, through an `lf_tag` block,
   on the tenant tag and on each platform tag key and value in the share expression, to each
   distinct consumer account. Sandbox result 5 showed the consumer administrator can't re-grant by
   tag without it. Grant only `DESCRIBE`, because `GRANT_WITH_LF_TAG_EXPRESSION` is rejected across
   accounts (`MANAGE_TAG_POLICY is not supported cross account`).
-- [ ] T037 Edit `modules/tenant/outputs.tf` to add `output "shares"` (FR-027): a map keyed by share
+- [x] T037 Edit `modules/tenant/outputs.tf` to add `output "shares"` (FR-027): a map keyed by share
   name, each with `account_id`, `catalog_ids` (`<account>:s3tablescatalog/<bucket>` per shared
   zone), `database` (the tenant namespace name), and `expression` (the list of `{ key, values }`).
-- [ ] T038 Run `make check` and `make lint`. This is the tenant checkpoint.
+- [x] T038 Run `make check` and `make lint`. This is the tenant checkpoint.
 
 **Checkpoint**: Tenants can share only their own labeled data, read-only, with approved accounts.
 

@@ -103,6 +103,38 @@ data "aws_iam_policy_document" "dedicated_bucket" {
       values   = [local.kms_key_arn]
     }
   }
+  # Same deny as the shared zone buckets (FR-015): only Lake Formation reaches table data
+  statement {
+    sid    = "DenyDirectTableAccess"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = [
+      "s3tables:GetTableData",
+      "s3tables:PutTableData",
+      "s3tables:CreateTable",
+      "s3tables:DeleteTable",
+      "s3tables:RenameTable",
+      "s3tables:UpdateTableMetadataLocation",
+      "s3tables:GetTableMetadataLocation",
+    ]
+    resources = [
+      each.value.arn,
+      "${each.value.arn}/*",
+    ]
+    condition {
+      test     = "ArnNotEquals"
+      variable = "aws:PrincipalArn"
+      values   = concat([var.platform.data_access_role_arn], var.platform.direct_access.exempt_principal_arns)
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:PrincipalIsAWSService"
+      values   = ["false"]
+    }
+  }
 }
 
 # ----
