@@ -7,6 +7,10 @@ terraform {
       version               = ">= 6.59.0, < 7.0.0"
       configuration_aliases = [aws.pricing]
     }
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.12"
+    }
   }
 }
 

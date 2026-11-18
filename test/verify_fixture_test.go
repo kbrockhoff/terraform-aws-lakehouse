@@ -59,7 +59,7 @@ func TestVerifyFixture(t *testing.T) {
 		t.Parallel()
 		a := addresses(t, map[string]interface{}{"stage": 1})
 		assert.Equal(t, 13, countWithPrefix(a, "aws_iam_role.persona["), "one role per persona")
-		assert.Contains(t, a, "module.lakehouse.module.catalog_integration[0].aws_lakeformation_data_lake_settings.this")
+		assert.Contains(t, a, "module.lakehouse.module.account_settings[0].aws_lakeformation_data_lake_settings.this")
 		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_data_cells_filter."), "named filters need tables")
 		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_permissions.named_table["))
 		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_permissions.named_columns["))

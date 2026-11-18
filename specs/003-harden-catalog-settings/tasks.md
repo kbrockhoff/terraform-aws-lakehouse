@@ -199,7 +199,7 @@ list it manages.
 
 ### Account-settings submodule
 
-- [ ] T016 [P] Create `modules/account-settings/versions.tf`, copying `required_version` and the
+- [x] T016 [P] Create `modules/account-settings/versions.tf`, copying `required_version` and the
   `hashicorp/aws` constraint from the root `versions.tf` (no pricing alias), plus
   `hashicorp/time >= 0.12` for the role propagation delay (sandbox result 2). Add the same `time`
   requirement to the root `versions.tf`. Create
@@ -218,7 +218,7 @@ list it manages.
   Add the header comment: "The dedicated catalog key, its policy, and the catalog-encryption role
   live together here. The key policy references the role, the role's inline policy references the
   key, and the role itself depends on neither, so the graph has no cycle."
-- [ ] T017 Create `modules/account-settings/main.tf` with `aws_lakeformation_data_lake_settings.this`,
+- [x] T017 Create `modules/account-settings/main.tf` with `aws_lakeformation_data_lake_settings.this`,
   moved verbatim from `modules/catalog-integration/main.tf`, including its comments and the
   deployer precondition. Then extend it:
   - Set `allow_external_data_filtering`, `external_data_filtering_allow_list`,
@@ -232,7 +232,7 @@ list it manages.
     `CROSS_ACCOUNT_VERSION`, it must be `<= var.cross_account_version`. The error message explains
     that versions are not lowered (FR-005). Add that data source to the same file. Guard against a
     missing key with `try(..., "0")`.
-- [ ] T018 Create `modules/account-settings/iam.tf` with:
+- [x] T018 Create `modules/account-settings/iam.tf` with:
   - `aws_iam_role.catalog_encryption`, with `count = var.catalog_encryption.key_access_mode ==
     "service_role" ? 1 : 0`, name `${var.name_prefix}-glue-catalog-encryption`,
     `permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn :
@@ -242,7 +242,7 @@ list it manages.
     catalog access, so add a comment citing it (FR-011);
   - `aws_iam_role_policy.catalog_encryption`, granting `kms:Decrypt`, `kms:Encrypt`, and
     `kms:GenerateDataKey` on `local.catalog_key_arn` only (the created or supplied catalog key).
-- [ ] T019 Create `modules/account-settings/kms.tf` with the dedicated catalog-metadata key
+- [x] T019 Create `modules/account-settings/kms.tf` with the dedicated catalog-metadata key
   (FR-009, FR-012, FR-013, FR-026):
   - **Key**: `aws_kms_key.catalog`, with `count = var.catalog_encryption.kms_key_arn == "" ? 1 :
     0`, `enable_key_rotation = true`, `deletion_window_in_days =
@@ -276,7 +276,7 @@ list it manages.
     required statements, plus `EnableRootAccess` (`kms:*` to the account root with
     `aws:PrincipalAccount = account`), copied from the root `kms.tf` pattern.
   - **Precondition (FR-009)**: a supplied `kms_key_arn` must not be in `var.storage_key_arns`.
-- [ ] T020 Add to `modules/account-settings/main.tf`:
+- [x] T020 Add to `modules/account-settings/main.tf`:
   - **`time_sleep.catalog_encryption_role`**, with `count` matching the role: `create_duration =
     "20s"`, `triggers = { role_arn = <role ARN>, policy = <role policy ID> }`. Glue rejects a new
     role as "not assumable" for about 10–15 seconds (sandbox result 2).
@@ -304,7 +304,7 @@ list it manages.
   - **Comment**: enabling encryption only covers objects written afterwards (FR-014), and disabling
     it leaves existing objects encrypted, which is why the key is protected (FR-013). If T004 showed
     that destroy disables encryption, say so.
-- [ ] T021 Add `aws_glue_resource_policy.this` to `modules/account-settings/main.tf`, with
+- [x] T021 Add `aws_glue_resource_policy.this` to `modules/account-settings/main.tf`, with
   `count = var.catalog_resource_policy.enabled ? 1 : 0` (FR-006):
   - **Policy document**: built with `data "aws_iam_policy_document" "catalog_resource_policy"`.
     - Statement `RamShareResource`: `glue:ShareResource` for the `ram.amazonaws.com` service
@@ -314,7 +314,7 @@ list it manages.
   - **`enable_hybrid = "TRUE"`** (R3).
   - **Comment**: no policy is needed for LF-tag sharing on version 4. An unmanaged policy is
     detected by `lfverify` (D1).
-- [ ] T022 Create `modules/account-settings/outputs.tf` with outputs:
+- [x] T022 Create `modules/account-settings/outputs.tf` with outputs:
   - `data_lake_settings_id`;
   - `catalog_encryption_role_arn` (empty when per-caller);
   - `catalog_encryption_mode`;
@@ -322,7 +322,7 @@ list it manages.
 
 ### Catalog-integration changes
 
-- [ ] T023 Edit `modules/catalog-integration`:
+- [x] T023 Edit `modules/catalog-integration`:
   - **Remove** `aws_lakeformation_data_lake_settings.this` from `main.tf`, and remove the
     `admin_principal_arns`, `read_only_admin_principal_arns`, and `deployer_role_arn` variables
     from `variables.tf`, along with their uses.
@@ -337,7 +337,7 @@ list it manages.
 
 ### Root wiring and guards
 
-- [ ] T024 Edit `main.tf`:
+- [x] T024 Edit `main.tf`:
   - **Module call**: add `module "account_settings"` with `count = var.enabled &&
     local.settings_owner ? 1 : 0`, passing the T016 inputs:
     - `admin_principal_arns = concat(var.governance_config.admin_principal_arns,
@@ -357,7 +357,7 @@ list it manages.
     - `module.catalog_integration[0].aws_lakeformation_data_lake_settings.this` →
       `module.account_settings[0].aws_lakeformation_data_lake_settings.this`;
     - `terraform_data.secondary_admin_guard` → `terraform_data.settings_guard`.
-- [ ] T025 Edit `main.tf` and `dependencies.tf` so deployments that don't own the settings run a
+- [x] T025 Edit `main.tf` and `dependencies.tf` so deployments that don't own the settings run a
   guard instead (FR-001, FR-007).
   - **Rename** `terraform_data.secondary_admin_guard` to `terraform_data.settings_guard`, with
     `count = var.enabled && !local.settings_owner ? 1 : 0`.
@@ -371,7 +371,7 @@ list it manages.
     3. if any tenant has non-empty `shares`, the live `CROSS_ACCOUNT_VERSION` is at least 4;
     4. if `studio_config.enabled`, every integration principal is in the live admins;
     5. owner-only inputs are at their defaults (from T014).
-- [ ] T026 Run `make check` and `make lint`. This is the foundation checkpoint.
+- [x] T026 Run `make check` and `make lint`. This is the foundation checkpoint.
 
 **Checkpoint**: Account-wide settings are managed by exactly one deployment, and every other
 deployment is guarded.

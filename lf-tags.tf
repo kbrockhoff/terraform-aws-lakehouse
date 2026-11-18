@@ -11,7 +11,7 @@ resource "aws_lakeformation_lf_tag" "sensitivity" {
   key    = "${local.name_prefix}-sensitivity"
   values = local.sensitivity_values
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 # One key per regulation, because a resource holds only one value per LF-tag key and a column can
@@ -22,7 +22,7 @@ resource "aws_lakeformation_lf_tag" "regulation" {
   key    = "${local.name_prefix}-reg-${each.key}"
   values = ["no", "yes"]
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 # Zone of each tenant database. Lake Formation only accepts account-level LF-tag policy grants
@@ -35,7 +35,7 @@ resource "aws_lakeformation_lf_tag" "zone" {
   key    = "${local.name_prefix}-zone"
   values = sort(tolist(local.zones))
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 resource "aws_lakeformation_lf_tag" "domain" {
@@ -44,7 +44,7 @@ resource "aws_lakeformation_lf_tag" "domain" {
   key    = "${local.name_prefix}-domain"
   values = local.domain_values
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 # Lake Formation admins do not implicitly hold ASSOCIATE on LF-tags another principal created, so

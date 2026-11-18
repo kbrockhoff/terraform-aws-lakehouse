@@ -26,7 +26,7 @@ func TestSecondaryExampleSkipsAccountIntegration(t *testing.T) {
 		`module.main.aws_s3tables_table_bucket.zone["raw"]`,
 		`module.main.aws_lakeformation_lf_tag.sensitivity[0]`,
 		`module.main.module.tenant["research"].aws_lakeformation_lf_tag.tenant`,
-		`module.main.terraform_data.secondary_admin_guard[0]`,
+		`module.main.terraform_data.settings_guard[0]`,
 	} {
 		assert.Contains(t, changes, addr)
 	}

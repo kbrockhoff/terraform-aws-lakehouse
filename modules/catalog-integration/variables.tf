@@ -47,39 +47,19 @@ variable "tags" {
   default     = {}
 }
 
-variable "admin_principal_arns" {
-  description = "Lake Formation data-lake admins. Authoritative: every secondary deployment's deploying role and every tenant pipeline role must be listed."
-  type        = list(string)
-
-  validation {
-    condition     = length(var.admin_principal_arns) > 0
-    error_message = "admin_principal_arns must not be empty."
-  }
-
-  validation {
-    condition     = alltrue([for a in var.admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))])
-    error_message = "Every admin_principal_arns entry must be an IAM role or user ARN."
-  }
-}
-
-variable "read_only_admin_principal_arns" {
-  description = "Lake Formation read-only admins: they can view all catalog resources and permissions but change nothing. Authoritative, like admin_principal_arns."
-  type        = list(string)
-  default     = []
-
-  validation {
-    condition     = alltrue([for a in var.read_only_admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", a))])
-    error_message = "Every read_only_admin_principal_arns entry must be an IAM role or user ARN."
-  }
-}
-
-variable "deployer_role_arn" {
-  description = "Role ARN of the deploying session. It must be one of admin_principal_arns."
+variable "settings_ready" {
+  description = "ID of the data-lake settings or of the settings guard. Orders registration after the deployer's admin rights exist."
   type        = string
+}
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary for the Lake Formation data-access role. Empty means none."
+  type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/.+$", var.deployer_role_arn))
-    error_message = "deployer_role_arn must be an IAM role or user ARN."
+    condition     = var.permissions_boundary_arn == "" || can(regex("^arn:aws[a-z-]*:iam::([0-9]{12}|aws):policy/.+$", var.permissions_boundary_arn))
+    error_message = "permissions_boundary_arn must be empty or an IAM policy ARN."
   }
 }
 

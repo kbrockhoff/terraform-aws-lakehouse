@@ -1,4 +1,40 @@
 # ----
+# Account settings (account and Region singleton, FR-001)
+# ----
+
+# Lake Formation data-lake settings, Glue catalog encryption with a dedicated key, and the optional
+# catalog resource policy. Exactly one deployment per account and Region owns them.
+module "account_settings" {
+  source = "./modules/account-settings"
+  count  = var.enabled && local.settings_owner ? 1 : 0
+
+  name_prefix      = local.name_prefix
+  account_id       = local.account_id
+  partition        = local.partition
+  region           = local.region
+  tags             = local.common_tags
+  environment_type = var.environment_type
+
+  admin_principal_arns = concat(
+    var.governance_config.admin_principal_arns,
+    var.studio_config.enabled ? var.studio_config.integration_principal_arns : [],
+  )
+  read_only_admin_principal_arns = var.governance_config.read_only_admin_principal_arns
+  deployer_role_arn              = local.deployer_role_arn
+
+  cross_account_version        = var.account_settings_config.cross_account_version
+  data_lake                    = var.account_settings_config.data_lake
+  catalog_encryption           = var.account_settings_config.catalog_encryption
+  catalog_resource_policy      = var.account_settings_config.catalog_resource_policy
+  permissions_boundary_arn     = var.account_settings_config.permissions_boundary_arn
+  kms_key_deletion_window_days = local.effective_config.kms_key_deletion_window_days
+
+  key_user_arns = local.tenant_persona_arns
+  # Tenant keys are created inside the tenant modules after this call; catalog_key_guard checks them
+  storage_key_arns = compact([local.kms_key_arn])
+}
+
+# ----
 # Catalog integration (account and Region singleton)
 # ----
 
@@ -13,24 +49,72 @@ module "catalog_integration" {
   partition                             = local.partition
   region                                = local.region
   tags                                  = local.common_tags
-  admin_principal_arns                  = var.governance_config.admin_principal_arns
-  read_only_admin_principal_arns        = var.governance_config.read_only_admin_principal_arns
-  deployer_role_arn                     = local.deployer_role_arn
+  settings_ready                        = local.settings_ready
+  permissions_boundary_arn              = var.account_settings_config.permissions_boundary_arn
   allow_full_table_external_data_access = var.catalog_integration_config.allow_full_table_external_data_access
+}
+
+moved {
+  from = module.catalog_integration[0].aws_lakeformation_data_lake_settings.this
+  to   = module.account_settings[0].aws_lakeformation_data_lake_settings.this
 }
 
 # ----
 # Guards
 # ----
 
-# Secondary deployments do not own the data-lake settings, so they check the live admin list
-resource "terraform_data" "secondary_admin_guard" {
-  count = var.enabled && !var.catalog_integration_config.enabled ? 1 : 0
+moved {
+  from = terraform_data.secondary_admin_guard
+  to   = terraform_data.settings_guard
+}
+
+# Deployments that do not own the account settings check the live values they depend on (FR-001,
+# FR-007) instead of changing them
+resource "terraform_data" "settings_guard" {
+  count = var.enabled && !local.settings_owner ? 1 : 0
 
   lifecycle {
     precondition {
       condition     = contains(data.aws_lakeformation_data_lake_settings.current[0].admins, local.deployer_role_arn)
-      error_message = "The deploying role (${local.deployer_role_arn}) is not a Lake Formation data-lake admin. Add it to admin_principal_arns in the deployment that owns the catalog integration, apply that deployment, then retry."
+      error_message = "The deploying role (${local.deployer_role_arn}) is not a Lake Formation data-lake admin. Add it to admin_principal_arns in the deployment that owns the account settings, apply that deployment, then retry."
+    }
+
+    precondition {
+      condition     = local.owner_only_inputs_default
+      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, and permissions_boundary_arn must keep their defaults. Set them in the owner deployment."
+    }
+
+    precondition {
+      condition     = local.live_catalog_encryption_mode != "DISABLED"
+      error_message = "Glue Data Catalog encryption is DISABLED in this account and Region. Apply the deployment that owns the account settings first."
+    }
+
+    precondition {
+      condition = alltrue([for t in values(var.tenants) : length(t.shares) == 0]) || (
+        try(tonumber(data.aws_lakeformation_data_lake_settings.current[0].parameters["CROSS_ACCOUNT_VERSION"]), 0) >= 4
+      )
+      error_message = "Tenants declare cross-account shares, but the live Lake Formation cross-account version is below 4. Apply the deployment that owns the account settings first."
+    }
+
+    precondition {
+      condition = !var.studio_config.enabled || length(setsubtract(
+        var.studio_config.integration_principal_arns,
+        data.aws_lakeformation_data_lake_settings.current[0].admins,
+      )) == 0
+      error_message = "studio_config.integration_principal_arns must already be data-lake admins. Add them to studio_config in the deployment that owns the account settings, apply it, then retry."
+    }
+  }
+}
+
+# A supplied catalog key must not be a designated tenant's key (FR-009). The platform key is
+# checked inside modules/account-settings.
+resource "terraform_data" "catalog_key_guard" {
+  count = var.enabled && local.settings_owner && local.supplied_catalog_kms_key_arn != "" ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = !contains([for t in values(module.tenant) : t.kms_key_arn], local.supplied_catalog_kms_key_arn)
+      error_message = "account_settings_config.catalog_encryption.kms_key_arn is a tenant key. The catalog needs a dedicated key."
     }
   }
 }

@@ -194,6 +194,16 @@ locals {
     var.account_settings_config.permissions_boundary_arn == ""
   )
 
+  # Registration waits for the settings, or for the guard when another deployment owns them
+  settings_ready = var.enabled ? (
+    local.settings_owner ? module.account_settings[0].data_lake_settings_id : terraform_data.settings_guard[0].id
+  ) : ""
+
+  live_catalog_encryption_mode = try(
+    data.aws_glue_data_catalog_encryption_settings.current[0].data_catalog_encryption_settings[0].encryption_at_rest[0].catalog_encryption_mode,
+    "DISABLED",
+  )
+
   # Catalog metadata uses a dedicated key, never the platform key (FR-009). Empty means the
   # account-settings submodule creates it.
   supplied_catalog_kms_key_arn = var.account_settings_config.catalog_encryption.kms_key_arn
