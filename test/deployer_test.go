@@ -60,7 +60,10 @@ var createActions = map[string]string{
 	"aws_iam_role":                                       "iam:CreateRole",
 	"aws_iam_role_policy":                                "iam:PutRolePolicy",
 	"aws_glue_catalog":                                   "glue:CreateCatalog",
+	"aws_glue_data_catalog_encryption_settings":          "glue:PutDataCatalogEncryptionSettings",
+	"aws_glue_resource_policy":                           "glue:PutResourcePolicy",
 	"terraform_data":                                     "",
+	"time_sleep":                                         "",
 }
 
 func TestDeployerPolicies(t *testing.T) {

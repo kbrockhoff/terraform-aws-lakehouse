@@ -17,6 +17,26 @@ output "data_access_role_arn" {
   value       = var.enabled ? local.data_access_role_arn : ""
 }
 
+output "account_settings_owner" {
+  description = "Whether this deployment owns the account- and Region-wide Lake Formation and Glue Data Catalog settings."
+  value       = var.enabled && local.settings_owner
+}
+
+output "catalog_encryption_role_arn" {
+  description = "ARN of the Glue catalog-encryption role. Empty when this deployment does not own the account settings or uses per_caller mode."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_encryption_role_arn : ""
+}
+
+output "catalog_encryption_mode" {
+  description = "Glue Data Catalog encryption mode set by this deployment (SSE-KMS-WITH-SERVICE-ROLE or SSE-KMS). Empty when it does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_encryption_mode : ""
+}
+
+output "studio_integration_principal_arns" {
+  description = "SageMaker Unified Studio integration principals made data-lake admins. Integration principals, not platform deployers (FR-007)."
+  value       = var.enabled && var.studio_config.enabled ? var.studio_config.integration_principal_arns : []
+}
+
 output "query_results_bucket_arn" {
   description = "ARN of the shared Athena query results bucket."
   value       = var.enabled ? aws_s3_bucket.query_results[0].arn : ""
@@ -74,6 +94,7 @@ output "tenants" {
       persona_policy_json     = t.persona_policy_json
       monthly_cost_estimate   = t.monthly_cost_estimate
       compliance_monthly_cost = t.compliance_monthly_cost
+      shares                  = t.shares
     }
   }
 }

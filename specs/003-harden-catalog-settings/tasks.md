@@ -487,7 +487,7 @@ LF-tag-bounded shares.
 
 ## Phase 5: Operations Tier (Deployer, Cost, Outputs)
 
-- [ ] T039 [P] Edit `modules/deployer/main.tf` (R12):
+- [x] T039 [P] Edit `modules/deployer/main.tf` (R12):
   - **`GlueCatalogSettings`** statement: `glue:GetDataCatalogEncryptionSettings`,
     `glue:PutDataCatalogEncryptionSettings`, `glue:GetResourcePolicy`, `glue:PutResourcePolicy`,
     and `glue:DeleteResourcePolicy` on `arn:<partition>:glue:<region>:<account>:catalog`.
@@ -503,7 +503,7 @@ LF-tag-bounded shares.
   - **Permissions boundary**: allow `iam:PutRolePermissionsBoundary` on the two module roles.
   - **Key aliases**: add `kms:ListAliases` usage for the `aws/glue` alias lookup in T020 if not
     already present.
-- [ ] T040 [P] Edit `modules/cost-estimation` (`variables.tf`, `locals.tf`, `outputs.tf`) and the
+- [x] T040 [P] Edit `modules/cost-estimation` (`variables.tf`, `locals.tf`, `outputs.tf`) and the
   root call in `cost-estimation.tf`:
   - Add 1 to `kms_key_count` when the deployment owns the settings and no catalog key is supplied
     (the dedicated catalog key).
@@ -511,7 +511,7 @@ LF-tag-bounded shares.
   at `catalog_kms_requests_per_month` (new input, default 100000) × the KMS request price looked
   up for the Region, included only when the deployment owns the settings. It must stay under
   USD 5 at the default (spec, Cost Constraints).
-- [ ] T041 Edit `outputs.tf` to add:
+- [x] T041 Edit `outputs.tf` to add:
   - `account_settings_owner` (bool);
   - `catalog_encryption_role_arn` (empty when not the owner or in per-caller mode);
   - `catalog_encryption_mode`;
@@ -520,7 +520,7 @@ LF-tag-bounded shares.
   - `shares` in the root `tenants` output, from each tenant's `shares` output.
 
   Keep `data_access_role_arn` unchanged.
-- [ ] T042 Run `make check`, `make lint`, and `make docs`. This is the operations checkpoint.
+- [x] T042 Run `make check`, `make lint`, and `make docs`. This is the operations checkpoint.
 
 ---
 

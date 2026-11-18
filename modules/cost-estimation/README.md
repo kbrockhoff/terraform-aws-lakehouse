@@ -36,6 +36,7 @@ No modules.
 | <a name="input_compliance_kms_key_count"></a> [compliance\_kms\_key\_count](#input\_compliance\_kms\_key\_count) | Number of KMS keys that exist only because of a compliance designation (FR-024); reported separately as compliance\_monthly\_cost | `number` | `0` | no |
 | <a name="input_enabled"></a> [enabled](#input\_enabled) | Set to false to prevent the module from creating any resources | `bool` | `true` | no |
 | <a name="input_kms_key_count"></a> [kms\_key\_count](#input\_kms\_key\_count) | Number of KMS keys to include in cost estimation | `number` | `0` | no |
+| <a name="input_kms_request_count_per_month"></a> [kms\_request\_count\_per\_month](#input\_kms\_request\_count\_per\_month) | Estimated KMS requests per month (for example Glue catalog metadata encryption) | `number` | `0` | no |
 | <a name="input_s3_bucket_count"></a> [s3\_bucket\_count](#input\_s3\_bucket\_count) | Number of general purpose S3 buckets (no idle charge; listed for completeness) | `number` | `0` | no |
 | <a name="input_table_bucket_count"></a> [table\_bucket\_count](#input\_table\_bucket\_count) | Number of S3 table buckets (no idle charge; listed for completeness) | `number` | `0` | no |
 

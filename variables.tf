@@ -536,11 +536,17 @@ variable "alarms_config" {
 # ----
 
 variable "cost_estimation_config" {
-  description = "Configuration object for monthly cost estimation"
+  description = "Configuration object for monthly cost estimation. catalog_kms_requests_per_month estimates Glue catalog metadata encryption requests to the catalog key in the deployment that owns the account settings."
   type = object({
-    enabled = bool
+    enabled                        = bool
+    catalog_kms_requests_per_month = optional(number, 100000)
   })
   default = {
     enabled = true
+  }
+
+  validation {
+    condition     = var.cost_estimation_config.catalog_kms_requests_per_month >= 0
+    error_message = "catalog_kms_requests_per_month must be zero or positive."
   }
 }

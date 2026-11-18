@@ -75,6 +75,17 @@ variable "s3_bucket_count" {
   }
 }
 
+variable "kms_request_count_per_month" {
+  description = "Estimated KMS requests per month (for example Glue catalog metadata encryption)"
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.kms_request_count_per_month >= 0
+    error_message = "KMS request count must be zero or positive."
+  }
+}
+
 variable "athena_workgroup_count" {
   description = "Number of Athena workgroups (no idle charge; listed for completeness)"
   type        = number
