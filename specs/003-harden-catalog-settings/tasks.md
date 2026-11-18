@@ -46,22 +46,22 @@ because every later tier depends on them.
 **Purpose**: Confirm the undocumented AWS behaviors the design depends on (plan T-S1), then add the
 new inputs. Design changes found here are recorded in `plan.md` before Phase 2 starts.
 
-- [ ] T001 Create `specs/003-harden-catalog-settings/sandbox-results.md` with one section for each
+- [x] T001 Create `specs/003-harden-catalog-settings/sandbox-results.md` with one section for each
   plan T-S1 item (1–7), each with fields *Command*, *Observed*, *Date*, and *Design impact*.
-- [ ] T002 In sandbox `492637581429` (us-east-1), run `aws lakeformation get-data-lake-settings`
+- [x] T002 In sandbox `492637581429` (us-east-1), run `aws lakeformation get-data-lake-settings`
   and `aws glue get-data-catalog-encryption-settings`. Record in
   `specs/003-harden-catalog-settings/sandbox-results.md`:
   - the live `Parameters` map: the `CROSS_ACCOUNT_VERSION` value, and the key and value casing of
     `SET_CONTEXT`;
   - the live catalog encryption mode and key (T-S1 items 1 and 7 baseline).
-- [ ] T003 Check the provider version floor (T-S1 item 7) using the `hashicorp/aws` CHANGELOG.
+- [x] T003 Check the provider version floor (T-S1 item 7) using the `hashicorp/aws` CHANGELOG.
   Find the oldest release that exposes both
   `aws_glue_data_catalog_encryption_settings.encryption_at_rest.catalog_encryption_service_role`
   and `aws_lakeformation_data_lake_settings.parameters`, and record it in
   `specs/003-harden-catalog-settings/sandbox-results.md`.
   - If it is above 6.59.0, raise the constraint in `versions.tf` and in every
     `examples/*/versions.tf` and `modules/*/versions.tf`.
-- [ ] T004 Run a throwaway Terraform configuration in the sandbox, outside the module (scratch
+- [x] T004 Run a throwaway Terraform configuration in the sandbox, outside the module (scratch
   directory, local state), and record the results in
   `specs/003-harden-catalog-settings/sandbox-results.md`:
   - **Delete behavior** (T-S1 item 2): apply then destroy
@@ -74,7 +74,7 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
     `SSE-KMS-WITH-SERVICE-ROLE` with each and run `aws glue create-database` and `get-database`.
     Record which trust works.
   - **Cleanup**: restore the original settings from T002 afterwards.
-- [ ] T005 With the existing 001 sandbox deployment (`make verify-up` and `make verify-seed`), add
+- [x] T005 With the existing 001 sandbox deployment (`make verify-up` and `make verify-seed`), add
   a manual `DenyDirectTableAccess` statement (plan, Data Storage) to one zone bucket policy using
   the AWS CLI. Then run, and record in `specs/003-harden-catalog-settings/sandbox-results.md`
   (T-S1 item 4):
@@ -85,11 +85,11 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
 
   Restore the policy with `make verify-down` afterwards. If any governed operation is denied, add
   the missing exemption to the plan before T029.
-- [ ] T006 Record catalog lookup latency (T-S1 item 6). Time 20 `aws glue get-table` calls on a
+- [x] T006 Record catalog lookup latency (T-S1 item 6). Time 20 `aws glue get-table` calls on a
   fixture table before and after enabling `SSE-KMS-WITH-SERVICE-ROLE` in the sandbox, and record
   the medians and the increase in `specs/003-harden-catalog-settings/sandbox-results.md`. Restore
   encryption to the T002 state afterwards.
-- [ ] T007 Deferred until the consumer sandbox account exists (T008). Record in
+- [x] T007 Deferred until the consumer sandbox account exists (T008). Record in
   `specs/003-harden-catalog-settings/sandbox-results.md` (T-S1 item 5):
   - **Grant**: grant `SELECT` and `DESCRIBE` with the grant option through an LF-tag expression
     from the producer to the consumer account ID on an `s3tablescatalog` table.
@@ -97,10 +97,10 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
     Record whether the consumer administrator needs LF-tag `DESCRIBE` to re-grant by tag.
   - **Catalog key need (D3)**: with `SSE-KMS-WITH-SERVICE-ROLE` enabled in the producer, query
     with and without the consumer `kms:Decrypt` key-policy grant, and record which works.
-- [ ] T008 [P] Add the consumer sandbox account to `verify/sandbox-accounts.txt` with the comment
+- [x] T008 [P] Add the consumer sandbox account to `verify/sandbox-accounts.txt` with the comment
   `# consumer for 003 sharing cases`. It must be in the same organization and Region as
   `492637581429`. Ask the user for the account ID; never invent one.
-- [ ] T009 Create a long-lived sandbox catalog key for ephemeral fixtures (FR-013, U2) in
+- [x] T009 Create a long-lived sandbox catalog key for ephemeral fixtures (FR-013, U2) in
   `492637581429` us-east-1 with the AWS CLI. This is a one-time manual step, outside any fixture
   state.
   - Create a symmetric key with alias `alias/lfverify-catalog`, rotation enabled.
@@ -115,7 +115,7 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
     through their own IAM policies (T058).
   - Record the key ARN in `verify/README.md` and in `specs/003-harden-catalog-settings/sandbox-results.md`,
     and pass it to the fixture through `LFVERIFY_CATALOG_KEY_ARN`.
-- [ ] T010 Edit `variables.tf` to add `account_settings_config` (FR-001 to FR-006, FR-009 to FR-014,
+- [x] T010 Edit `variables.tf` to add `account_settings_config` (FR-001 to FR-006, FR-009 to FR-014,
   FR-019).
   - **Type**: `object({ ... })` with these attributes:
     - `owner = optional(bool)`. Null means "follow `catalog_integration_config.enabled`".
@@ -146,7 +146,7 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
   - **Descriptions**: each attribute's description states its security consequence (FR-004).
     `cross_account_version` says that 5 is irreversible and lists the RAM permissions a custom
     grantor policy needs (R12).
-- [ ] T011 Edit `variables.tf` to add `studio_config` (FR-007, FR-008).
+- [x] T011 Edit `variables.tf` to add `studio_config` (FR-007, FR-008).
   - **Type**: `object({ enabled = optional(bool, false),
     integration_principal_arns = optional(list(string), []) })`, defaulting to `{}`.
   - **Validation blocks**:
@@ -156,14 +156,14 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
   - **Description**: names the SageMaker Unified Studio blueprint provisioning role
     (`AmazonSageMakerProvisioning-<account>`) and the IAM-based domain execution role as the
     expected entries (R8). It states that the module creates no studio resources.
-- [ ] T012 Edit `variables.tf`:
+- [x] T012 Edit `variables.tf`:
   - **`sharing_config`** (FR-022): `object({ consumer_accounts = optional(map(object({ purpose =
     string, outside_organization = optional(bool, false) })), {}) })`, default `{}`. Validate that
     keys match `^[0-9]{12}$`, that `purpose` is non-empty, and that there are at most 50 entries.
   - **`governance_config.direct_access_exempt_principal_arns`**: add it as
     `optional(list(string), [])`, validated as IAM role or user ARNs with no `*` and at most 20
     entries (FR-015, FR-016).
-- [ ] T013 Edit the `tenants` type in `variables.tf` to add `shares` (FR-023, FR-024):
+- [x] T013 Edit the `tenants` type in `variables.tf` to add `shares` (FR-023, FR-024):
   - **Type**: `shares = optional(map(object({ account_id = string, zones = optional(list(string),
     ["consumption"]), sensitivity_values = list(string), regulations = optional(set(string), []),
     domains = optional(list(string)), compliance_acknowledged = optional(bool, false) })), {})`.
@@ -171,7 +171,7 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
     from `governance_config.sensitivity_values`.
   - **Sync**: copy the identical attribute into the `tenant` variable type in
     `modules/tenant/variables.tf`. `TestTenantTypeInSync` enforces this.
-- [ ] T014 Edit `locals.tf` to add:
+- [x] T014 Edit `locals.tf` to add:
   - `settings_owner = coalesce(var.account_settings_config.owner,
     var.catalog_integration_config.enabled)`;
   - `supplied_catalog_kms_key_arn = var.account_settings_config.catalog_encryption.kms_key_arn`.
@@ -184,7 +184,7 @@ new inputs. Design changes found here are recorded in `plan.md` before Phase 2 s
     `data_lake`, `catalog_encryption`, `catalog_resource_policy`, and `permissions_boundary_arn`
     must equal their defaults (FR-001 validation). Use `lifecycle.precondition` on
     `terraform_data.settings_guard` (T025) so the plan fails rather than warns.
-- [ ] T015 Run `make check`. This is the setup checkpoint.
+- [x] T015 Run `make check`. This is the setup checkpoint.
 
 **Checkpoint**: Undocumented behaviors are confirmed (except T007, which waits for the consumer
 account), and the new inputs validate.
@@ -200,7 +200,9 @@ list it manages.
 ### Account-settings submodule
 
 - [ ] T016 [P] Create `modules/account-settings/versions.tf`, copying `required_version` and the
-  `hashicorp/aws` constraint from the root `versions.tf` (no pricing alias). Create
+  `hashicorp/aws` constraint from the root `versions.tf` (no pricing alias), plus
+  `hashicorp/time >= 0.12` for the role propagation delay (sandbox result 2). Add the same `time`
+  requirement to the root `versions.tf`. Create
   `modules/account-settings/variables.tf` with these variables, each validated like its root
   counterpart:
   - `name_prefix`, `account_id`, `partition`, `region`, `tags`;
@@ -210,7 +212,6 @@ list it manages.
     `permissions_boundary_arn`;
   - `environment_type` and `kms_key_deletion_window_days` (from the root effective config);
   - `key_user_arns` (tenant persona ARNs for per-caller mode);
-  - `consumer_account_ids` (list of approved consumer account IDs);
   - `storage_key_arns` (platform key ARN plus known tenant key ARNs, used only to reject a supplied
     catalog key that equals one of them).
 
@@ -237,7 +238,8 @@ list it manages.
     `permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn :
     null`, and `tags = var.tags`;
   - the trust document: `glue.amazonaws.com`, `sts:AssumeRole`, `aws:SourceAccount` set to the
-    account, plus `aws:SourceArn` only if T004 showed that it works (FR-011);
+    account **only**. Sandbox result 3 showed that `aws:SourceArn` with the catalog ARN breaks
+    catalog access, so add a comment citing it (FR-011);
   - `aws_iam_role_policy.catalog_encryption`, granting `kms:Decrypt`, `kms:Encrypt`, and
     `kms:GenerateDataKey` on `local.catalog_key_arn` only (the created or supplied catalog key).
 - [ ] T019 Create `modules/account-settings/kms.tf` with the dedicated catalog-metadata key
@@ -265,11 +267,6 @@ list it manages.
       - `additional_key_user_arns`.
 
       Add a precondition on the key capping the total at 200 (32 KB key-policy limit).
-    - `AllowSharingConsumersCatalogDecrypt`, when `length(var.consumer_account_ids) > 0` (D3):
-      `kms:Decrypt` and `kms:DescribeKey` to `arn:<partition>:iam::<id>:root` for each consumer,
-      with `kms:EncryptionContext:glue_catalog_id = account`. Add a comment that this key encrypts
-      only catalog metadata, so the grant can't reach table data. Apply it in both key-access modes
-      until T007 shows otherwise.
     - `ProtectCatalogKey` (FR-013): `Deny` `kms:ScheduleKeyDeletion` and `kms:DisableKey` to
       principal `*`, with `ArnNotEquals aws:PrincipalArn` set to `key_deletion_principal_arns`.
       Omit the condition when the list is empty, which makes the deny absolute. This applies in
@@ -280,13 +277,16 @@ list it manages.
     `aws:PrincipalAccount = account`), copied from the root `kms.tf` pattern.
   - **Precondition (FR-009)**: a supplied `kms_key_arn` must not be in `var.storage_key_arns`.
 - [ ] T020 Add to `modules/account-settings/main.tf`:
+  - **`time_sleep.catalog_encryption_role`**, with `count` matching the role: `create_duration =
+    "20s"`, `triggers = { role_arn = <role ARN>, policy = <role policy ID> }`. Glue rejects a new
+    role as "not assumable" for about 10–15 seconds (sandbox result 2).
   - **`aws_glue_data_catalog_encryption_settings.this`** (FR-009, FR-010):
     - `catalog_encryption_mode` is `SSE-KMS-WITH-SERVICE-ROLE` or `SSE-KMS`;
     - `sse_aws_kms_key_id = local.catalog_key_arn`;
     - `catalog_encryption_service_role` is the role ARN in service-role mode;
     - `connection_password_encryption { return_connection_password_encrypted = true,
       aws_kms_key_id = <same key> }`;
-    - `depends_on` the role policy.
+    - `depends_on` the role policy and `time_sleep.catalog_encryption_role`.
   - **`data "aws_glue_data_catalog_encryption_settings" "current"`**.
   - **Precondition (R4)**: fail when the live mode is `SSE-KMS`, the live key is the AWS-managed
     key (the `aws/glue` alias, or a key ID resolved through `data "aws_kms_alias"` for `aws/glue`),
@@ -347,7 +347,6 @@ list it manages.
     - `environment_type = var.environment_type` and `kms_key_deletion_window_days =
       local.effective_config.kms_key_deletion_window_days`;
     - `key_user_arns = local.tenant_persona_arns`;
-    - `consumer_account_ids = keys(var.sharing_config.consumer_accounts)`;
     - `storage_key_arns = compact([local.kms_key_arn])`. Tenant keys are created inside the tenant
       modules after this call; the T027 root precondition checks them instead.
     - `tags = local.common_tags`.
@@ -471,10 +470,12 @@ LF-tag-bounded shares.
     `terraform_data.admin_guard`. This revokes grants before tags or namespaces are destroyed (R11).
   - **Comment**: Lake Formation creates and reuses the RAM shares itself (FR-021), so the module
     never manages `aws_ram_*`.
-- [ ] T036 Edit `modules/tenant/sharing.tf`: if T007 showed the consumer administrator needs
-  LF-tag `DESCRIBE`, add `aws_lakeformation_permissions.share_tag_describe` granting `DESCRIBE`
-  (with grant option) on the tenant tag and on each platform tag key used in the share expression,
-  to each distinct consumer account. If it isn't needed, add a comment citing T007 instead.
+- [ ] T036 Edit `modules/tenant/sharing.tf` to add `aws_lakeformation_permissions.share_tag_describe`
+  (FR-024, label visibility). It grants `DESCRIBE`, with grant option, through an `lf_tag` block,
+  on the tenant tag and on each platform tag key and value in the share expression, to each
+  distinct consumer account. Sandbox result 5 showed the consumer administrator can't re-grant by
+  tag without it. Grant only `DESCRIBE`, because `GRANT_WITH_LF_TAG_EXPRESSION` is rejected across
+  accounts (`MANAGE_TAG_POLICY is not supported cross account`).
 - [ ] T037 Edit `modules/tenant/outputs.tf` to add `output "shares"` (FR-027): a map keyed by share
   name, each with `account_id`, `catalog_ids` (`<account>:s3tablescatalog/<bucket>` per shared
   zone), `database` (the tenant namespace name), and `expression` (the list of `{ key, values }`).
@@ -568,9 +569,10 @@ LF-tag-bounded shares.
     tag key.
   - `TestShareRejectsUnapprovedAccount`, `TestShareRejectsCurrentAccount`, and
     `TestDesignatedTenantShareRequiresAcknowledgement`.
-  - `TestConsumerCatalogDecryptStatement`: the statement is in the **catalog** key policy, with the
-    `glue_catalog_id` condition, when consumers exist, and absent otherwise. No consumer account
-    principal appears in the platform key or any tenant key policy.
+  - `TestNoConsumerInKeyPolicies`: with consumers approved, no consumer account principal appears
+    in the catalog key, platform key, or any tenant key policy (FR-026).
+  - `TestShareTagDescribe`: each share plans `share_tag_describe` grants with exactly
+    `DESCRIBE` and grant option `DESCRIBE`, for the tag keys and values in its expression.
   - `TestRemovingApprovedAccountStillReferencedFails`.
 - [ ] T047 Edit `test/validation_test.go` (`TestInvalidInputsFailPlan` table) to add cases:
   - `cross_account_version = 3`;
@@ -596,7 +598,7 @@ LF-tag-bounded shares.
   (`TestStandaloneTenantMatchesPlatformApplied`). Add a standalone `shares` rejection test
   against an empty contract `consumer_accounts`.
 - [ ] T051 Add a Makefile target `test-account-settings` in `Makefile`, modeled on
-  `test-tenancy`, running `-run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestNoCatalog|TestShare|TestConsumer|TestRemoving|TestDesignatedTenantShare'`.
+  `test-tenancy`, running `-run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare'`.
   Add it to the `help` output.
 - [ ] T052 Run `make test`. This is the examples and tests checkpoint (use single targets for
   reruns).
@@ -659,6 +661,10 @@ LF-tag-bounded shares.
     `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, `kms:DescribeKey`, and `kms:CreateGrant`
     on the key, conditioned on `kms:EncryptionContext:glue_catalog_id`, to every persona and to the
     lfverify runner role. The key policy delegates to IAM (T009).
+  - In `verify/fixture/platform.tf`, add the lfverify runner role (`local.runner_role_arn` or
+    equivalent) to `governance_config.direct_access_exempt_principal_arns`. lfverify setup and
+    cleanup call `s3tables:DeleteTable` directly, which the deny otherwise blocks (T005,
+    sandbox-results.md item 4). Persona roles stay non-exempt.
   - In the `Makefile` `verify-up`, `verify-apply`, and `verify-down` targets, pass
     `LFVERIFY_CATALOG_KEY_ARN` and `CATALOG_KEY_ACCESS_MODE`. Fail early with a clear message when
     `LFVERIFY_CATALOG_KEY_ARN` is unset.
@@ -694,6 +700,10 @@ LF-tag-bounded shares.
     `aws_lakeformation_permissions` resources;
   - run `make verify-run` and require every case to pass;
   - switch back the same way, then `make verify-down`.
+
+  Also confirm that an S3 Tables maintenance job completes successfully on a fixture table in a
+  bucket that has `DenyDirectTableAccess` (`aws s3tables get-table-maintenance-job-status`), and
+  record the timestamp. This was not observed in T005.
 
   Add `CONSUMER_ROLE_ARN` once T008 is done. Record the results, the latency comparison from T006, and
   the revocation time for `consumer-revoked` (SLO: 15 minutes or less) in
@@ -789,7 +799,8 @@ once the consumer exists, sharing and revocation.
    (account-settings, service-role mode).
 2. Platform KMS key and its policy, unchanged by this feature (table and results encryption only).
    Then the dedicated catalog key in `modules/account-settings`. Its policy references the
-   catalog-encryption role, the per-caller key users, and the consumer accounts.
+   catalog-encryption role and the per-caller key users. No consumer account appears in any key
+   policy.
 3. Data-lake settings: admins including studio principals, explicit fields, and parameters. On
    deployments that don't own the settings, the settings guard runs instead.
 4. Glue catalog encryption settings, then the optional Glue resource policy.

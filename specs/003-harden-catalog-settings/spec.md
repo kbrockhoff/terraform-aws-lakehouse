@@ -8,7 +8,9 @@ selectable, service-role mode by default; amended 2026-11-18: account-settings o
 and studio support flag in FR-007; amended 2026-11-18 from plan deviations D1–D4 in FR-003, FR-006,
 FR-018, FR-026; amended 2026-11-18 from analysis: FR-001 default, FR-002 grouping, FR-013 key
 protection, wildcard-principal scope, migration limited to ephemeral test deployments; amended
-2026-11-18: dedicated catalog-metadata key in FR-009, FR-012, FR-013, FR-026)
+2026-11-18: dedicated catalog-metadata key in FR-009, FR-012, FR-013, FR-026; amended 2026-11-18
+from sandbox results T004 and T007: FR-009 scope, FR-011 condition, FR-024 label visibility,
+FR-026 no consumer key grant)
 **Input**: User description: "Upgrade and improve security on the metadata catalog and central data
 permission service account settings. The input is a set of design considerations for running managed
 table storage protected by tag-based permissions alongside a unified analytics studio in the same
@@ -259,6 +261,12 @@ explicit, reviewable values. Then:
   - Stored connection credentials MUST also be encrypted with this key and returned to callers only
     in encrypted form.
   - The platform key's policy MUST NOT gain any catalog-related statement.
+  - **Scope** (sandbox result 5): the catalog-encryption setting covers objects stored in the
+    metadata catalog itself: default-catalog databases and tables, resource links, and stored
+    connection credentials. It does **not** cover the metadata of managed table storage exposed
+    through the federated table-storage catalog. Table storage keeps that metadata itself,
+    encrypted with the table bucket's key (the platform key or a tenant key). The documentation
+    MUST say so.
 - **FR-010**: The key-access mode for metadata encryption MUST be a validated input with two
   values. The default is service-role mode.
   - **Service-role mode** (default): a dedicated catalog-encryption role holds the key
@@ -274,8 +282,10 @@ explicit, reviewable values. Then:
   - Switching modes MUST take one apply, with no loss of catalog access for the principals listed
     above.
 - **FR-011**: In service-role mode the catalog-encryption role MUST:
-  - be trusted only by the metadata catalog service, with confused-deputy conditions limited to this
-    account and region;
+  - be trusted only by the metadata catalog service, with a confused-deputy condition limited to this
+    account. The catalog service sends no source resource matching the catalog when it assumes the
+    role, and a source-resource condition breaks catalog access, so no region condition is added
+    (sandbox result 3; same situation as D2);
   - hold key permissions only on the configured key;
   - receive common tags only. It is not a data-at-rest resource, so it MUST NOT receive data tags.
 - **FR-012**: The key policy MUST allow the metadata catalog service to use the key only in this
@@ -357,19 +367,23 @@ explicit, reviewable values. Then:
   - Column-level restrictions apply in the consumer account through the shared labels.
   - Row-level restrictions are named-resource filters. They MUST NOT be shared cross-account in
     this release.
+  - **Label visibility**: so the consumer administrator can delegate by label expression, each share
+    MUST also grant the consumer account permission to describe (with grant option, and only
+    describe) the label keys and values used in its expression. Granting the right to use labels
+    in grant expressions is not supported across accounts (sandbox result 5).
 - **FR-025**: Removing a share from configuration, or removing an account from the approved list,
   MUST revoke the corresponding grants on the next apply. Removing an approved account that is
   still referenced by a tenant share MUST fail at plan time with a message naming the share.
 - **FR-026**: Encryption MUST keep working for consumers without broadening key access:
   - Table data is read through credentials vended by this account's data-access role, so consumer
     accounts MUST NOT be granted use of the platform key or tenant keys for table data.
-  - The provider requires accounts that receive shared catalog resources to have permissions on the
-    catalog encryption key. Therefore, in **both** key-access modes (FR-010), every approved
-    consumer account MUST be granted metadata decryption on the **dedicated catalog-metadata key
-    only**, limited to this account's catalog encryption context. No consumer account MAY appear in
-    the policy of the platform key or of any tenant key.
-  - If sandbox verification shows that service-role mode doesn't need the consumer grant, it MUST
-    be limited to per-caller mode. (Amended 2026-11-18, plan D3.)
+  - Shared resources are table-storage objects, whose metadata the catalog-encryption setting
+    doesn't cover (FR-009, scope). Consumers therefore need **no** grant on the catalog-metadata
+    key, in either key-access mode, and no consumer account MAY appear in the policy of the
+    catalog key, the platform key, or any tenant key. Sandbox result 5 verified this: a consumer
+    read shared tables created while service-role encryption was on, with no grant on the key.
+  - If a later release shares objects stored in the metadata catalog itself, this requirement MUST
+    be revisited. (Amended 2026-11-18, plan D3 resolved by T007.)
 - **FR-027**: The module MUST output, per consumer account, the shared databases and the label
   expressions it was granted. Consumers use this to create resource links and local grants. The
   module MUST NOT create any resources in consumer accounts.
@@ -557,7 +571,9 @@ as the data.
   created with its permission-service integration enabled before any platform tables are published
   to it.
 - The studio's governance layer fulfills subscriptions through permission-service grants. It
-  therefore needs administrator rights, which FR-007 provides.
+  therefore needs administrator rights, which FR-007 provides. A deployed studio domain makes two
+  of its roles administrators: the blueprint provisioning role and the domain's manage-access role
+  (sandbox result 5). Both belong in the integration principal list.
 - Governed query engines (the interactive query service, the studio's notebook and serverless Spark
   compute, and the warehouse engine) read table data through credentials vended by the
   permission service. Engines that need direct storage access are not governed and must be listed

@@ -49,9 +49,10 @@ Other changes:
     consumer account ID. Each grant is always bounded by the tenant tag and carries the grant
     option for the same permissions.
   - Lake Formation creates the RAM shares itself on cross-account version 4.
-  - When sharing is configured, the **catalog key's** policy lets consumer accounts decrypt
-    catalog metadata, limited to the `glue_catalog_id` encryption context. The platform and
-    tenant key policies never name a consumer account.
+  - Each share also grants the consumer account `DESCRIBE` (with grant option) on the LF-tag keys
+    and values in its expression, so the consumer administrator can re-grant by tag.
+  - No key policy names a consumer account. Shared `s3tablescatalog` metadata isn't covered by
+    Glue catalog encryption (sandbox result 5).
 - **Key protection**: a deny statement in the catalog key's policy stops that key from
   being scheduled for deletion or disabled in every environment type, except by break-glass
   principals. Changing the catalog key after installation fails at plan time outside Ephemeral
@@ -67,7 +68,9 @@ are in the same Region.
 **IaC Tool**: Terraform `>= 1.11`. The local tool is 1.16.5. The plan uses `moved` blocks, which
 work across module boundaries. Consumers handing over ownership use `removed` blocks with
 `lifecycle { destroy = false }`, which need Terraform 1.7 or later and are already within the floor.
-**Provider Versions**: `hashicorp/aws >= 6.59.0, < 7.0.0`. The floor is unchanged.
+**Provider Versions**: `hashicorp/aws >= 6.59.0, < 7.0.0`. The floor is unchanged (T003 confirmed
+6.59.0 has every attribute). `hashicorp/time >= 0.12` is new: the catalog-encryption role needs a
+propagation delay before Glue accepts it (sandbox result 2).
 The latest release, 6.73.0, was checked with `terraform providers schema` and exposes every
 attribute this plan needs:
 
@@ -145,9 +148,9 @@ documented and are confirmed by T-S1.
   - *Finding*: Accounts that receive shared catalog resources need permissions on the catalog
     encryption key, and `aws/glue` cannot be shared. It is undocumented whether the service role
     removes this need.
-  - *Design consequence*: When `sharing_config` is non-empty, the key policy grants consumer account
-    roots `kms:Decrypt` and `kms:DescribeKey` in both modes, limited to `glue_catalog_id`. (Spec
-    Deviation D3.)
+  - *Design consequence*: **Superseded by sandbox result 5.** Glue catalog encryption doesn't cover
+    `s3tablescatalog` metadata, and a consumer read shared tables created under service-role
+    encryption with no key grant. No key policy names a consumer account. (D3 resolved.)
 - **R6**
   - *Finding*: Table data is read through credentials Lake Formation vends from the registered role.
     Consumers need no table-key access.
@@ -163,7 +166,9 @@ documented and are confirmed by T-S1.
     (`AmazonSageMakerProvisioning-<account>`) to be a data-lake admin, and recommends the domain
     execution role for IAM-based domains. IAM-based domains need account-level
     `AllowFullTableExternalDataAccess`. EMR fine-grained access needs `AllowExternalDataFiltering`
-    plus the session tag `Amazon EMR`.
+    plus the session tag `Amazon EMR`. Sandbox result 5: a deployed domain makes both
+    `AmazonSageMakerProvisioning-<account>` and `AmazonSageMakerManageAccess-<region>-<domain>`
+    data-lake admins.
   - *Design consequence*: `studio_config.integration_principal_arns` holds the admin roles. The Lake
     Formation settings those features need stay explicit opt-ins in
     `account_settings_config.data_lake`, each documented (FR-004).
@@ -175,8 +180,9 @@ documented and are confirmed by T-S1.
   - *Finding*: Registered-role trust is documented only with `aws:SourceAccount`. No `aws:SourceArn`
     or Region condition is documented. The Glue service-role example has no condition.
   - *Design consequence*: The registration-role trust is unchanged (Spec Deviation D2). The
-    catalog-encryption role gets `aws:SourceAccount`. *Sandbox*: encryption still works with it,
-    plus `aws:SourceArn` = `arn:…:glue:<region>:<account>:catalog` if accepted.
+    catalog-encryption role gets `aws:SourceAccount` **only**. Sandbox result 3: adding
+    `aws:SourceArn` = the catalog ARN breaks all catalog access, because Glue sends no matching
+    source ARN.
 - **R11**
   - *Finding*: Cross-account grants to an account need the grant option so the consumer admin can
     re-grant. The consumer can only narrow access. Drop or Super on a database can't be granted
@@ -304,13 +310,16 @@ No changes. Network foundations remain out of scope in 001.
        data source, which needs the deployer to already be an admin; on a first apply this check
        is skipped when the data source returns no admins.
 2. `aws_iam_role.catalog_encryption` (service-role mode only):
-   - **Trust**: `glue.amazonaws.com`, `sts:AssumeRole`, `aws:SourceAccount` = account. T-S1 checks
-     whether `aws:SourceArn` for the catalog is also accepted.
+   - **Trust**: `glue.amazonaws.com`, `sts:AssumeRole`, `aws:SourceAccount` = account only
+     (sandbox result 3).
    - **Inline policy**: `kms:Decrypt`, `kms:Encrypt` and `kms:GenerateDataKey` on the configured
      key ARN only.
    - **Optional**: `permissions_boundary`.
    - **Tags**: common tags only.
-3. `aws_glue_data_catalog_encryption_settings.this`:
+3. `time_sleep.catalog_encryption_role` (service-role mode only): `create_duration = "20s"`,
+   triggered by the role ARN and the role policy. Sandbox result 2 showed Glue rejects a new role
+   as "not assumable" for about 10–15 seconds.
+4. `aws_glue_data_catalog_encryption_settings.this`, which depends on item 3:
    - **Mode**: `SSE-KMS-WITH-SERVICE-ROLE` with the role from item 2, or `SSE-KMS`.
    - **Connection passwords**: encrypted with the same key.
    - **Precondition** (read through the `aws_glue_data_catalog_encryption_settings` data source):
@@ -322,7 +331,7 @@ No changes. Network foundations remain out of scope in 001.
    - **`check` block (FR-013)**: warn when an Ephemeral owner uses the module-created catalog key.
      Teardown can't delete that key, so the warning recommends
      `catalog_encryption.kms_key_arn` pointing at a long-lived key.
-4. `aws_glue_resource_policy.this`. Created only when
+5. `aws_glue_resource_policy.this`. Created only when
    `account_settings_config.catalog_resource_policy.enabled`.
    - The document is built with `aws_iam_policy_document`. It has a `RamShareResource` statement
      for `glue:ShareResource` to `ram.amazonaws.com` on `catalog`, `database/*` and `table/*/*`.
@@ -360,11 +369,6 @@ No changes. Network foundations remain out of scope in 001.
     - `additional_key_user_arns`.
 
     Validation caps the total at 200 to stay under the 32 KB key-policy limit.
-  - `AllowSharingConsumersCatalogDecrypt`, when `sharing_config.consumer_accounts` is non-empty
-    (passed in as `consumer_account_ids`): grants `kms:Decrypt` and `kms:DescribeKey` to each
-    consumer `arn:…:iam::<id>:root`, conditioned on `glue_catalog_id = <producer account>`.
-    Because this key encrypts only catalog metadata, the grant can't reach table data even without
-    the condition.
   - `ProtectCatalogKey`: `Deny` `kms:ScheduleKeyDeletion` and `kms:DisableKey` to `*` unless
     `aws:PrincipalArn` is in `catalog_encryption.key_deletion_principal_arns`. This applies in
     every environment type (FR-013). The platform key keeps its normal deletion window.
@@ -421,8 +425,10 @@ The existing `secondary_admin_guard` becomes `settings_guard`, with a `moved` bl
     domain. It reuses `local.reader_expressions`, generalized to take the share entry.
   - Both depend on `aws_lakeformation_resource_lf_tags.database` (R11 revoke ordering).
 - The consumer administrator needs `DESCRIBE` on the LF-tag keys and values used, to re-grant by
-  tag. T-S1 confirms this. If it is needed, an `aws_lakeformation_permissions` grant with an
-  `lf_tag` block gives `DESCRIBE` to the consumer account.
+  tag (sandbox result 5). `aws_lakeformation_permissions.share_tag_describe` grants `DESCRIBE`
+  with grant option, through an `lf_tag` block, to each consumer account for the tenant tag and
+  each platform tag key and value in the share expression. `GRANT_WITH_LF_TAG_EXPRESSION` can't be
+  granted across accounts (`MANAGE_TAG_POLICY is not supported cross account`).
 - New tenant output `shares`, rolled up in the root `tenants` output: consumer account → shared
   catalog IDs (`<account>:s3tablescatalog/<bucket>`), database names, and expressions (FR-027).
 - Removing a share destroys its grants, which revokes access. Removing an approved account still
@@ -570,12 +576,12 @@ go in `modules/tenant` so that tenant authority bounds them (FR-023).
   - *Reason*: AWS documents only `aws:SourceAccount` for registered roles (R10), and an undocumented
     condition risks breaking credential vending. The spec's "where supported" clause allows this;
     record it as not supported.
-- **D3**
-  - *Spec*: FR-026: "Service-role mode needs no consumer key grant"
-  - *Deviation*: Consumer accounts get catalog-metadata decrypt in **both** modes.
-  - *Reason*: AWS requires recipients to have key permissions (R5). The service-role exemption is
-    undocumented. If the sandbox shows it is unnecessary, the plan reverts to
-    grant-in-per-caller-only.
+- **D3** (resolved by T007, sandbox result 5)
+  - *Spec*: FR-026
+  - *Deviation*: none any more. Consumers get **no** catalog-key grant in either mode.
+  - *Reason*: Glue catalog encryption doesn't cover `s3tablescatalog` metadata, and the consumer
+    read shared tables created under encryption without a key grant. FR-009 and FR-026 were
+    amended.
 - **D4**
   - *Spec*: FR-003: list of explicit fields
   - *Deviation*: Adds `SET_CONTEXT` to the explicit parameters.

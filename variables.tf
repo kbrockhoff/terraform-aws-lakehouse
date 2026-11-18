@@ -94,8 +94,177 @@ variable "catalog_integration_config" {
   }
 }
 
+variable "account_settings_config" {
+  description = <<-EOT
+    Account- and Region-wide Lake Formation and Glue Data Catalog settings, managed by exactly one
+    deployment per account and Region (the owner). Every non-default value weakens or changes an
+    account-wide control:
+    - owner: whether this deployment manages the settings. Null follows catalog_integration_config.enabled.
+    - cross_account_version: Lake Formation cross-account version. 4 is the minimum for sharing
+      federated (S3 Tables) catalogs. 5 is irreversible; a custom cross-account grantor policy then
+      also needs ram:AssociateResourceSharePermission and ram:ListResourceSharePermissions.
+    - data_lake.allow_external_data_filtering: lets EMR clusters in the allow-listed accounts filter
+      Lake Formation data themselves (needed for SageMaker Unified Studio EMR fine-grained access).
+    - data_lake.authorized_session_tag_values: session tag values a trusted engine must present
+      (for example "Amazon EMR").
+    - data_lake.allow_full_table_external_data_access: third-party engines get credentials without
+      session tags when the caller has full table access (needed by IAM-based Unified Studio domains).
+    - data_lake.trusted_resource_owners: accounts allowed to see caller ARNs in their CloudTrail logs.
+    - catalog_encryption.key_access_mode: service_role (one Glue role uses the key) or per_caller
+      (every caller needs key permissions and appears in key-use audit records).
+    - catalog_encryption.kms_key_arn: an existing catalog-metadata key. Empty creates a dedicated key.
+      It must never be the platform key or a tenant key.
+    - catalog_encryption.key_deletion_principal_arns: break-glass principals that may schedule
+      deletion of, or disable, the catalog key. Empty makes the protection absolute.
+    - catalog_resource_policy: optional Glue resource policy; only RAM sharing plus Deny statements.
+    - permissions_boundary_arn: boundary for the module-created Lake Formation and Glue roles.
+  EOT
+  type = object({
+    owner                 = optional(bool)
+    cross_account_version = optional(number, 4)
+    data_lake = optional(object({
+      allow_external_data_filtering         = optional(bool, false)
+      external_data_filtering_allow_list    = optional(list(string), [])
+      authorized_session_tag_values         = optional(list(string), [])
+      allow_full_table_external_data_access = optional(bool, false)
+      trusted_resource_owners               = optional(list(string), [])
+    }), {})
+    catalog_encryption = optional(object({
+      key_access_mode             = optional(string, "service_role")
+      kms_key_arn                 = optional(string, "")
+      additional_key_user_arns    = optional(list(string), [])
+      key_deletion_principal_arns = optional(list(string), [])
+    }), {})
+    catalog_resource_policy = optional(object({
+      enabled           = optional(bool, false)
+      deny_policy_jsons = optional(list(string), [])
+    }), {})
+    permissions_boundary_arn = optional(string, "")
+  })
+  default = {}
+
+  validation {
+    condition     = contains([4, 5], var.account_settings_config.cross_account_version)
+    error_message = "cross_account_version must be 4 or 5. Version 4 is the minimum for sharing S3 Tables catalogs, and versions are never lowered."
+  }
+
+  validation {
+    condition     = contains(["service_role", "per_caller"], var.account_settings_config.catalog_encryption.key_access_mode)
+    error_message = "catalog_encryption.key_access_mode must be service_role or per_caller."
+  }
+
+  validation {
+    condition = (
+      var.account_settings_config.catalog_encryption.kms_key_arn == "" ||
+      can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9a-f-]+$", var.account_settings_config.catalog_encryption.kms_key_arn))
+    )
+    error_message = "catalog_encryption.kms_key_arn must be empty (create a dedicated key) or a KMS key ARN."
+  }
+
+  validation {
+    condition = alltrue([
+      for a in concat(
+        var.account_settings_config.catalog_encryption.additional_key_user_arns,
+        var.account_settings_config.catalog_encryption.key_deletion_principal_arns,
+      ) : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*]+$", a))
+    ])
+    error_message = "additional_key_user_arns and key_deletion_principal_arns entries must be IAM role or user ARNs without wildcards."
+  }
+
+  validation {
+    condition     = length(var.account_settings_config.catalog_encryption.additional_key_user_arns) <= 100
+    error_message = "catalog_encryption.additional_key_user_arns may hold at most 100 entries (KMS key policy size limit)."
+  }
+
+  validation {
+    condition = alltrue([
+      for a in concat(
+        var.account_settings_config.data_lake.external_data_filtering_allow_list,
+        var.account_settings_config.data_lake.trusted_resource_owners,
+      ) : can(regex("^[0-9]{12}$", a))
+    ])
+    error_message = "external_data_filtering_allow_list and trusted_resource_owners entries must be 12-digit AWS account IDs."
+  }
+
+  validation {
+    condition = (
+      !var.account_settings_config.data_lake.allow_external_data_filtering ||
+      length(var.account_settings_config.data_lake.external_data_filtering_allow_list) > 0
+    )
+    error_message = "allow_external_data_filtering requires a non-empty external_data_filtering_allow_list; no account is trusted implicitly."
+  }
+
+  validation {
+    condition = alltrue([
+      for j in var.account_settings_config.catalog_resource_policy.deny_policy_jsons :
+      can(jsondecode(j)) &&
+      length(try(flatten([jsondecode(j).Statement]), [])) > 0 &&
+      alltrue([for st in try(flatten([jsondecode(j).Statement]), []) : try(st.Effect, "") == "Deny"])
+    ])
+    error_message = "Every catalog_resource_policy.deny_policy_jsons entry must be a JSON policy document whose statements all have Effect = Deny."
+  }
+
+  validation {
+    condition = (
+      var.account_settings_config.permissions_boundary_arn == "" ||
+      can(regex("^arn:aws[a-z-]*:iam::([0-9]{12}|aws):policy/.+$", var.account_settings_config.permissions_boundary_arn))
+    )
+    error_message = "permissions_boundary_arn must be empty or an IAM policy ARN."
+  }
+}
+
+variable "studio_config" {
+  description = "SageMaker Unified Studio support. When enabled, integration_principal_arns (the blueprint provisioning role AmazonSageMakerProvisioning-<account>, the domain manage-access role AmazonSageMakerManageAccess-<region>-<domain_id>, and, for IAM-based domains, the domain execution role) become Lake Formation data-lake admins so the studio can fulfill subscriptions. The module creates no studio resources."
+  type = object({
+    enabled                    = optional(bool, false)
+    integration_principal_arns = optional(list(string), [])
+  })
+  default = {}
+
+  validation {
+    condition     = !var.studio_config.enabled || length(var.studio_config.integration_principal_arns) > 0
+    error_message = "studio_config.enabled requires at least one integration_principal_arns entry."
+  }
+
+  validation {
+    condition     = var.studio_config.enabled || length(var.studio_config.integration_principal_arns) == 0
+    error_message = "studio_config.integration_principal_arns must be empty when studio support is disabled."
+  }
+
+  validation {
+    condition     = alltrue([for a in var.studio_config.integration_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/[^*]+$", a))])
+    error_message = "Every studio_config.integration_principal_arns entry must be an IAM role ARN without wildcards."
+  }
+}
+
+variable "sharing_config" {
+  description = "Same-Region cross-account sharing. consumer_accounts is the approved list, keyed by 12-digit account ID; tenants may share only with these accounts. outside_organization marks an account outside this organization, whose administrator must accept the RAM share invitation."
+  type = object({
+    consumer_accounts = optional(map(object({
+      purpose              = string
+      outside_organization = optional(bool, false)
+    })), {})
+  })
+  default = {}
+
+  validation {
+    condition     = alltrue([for id in keys(var.sharing_config.consumer_accounts) : can(regex("^[0-9]{12}$", id))])
+    error_message = "sharing_config.consumer_accounts keys must be 12-digit AWS account IDs."
+  }
+
+  validation {
+    condition     = alltrue([for a in values(var.sharing_config.consumer_accounts) : length(trimspace(a.purpose)) > 0])
+    error_message = "Every sharing_config.consumer_accounts entry needs a non-empty purpose."
+  }
+
+  validation {
+    condition     = length(var.sharing_config.consumer_accounts) <= 50
+    error_message = "sharing_config.consumer_accounts may hold at most 50 accounts."
+  }
+}
+
 variable "governance_config" {
-  description = "Lake Formation governance: data-lake admins, read-only admins, and the platform LF-tag vocabularies for sensitivity, regulations, and domains."
+  description = "Lake Formation governance: data-lake admins, read-only admins, the platform LF-tag vocabularies for sensitivity, regulations, and domains, and the principals exempt from the table-bucket deny on direct storage access (each exemption bypasses Lake Formation for table data)."
   type = object({
     admin_principal_arns           = list(string)
     read_only_admin_principal_arns = optional(list(string), [])
@@ -104,6 +273,8 @@ variable "governance_config" {
     domain_values                  = optional(list(string), ["general"])
     shared_storage_classification  = optional(string)
     writer_drop_enabled            = optional(bool)
+
+    direct_access_exempt_principal_arns = optional(list(string), [])
   })
   default = {
     admin_principal_arns = []
@@ -159,6 +330,14 @@ variable "governance_config" {
   }
 
   validation {
+    condition = (
+      length(var.governance_config.direct_access_exempt_principal_arns) <= 20 &&
+      alltrue([for a in var.governance_config.direct_access_exempt_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*]+$", a))])
+    )
+    error_message = "direct_access_exempt_principal_arns may hold at most 20 IAM role or user ARNs, without wildcards."
+  }
+
+  validation {
     condition     = var.environment_type != "None" || var.governance_config.writer_drop_enabled != null
     error_message = "governance_config.writer_drop_enabled is required when environment_type is None."
   }
@@ -211,6 +390,14 @@ variable "tenants" {
     scanned_bytes_alarm_threshold  = optional(number)
     dedicated_storage              = optional(bool, false)
     dml_workgroup_enabled          = optional(bool)
+    shares = optional(map(object({
+      account_id              = string
+      zones                   = optional(list(string), ["consumption"])
+      sensitivity_values      = list(string)
+      regulations             = optional(set(string), [])
+      domains                 = optional(list(string))
+      compliance_acknowledged = optional(bool, false)
+    })), {})
   }))
   default = {}
 

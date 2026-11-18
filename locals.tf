@@ -172,6 +172,44 @@ locals {
   # Role ARN of the deploying session (issuer of an assumed-role session)
   deployer_role_arn = data.aws_iam_session_context.current.issuer_arn
 
+  # Account-wide Lake Formation and Glue settings are owned by one deployment per account and
+  # Region. By default the deployment that owns the catalog integration owns them too (FR-001).
+  settings_owner = var.account_settings_config.owner != null ? var.account_settings_config.owner : var.catalog_integration_config.enabled
+
+  # Owner-only inputs must stay at their defaults on other deployments (FR-001); settings_guard
+  # fails the plan otherwise
+  owner_only_inputs_default = (
+    var.account_settings_config.cross_account_version == 4 &&
+    !var.account_settings_config.data_lake.allow_external_data_filtering &&
+    length(var.account_settings_config.data_lake.external_data_filtering_allow_list) == 0 &&
+    length(var.account_settings_config.data_lake.authorized_session_tag_values) == 0 &&
+    !var.account_settings_config.data_lake.allow_full_table_external_data_access &&
+    length(var.account_settings_config.data_lake.trusted_resource_owners) == 0 &&
+    var.account_settings_config.catalog_encryption.key_access_mode == "service_role" &&
+    var.account_settings_config.catalog_encryption.kms_key_arn == "" &&
+    length(var.account_settings_config.catalog_encryption.additional_key_user_arns) == 0 &&
+    length(var.account_settings_config.catalog_encryption.key_deletion_principal_arns) == 0 &&
+    !var.account_settings_config.catalog_resource_policy.enabled &&
+    length(var.account_settings_config.catalog_resource_policy.deny_policy_jsons) == 0 &&
+    var.account_settings_config.permissions_boundary_arn == ""
+  )
+
+  # Catalog metadata uses a dedicated key, never the platform key (FR-009). Empty means the
+  # account-settings submodule creates it.
+  supplied_catalog_kms_key_arn = var.account_settings_config.catalog_encryption.kms_key_arn
+
+  # Every tenant persona known to the root; per-caller catalog encryption grants them key use.
+  # Standalone tenants' personas are added through additional_key_user_arns.
+  tenant_persona_arns = sort(distinct(flatten([
+    for t in values(var.tenants) : concat(
+      t.stewards,
+      [for w in values(t.writers) : w.principal_arn],
+      [for r in values(t.readers) : r.principal_arn],
+      [for m in values(t.metadata_readers) : m.principal_arn],
+      [for m in values(t.metadata_writers) : m.principal_arn],
+    )
+  ])))
+
   # Lake Formation data-access role: created by the catalog-integration submodule, or passed in
   # by secondary deployments
   data_access_role_arn = var.catalog_integration_config.enabled ? (
