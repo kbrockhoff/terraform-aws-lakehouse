@@ -874,9 +874,9 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   - **Module READMEs**: `modules/account-settings/README.md` and
     `modules/catalog-integration/README.md` (replace "Importing an existing catalog").
   - **`AGENTS.md`**: the components list.
-- [ ] T082 Run `make pre-commit` and `make validate`, then `make security-scan`. Suppress any
+- [x] T082 Run `make pre-commit` and `make validate`, then `make security-scan`. Suppress any
   Checkov finding on the provisioner with a justification.
-- [ ] T083 Sandbox runs, recorded in `sandbox-results.md`:
+- [x] T083 Sandbox runs, recorded in `sandbox-results.md`:
   1. `make verify-full` with the consumer in `492637581429`: the first apply creates the catalog
      when missing (or leaves it), case 11 passes, and the catalog survives `verify-down`;
   2. a second `make verify-full`: the catalog is left unchanged;

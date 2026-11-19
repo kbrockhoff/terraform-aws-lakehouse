@@ -449,3 +449,36 @@ All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `
   back empty, leaves state, and is recreated.
 - **`b7a876`** (2026-11-19, consumer): after `verify-up verify-seed`, a stage 2 plan reported **no changes**
   (`-detailed-exitcode` 0). Teardown clean.
+
+### Phase 8: federated table storage catalog (T082, T083)
+
+- **T082**: `make pre-commit`, `make validate`, and `make security-scan` pass. Checkov: 977 passed, 0 failed; the
+  `local-exec` step needed no suppression.
+- **Creation path** (2026-11-19, consumer `566376086856`, which had no catalog): the real
+  `ensure-s3tables-catalog.sh`, with the inputs `catalog.tf` passes:
+  - the first run **created** the catalog with its tags;
+  - a second run with `"False"` **left it unchanged** (still `True`);
+  - a run claiming account `111122223333` **refused to act**.
+
+  The probe catalog was deleted afterwards: it was a test object, and the consumer is not an owner.
+- **`039b04`** (`make verify-upgrade UPGRADE_FROM=91c50f6`, the last commit whose `catalog-integration` managed
+  `aws_glue_catalog`, consumer, `RELEASE=true`):
+  - The old code created `s3tablescatalog` (14:32 local, `AllowFullTableExternalDataAccess = False`).
+  - The upgrade plan reported `aws_glue_catalog.s3tables` "will no longer be managed by Terraform, but will not be
+    destroyed", and planned 1 to add, 0 to destroy.
+  - In the upgrade apply, the script found the catalog and left it unchanged.
+  - **239 of 239 cases pass**, including `admin-s3tables-catalog`. Teardown logged "s3tablescatalog kept".
+  - `verify-upgrade-check` is now generic across starting versions: the data-lake settings must not be recreated,
+    and no `aws_glue_catalog` may be destroyed.
+- **`dc4748`** (`make verify-full`, consumer, `RELEASE=true`), with the catalog already present:
+  - The script **left it unchanged**; its creation time is still 14:32.
+  - **239 of 239 cases pass**. The label-style cases confirm that the per-run `bucket/*` registration, made after
+    the catalog exists, still federates the run's buckets.
+  - Teardown logged "s3tablescatalog kept", and the catalog still exists.
+- **Fixture**: it sets `s3tables_catalog.allow_full_table_external_data_access = false`. The catalog outlives
+  every run and is never updated, so the first creator fixes the value; `false` matches catalogs created before
+  Phase 8. `admin-s3tables-catalog` takes the expected value from the manifest.
+- **Owner flag turned off**: not run separately. It removes `terraform_data.s3tables_catalog` from the
+  configuration, which destroys it exactly like teardown does: it has no remote object and no destroy provisioner,
+  so only state changes. Teardown in both runs proved the catalog survives that.
+- **The producer now keeps `s3tablescatalog` permanently**, as FR-030 intends.

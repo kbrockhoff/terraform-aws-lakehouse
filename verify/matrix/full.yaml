@@ -135,7 +135,7 @@ personas:
           connection: aws:s3tables
           create_database_default_permissions: none
           create_table_default_permissions: none
-          allow_full_table_external_data_access: "true"
+          allow_full_table_external_data_access: manifest
         rule: spec 003 FR-029 - s3tablescatalog exists, federated over every table bucket, no identity-policy-only defaults
       - id: admin-catalog-resource-policy
         style: label

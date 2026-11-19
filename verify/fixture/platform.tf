@@ -157,6 +157,12 @@ module "lakehouse" {
       key_access_mode = var.catalog_key_access_mode
       kms_key_arn     = var.catalog_kms_key_arn
     }
+    # s3tablescatalog outlives every run and is never updated, so the first creator fixes its
+    # value. Versions before spec 003 Phase 8 created it with "False"; matching that keeps the
+    # sandbox consistent whichever created it (sandbox-results.md, T083).
+    s3tables_catalog = {
+      allow_full_table_external_data_access = false
+    }
   }
 
   governance_config = {

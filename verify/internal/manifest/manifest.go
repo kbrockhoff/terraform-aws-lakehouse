@@ -240,10 +240,11 @@ const FromManifest = "manifest"
 // settingKeys maps a check case's expect_values key to the manifest's account_settings key, for
 // values written as FromManifest.
 var settingKeys = map[string]string{
-	"cross_account_version": "cross_account_version",
-	"mode":                  "catalog_encryption_mode",
-	"kms_key_arn":           "catalog_kms_key_arn",
-	"federated_identifier":  "s3tables_catalog_identifier",
+	"cross_account_version":                 "cross_account_version",
+	"mode":                                  "catalog_encryption_mode",
+	"kms_key_arn":                           "catalog_kms_key_arn",
+	"federated_identifier":                  "s3tables_catalog_identifier",
+	"allow_full_table_external_data_access": "s3tables_catalog_allow_full",
 }
 
 // ExpectValues resolves a check case's expectations, replacing FromManifest with the fixture's

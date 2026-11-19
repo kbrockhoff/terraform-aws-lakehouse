@@ -606,9 +606,9 @@ as the data.
       (FR-027).
 - [x] Switching between key-access modes takes one apply with no loss of catalog access for listed
       principals.
-- [ ] In an account without the federated table storage catalog, the owner's first apply creates it
+- [x] In an account without the federated table storage catalog, the owner's first apply creates it
       with the FR-029 attributes. In an account that has it, the apply leaves it unchanged.
-- [ ] The catalog still exists after the owner deployment is destroyed, after the owner flag is
+- [x] The catalog still exists after the owner deployment is destroyed, after the owner flag is
       turned off, and after an upgrade from a version that managed it in the catalog-integration
       unit (FR-030, FR-031).
 

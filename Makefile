@@ -296,8 +296,13 @@ verify-upgrade-check: verify-init ## Plan the upgrade of an existing run; fail i
 	@# Module grants only: the fixture's own owner_* grants are replaced on every re-apply (awslkhs-8oof)
 	@grep -E '^  # module\.lakehouse\..*aws_lakeformation_permissions\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
 	  { echo "$(RED)✗ the upgrade replaces or destroys Lake Formation grants (see $(VERIFY_OUT)/upgrade-plan.txt)$(RESET)"; exit 1; } || true
-	@grep -qE 'aws_lakeformation_data_lake_settings\.this.* has moved to .*module\.account_settings\[0\]\.aws_lakeformation_data_lake_settings\.this' $(VERIFY_OUT)/upgrade-plan.txt || \
-	  { echo "$(RED)✗ the data-lake settings did not move into module.account_settings$(RESET)"; exit 1; }
+	@# Generic across starting versions: the data-lake settings must be moved or updated in place,
+	@# never recreated, and s3tablescatalog must never be destroyed (spec 003 FR-030, FR-031)
+	@grep -E '^  # .*aws_lakeformation_data_lake_settings\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
+	  { echo "$(RED)✗ the upgrade recreates the data-lake settings$(RESET)"; exit 1; } || true
+	@grep -E '^  # .*aws_glue_catalog\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
+	  { echo "$(RED)✗ the upgrade destroys s3tablescatalog$(RESET)"; exit 1; } || true
+	@grep -E 'has moved to|will no longer be managed by Terraform, but will not be destroyed' $(VERIFY_OUT)/upgrade-plan.txt | sed 's/^ *# /  /' || true
 	@grep -E '^  # module\.lakehouse\..* must be replaced' $(VERIFY_OUT)/upgrade-plan.txt | sed 's/^  # /  replaced: /' || true
 	@grep -E '^Plan:' $(VERIFY_OUT)/upgrade-plan.txt
 	@echo "$(GREEN)✓ Upgrade plan keeps every Lake Formation grant$(RESET)"
