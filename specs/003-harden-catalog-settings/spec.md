@@ -325,9 +325,9 @@ explicit, reviewable values. Then:
     failure. Its attributes are reported by the verification harness instead (FR-020).
   - **Safety**: the check-and-create step MUST confirm that the credentials it runs with belong to
     the deployment's account and Region, and fail otherwise.
-  - **Ordering**: creation MUST follow the registration of the table storage with the permission
-    service when the same deployment owns the catalog integration, and MUST precede the catalog
-    integration's grants on the catalog.
+  - **Ordering**: creation MUST precede the catalog integration's grants on the catalog. It does
+    not need to wait for the registration of the table storage with the permission service, which
+    the catalog doesn't require (sandbox result 8).
 - **FR-030**: The federated table storage catalog MUST never be deleted by this module: not on
   destroy, not when the owner flag or the catalog-integration flag is turned off, not on teardown
   of an Ephemeral environment, and not during an upgrade from an earlier version. Deleting it would

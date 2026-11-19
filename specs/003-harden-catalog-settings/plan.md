@@ -380,10 +380,12 @@ No changes. Network foundations remain out of scope in 001.
      4. then polls `get-catalog` until the catalog is visible.
    - **No destroy-time provisioner**, and `lifecycle { destroy = false }`, so neither destroy nor a
      count change ever calls a delete (FR-030).
-   - **Ordering**: it depends on the data-lake settings, so the deployer is an admin. The root
-     passes the catalog integration's registration ID as `catalog_registration_ready` when this
-     deployment owns the integration. The catalog integration's grants and the platform LF-tags
-     depend on the submodule's `s3tables_catalog_ready` output.
+   - **Ordering**: it depends on the data-lake settings, so the deployer is an admin. It doesn't
+     wait for the `bucket/*` registration, which `create-catalog` doesn't need (sandbox result 8).
+     The catalog integration's grants and the platform LF-tags depend on the submodule's
+     `s3tables_catalog_ready` output.
+   - **Flag type**: `AllowFullTableExternalDataAccess` is passed as the string `"True"` or
+     `"False"`; the CLI rejects a JSON boolean (sandbox result 8).
    - **Tags**: `common_tags` only. The catalog holds no data at rest itself (bd memory
      `data-tags-data-at-rest-only`).
 
@@ -441,8 +443,8 @@ key-protection statements (FR-009, FR-026).
   lifecycle { destroy = false } }` block in the submodule forgets it without deleting it, in the same
   apply that upgrades an existing deployment. Its `allow_full_table_external_data_access` input
   moves to `account_settings_config.s3tables_catalog`.
-- Exposes the registration ID (`registration_id`) so the account-settings submodule can order the
-  catalog creation after it.
+- Its `catalog_name` and `catalog_arn` outputs are removed. The root's `catalog_name` becomes the
+  constant `s3tablescatalog`.
 
 **Root guards** (`main.tf`): when this deployment doesn't own the account settings, it checks:
 
@@ -597,7 +599,7 @@ specs/003-harden-catalog-settings/
 │   │   ├── versions.tf
 │   │   └── README.md
 │   ├── catalog-integration/    # − data-lake settings, − aws_glue_catalog (removed, not destroyed);
-│   │                           #   + settings_ready, permissions_boundary_arn, registration_id
+│   │                           #   + settings_ready, permissions_boundary_arn
 │   ├── tenant/
 │   │   ├── sharing.tf          # NEW: cross-account LF-tag grants, share outputs
 │   │   ├── storage.tf          # + DenyDirectTableAccess on dedicated buckets
@@ -664,7 +666,7 @@ Run in `492637581429`, with the consumer account once one is provisioned. Record
 6. Catalog lookup latency before and after encryption (Performance NFR).
 7. The oldest provider version exposing `catalog_encryption_service_role` and data-lake
    `parameters` (version floor).
-8. (FR-029 to FR-031, 2026-11-19)
+8. (FR-029 to FR-031, 2026-11-19; answered by T073, sandbox result 8)
    - Whether `create-catalog` for `aws:s3tables` needs the `bucket/*` registration with federation
      first. This decides whether a non-integration owner must wait for, or check, the registration.
    - Whether a catalog created by the CLI behaves like the provider-created one for

@@ -782,7 +782,7 @@ once the consumer exists, sharing and revocation.
 apply-time AWS CLI check-and-create (plan R13, Complexity Tracking), and nothing ever deletes it.
 The catalog moves out of `modules/catalog-integration`, which forgets it without deleting it.
 
-- [ ] T073 Sandbox confirmation (plan item 8) in `492637581429` and `566376086856`: whether
+- [x] T073 Sandbox confirmation (plan item 8) in `492637581429` and `566376086856`: whether
   `aws glue create-catalog` for `aws:s3tables` needs the `bucket/*` registration with federation
   first, and whether a CLI-created catalog matches the provider-created one (`get-catalog` output).
   Record the result as item 8 in `specs/003-harden-catalog-settings/sandbox-results.md`, and adjust
@@ -798,7 +798,8 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
      --catalog-input <json>`. The JSON holds `FederatedCatalog` {`Identifier`
      `arn:$PARTITION:s3tables:$REGION:$ACCOUNT_ID:bucket/*`, `ConnectionName` `aws:s3tables`},
      empty `CreateDatabaseDefaultPermissions` and `CreateTableDefaultPermissions`, and
-     `AllowFullTableExternalDataAccess`. It also passes `--tags "$TAGS_JSON"` and treats
+     `AllowFullTableExternalDataAccess` as the **string** `"True"` or `"False"` (a JSON boolean
+     fails CLI validation, sandbox result 8). It also passes `--tags "$TAGS_JSON"` and treats
      `AlreadyExistsException` as success;
   4. polls `get-catalog` until the catalog is visible (bounded retries).
 
@@ -808,16 +809,17 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   - `input`: the catalog definition plus the account and Region;
   - a create-time `local-exec` running the T074 script with `environment` values only;
   - no destroy-time provisioner, and `lifecycle { destroy = false }` (FR-030);
-  - `depends_on`: the data-lake settings and the new `catalog_registration_ready` input.
+  - `depends_on`: the data-lake settings. It doesn't wait for the `bucket/*` registration (sandbox
+    result 8).
 
-  Add `s3tables_catalog` (`allow_full_table_external_data_access`, default true) and
-  `catalog_registration_ready` to `modules/account-settings/variables.tf`, and an
-  `s3tables_catalog_ready` output (the `terraform_data` ID) to `outputs.tf`.
+  Add `s3tables_catalog` (`allow_full_table_external_data_access`, default true) to
+  `modules/account-settings/variables.tf`, and an `s3tables_catalog_ready` output (the
+  `terraform_data` ID) to `outputs.tf`.
 - [ ] T076 Edit `modules/catalog-integration/`:
   - `main.tf`: remove `aws_glue_catalog.s3tables` and add `removed { from =
     aws_glue_catalog.s3tables lifecycle { destroy = false } }` (FR-031).
   - `variables.tf`: remove the `allow_full_table_external_data_access` variable.
-  - `outputs.tf`: replace `catalog_name` and `catalog_arn` with a `registration_id` output.
+  - `outputs.tf`: remove `catalog_name` and `catalog_arn`.
 - [ ] T077 Root wiring:
   - **`variables.tf`**:
     - add `account_settings_config.s3tables_catalog.allow_full_table_external_data_access`
@@ -826,9 +828,7 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
       it optional for one release, with a validation that rejects it and names the new
       attribute;
     - add it to the owner-only defaults check (`locals.tf` `owner_only_inputs_default`).
-  - **`main.tf`**: pass `catalog_registration_ready` (the integration's `registration_id`, or "" when
-    another deployment owns the integration) into `module.account_settings`. Make
-    `module.catalog_integration` grants and the platform LF-tags depend on
+  - **`main.tf`**: make `module.catalog_integration` grants and the platform LF-tags depend on
     `s3tables_catalog_ready`.
   - **`outputs.tf`**: `catalog_name` becomes the constant `s3tablescatalog` whenever the module is
     enabled.
@@ -870,6 +870,9 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   2. a second `make verify-full`: the catalog is left unchanged;
   3. `make verify-upgrade UPGRADE_FROM=<last commit that managed aws_glue_catalog>`: the plan shows
      the catalog "will no longer be managed" (not destroyed), and it survives teardown.
+
+  Also confirm that the per-run `bucket/*` registration, made while the catalog already exists,
+  still federates the run's buckets: the label-style cases pass (sandbox result 8, design impact).
 
 **Checkpoint**: The catalog is created only when missing, matches FR-029, and survives every
 destroy and upgrade path.

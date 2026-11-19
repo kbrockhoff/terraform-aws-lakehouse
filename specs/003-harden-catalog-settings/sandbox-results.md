@@ -265,6 +265,36 @@ tasks T002 to T007 and T063.
 - **Date**: 2026-11-18
 - **Design impact**: no change. The constraint stays at `>= 6.59.0, < 7.0.0`.
 
+## 8. Federated table storage catalog creation (T073)
+
+- **Command**: in consumer account `566376086856`, which had no `s3tablescatalog` and no Lake
+  Formation registrations, with AWS CLI 2.40.2:
+  - `aws glue create-catalog` with the user's catalog input;
+  - `get-catalog`, a second `create-catalog`, and `get-catalog` on a missing ID;
+  - the same catalog created by the provider (`aws_glue_catalog`, 6.73.0), then compared.
+
+  Both probe catalogs were deleted afterwards. These were test objects, not module-managed.
+- **Observed**:
+  - **The command fails as written**: `AllowFullTableExternalDataAccess` must be the string `"True"`
+    or `"False"`. A JSON boolean fails CLI validation ("Invalid type ... valid types: <class
+    'str'>"). The provider sends the string too.
+  - **No registration needed**: with `"True"`, `create-catalog` succeeded with no `bucket/*`
+    registration in the account.
+  - **Error codes**: a second create fails with `AlreadyExistsException`, and `get-catalog` on a
+    missing catalog fails with `EntityNotFoundException`. Both exit with status 254.
+  - **Creator grant**: the creating admin gets `ALL, ALTER, CREATE_CATALOG, CREATE_DATABASE,
+    DESCRIBE, DROP` on the catalog. No `IAM_ALLOWED_PRINCIPALS` grant exists on it.
+  - **Same result either way**: the CLI-created and provider-created catalogs are identical in
+    `get-catalog` apart from timestamps. Both have empty database and table default permissions.
+- **Date**: 2026-11-19
+- **Design impact**:
+  - The script passes `AllowFullTableExternalDataAccess` as `"True"` or `"False"` (T074).
+  - The catalog creation doesn't wait for the registration. The `catalog_registration_ready` input
+    is dropped from the plan (T075, T077).
+  - Whether a registration made after the catalog exists still federates the buckets is checked
+    in T083: the producer keeps the catalog between runs, while each run registers `bucket/*`
+    again.
+
 ## Full-mode runs (T063)
 
 The fixture owns the account settings and supplies the long-lived catalog key
