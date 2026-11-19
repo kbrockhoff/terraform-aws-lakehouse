@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lakeformation"
+	lftypes "github.com/aws/aws-sdk-go-v2/service/lakeformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3tables"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -65,6 +66,8 @@ full mode (sandbox accounts, from a repository checkout through make verify-*):
   detect         apply each misconfiguration overlay and require a failing case
   cleanup        sweep a run's resources by prefix and restore the data-lake settings
   check-target   refuse unless the credentials point at the run's checked account and Region
+  consumer-admin with consumer-account credentials, add LFVERIFY_CONSUMER_ADMIN_ARN as a
+                 data-lake admin there, keeping every other setting
   probe-matrix   derive a probe matrix from --matrix (full) and --manifest, written to --out
 
 other:
@@ -89,6 +92,7 @@ var commandFlags = map[string][]string{
 	"detect":         {"matrix", "manifest", "run-id", "out", "apply-cmd", "workers"},
 	"cleanup":        {"run-id", "out", "tables-only"},
 	"check-target":   {"run-id", "out"},
+	"consumer-admin": {"allow-list"},
 	"probe-matrix":   {"matrix", "manifest", "run-id", "out"},
 	"version":        {},
 }
@@ -295,6 +299,8 @@ func dispatch(ctx context.Context, cmd string, args []string) error {
 		return cmdCleanup(ctx, f)
 	case "check-target":
 		return cmdCheckTarget(ctx, f)
+	case "consumer-admin":
+		return cmdConsumerAdmin(ctx, f)
 	case "probe-matrix":
 		return cmdProbeMatrix(f)
 	}
@@ -351,6 +357,14 @@ func cmdPreflight(ctx context.Context, f *flags) error {
 		return err
 	}
 	if err := preflight.RecordTarget(filepath.Join(dir, "target.json"), e.target()); err != nil {
+		return err
+	}
+	// Teardown proves the shared catalog survived (spec 003 FR-030)
+	catalogExists, err := preflight.S3TablesCatalogExists(ctx, glue.NewFromConfig(e.cfg))
+	if err != nil {
+		return err
+	}
+	if err := preflight.RecordS3TablesCatalog(filepath.Join(dir, preflight.S3TablesCatalogFile), catalogExists); err != nil {
 		return err
 	}
 	if _, err := os.Stat(saved); errors.Is(err, os.ErrNotExist) { // #nosec G703 -- operator-chosen output path (--out or out/<run-id>, run ID validated); the CLI runs with the operator's own rights
@@ -528,6 +542,16 @@ func cmdRun(ctx context.Context, f *flags) error {
 		if man, err = f.loadManifest(); err != nil {
 			return err
 		}
+		// Spec 003: consumer personas need a fixture consumer account. Release runs set
+		// LFVERIFY_REQUIRE_SHARING=true so the sharing cases cannot be skipped.
+		var dropped []string
+		m, dropped = m.WithoutUnmet(func(c string) bool { _, ok := man.Personas[c]; return ok })
+		if len(dropped) > 0 {
+			if os.Getenv("LFVERIFY_REQUIRE_SHARING") == "true" {
+				return fmt.Errorf("sharing cases not run: personas %s need a consumer account (set CONSUMER_PROFILE)", strings.Join(dropped, ", "))
+			}
+			logf("skipping personas %s: the fixture has no consumer account", strings.Join(dropped, ", "))
+		}
 	} else if f.runID == "" {
 		f.runID = fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff)
 	}
@@ -565,7 +589,12 @@ func detectScenarios(personas []string) [][2]string {
 			out = append(out, [2]string{"extra_grant", p}, [2]string{"missing_grant", p})
 		}
 	}
-	return append(out, [2]string{"drop_column_restriction", "reader_cols"}, [2]string{"drop_row_filter", "reader_rows"}, [2]string{"open_default", ""})
+	out = append(out, [2]string{"drop_column_restriction", "reader_cols"}, [2]string{"drop_row_filter", "reader_rows"}, [2]string{"open_default", ""})
+	// Spec 003: exempting the bypass persona from the table-bucket deny must fail its cases
+	if slices.Contains(personas, "bypass") {
+		out = append(out, [2]string{"bypass_exempt", "bypass"})
+	}
+	return out
 }
 
 // detected reports whether an overlay made enough cases fail. missing_grant removes both the
@@ -590,6 +619,8 @@ func cmdDetect(ctx context.Context, f *flags) error {
 	if err != nil {
 		return err
 	}
+	// Consumer personas run only with a fixture consumer account, as in cmdRun
+	m, _ = m.WithoutUnmet(func(c string) bool { _, ok := man.Personas[c]; return ok })
 	dir, err := f.outDir()
 	if err != nil {
 		return err
@@ -829,6 +860,16 @@ func cmdCleanup(ctx context.Context, f *flags) error {
 		return errors.Join(sweepErr, err)
 	}
 	logf("data-lake settings restored from %s", saved)
+	exists, err := preflight.S3TablesCatalogExists(ctx, sw.Glue)
+	if err != nil {
+		return errors.Join(sweepErr, err)
+	}
+	if err := preflight.CheckS3TablesCatalogKept(exists, filepath.Join(dir, preflight.S3TablesCatalogFile), filepath.Join(dir, "manifest.json")); err != nil {
+		return errors.Join(sweepErr, err)
+	}
+	if exists {
+		logf("s3tablescatalog kept (spec 003 FR-030)")
+	}
 	return sweepErr
 }
 
@@ -845,6 +886,51 @@ func cmdCheckTarget(ctx context.Context, f *flags) error {
 		return err
 	}
 	return preflight.CheckTarget(filepath.Join(dir, "target.json"), e.target())
+}
+
+// cmdConsumerAdmin makes LFVERIFY_CONSUMER_ADMIN_ARN a data-lake admin in the consumer sandbox
+// account of the spec 003 sharing cases, so the fixture's consumer grants can be made. It runs
+// with the consumer account's credentials, only in an allow-listed account, and writes back the
+// settings it read with that one admin added: PutDataLakeSettings replaces the whole object, and
+// the account's other admins (for example SageMaker Unified Studio roles) must survive. The admin
+// stays after the run.
+func cmdConsumerAdmin(ctx context.Context, f *flags) error {
+	admin := os.Getenv("LFVERIFY_CONSUMER_ADMIN_ARN")
+	if !regexp.MustCompile(`^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$`).MatchString(admin) {
+		return fmt.Errorf("%w: LFVERIFY_CONSUMER_ADMIN_ARN must be an IAM role ARN, got %q", errUsage, admin)
+	}
+	allow, err := preflight.LoadAllowList(f.allow)
+	if err != nil {
+		return err
+	}
+	e, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	if !allow[e.account+" "+e.cfg.Region] {
+		return fmt.Errorf("%w: consumer account %s %s is not in the allow-list", preflight.ErrRefused, e.account, e.cfg.Region)
+	}
+	if !strings.Contains(admin, ":"+e.account+":") {
+		return fmt.Errorf("%w: %s is not in the consumer account %s", errUsage, admin, e.account)
+	}
+	lf := lakeformation.NewFromConfig(e.cfg)
+	out, err := lf.GetDataLakeSettings(ctx, &lakeformation.GetDataLakeSettingsInput{})
+	if err != nil {
+		return err
+	}
+	s := out.DataLakeSettings
+	for _, a := range s.DataLakeAdmins {
+		if aws.ToString(a.DataLakePrincipalIdentifier) == admin {
+			logf("consumer-admin: %s is already a data-lake admin in %s", admin, e.account)
+			return nil
+		}
+	}
+	s.DataLakeAdmins = append(s.DataLakeAdmins, lftypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String(admin)})
+	if _, err := lf.PutDataLakeSettings(ctx, &lakeformation.PutDataLakeSettingsInput{DataLakeSettings: s}); err != nil {
+		return err
+	}
+	logf("consumer-admin: added %s as a data-lake admin in %s (%d admins)", admin, e.account, len(s.DataLakeAdmins))
+	return nil
 }
 
 func versionString() string {
@@ -934,6 +1020,12 @@ func cmdProbeMatrix(f *flags) error {
 	full, err := matrix.Load(f.matrix)
 	if err != nil {
 		return err
+	}
+	// Optional personas (spec 003 consumer) are dropped when the fixture lacks their capability,
+	// as in run and detect
+	full, dropped := full.WithoutUnmet(func(c string) bool { _, ok := man.Personas[c]; return ok })
+	if len(dropped) > 0 {
+		logf("skipping personas %s: the fixture has no consumer account", strings.Join(dropped, ", "))
 	}
 	p, err := manifest.ProbeFromFull(full, man)
 	if err != nil {

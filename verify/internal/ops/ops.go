@@ -45,6 +45,8 @@ type Result struct {
 	ScanBytes int64
 	// Permissions is set by permission inspection
 	Permissions []string
+	// Mismatches lists the expected settings a check op found different (expect: match)
+	Mismatches []string
 	// Cleanup undoes an operation that changed state, such as an unexpectedly accepted grant.
 	// The runner always calls it when it is set.
 	Cleanup func(context.Context) error

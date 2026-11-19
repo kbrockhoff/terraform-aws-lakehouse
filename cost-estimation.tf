@@ -11,11 +11,15 @@ module "pricing" {
 
   enabled = var.enabled && var.cost_estimation_config.enabled
   region  = local.region
-  # Platform-only counts; tenants report through their own module.tenant estimates
-  kms_key_count      = var.enabled && var.encryption_config.create_kms_key ? 1 : 0
-  table_bucket_count = var.enabled ? length(local.zones) : 0
-  s3_bucket_count    = var.enabled ? 1 : 0 # shared query results
-  alarm_count        = 0                   # alarms are per tenant
+  # Platform-only counts; tenants report through their own module.tenant estimates. The owner of
+  # the account settings adds the dedicated catalog key unless one is supplied, and its requests.
+  kms_key_count = (var.enabled && var.encryption_config.create_kms_key ? 1 : 0) + (
+    var.enabled && local.settings_owner && local.supplied_catalog_kms_key_arn == "" ? 1 : 0
+  )
+  kms_request_count_per_month = var.enabled && local.settings_owner ? var.cost_estimation_config.catalog_kms_requests_per_month : 0
+  table_bucket_count          = var.enabled ? length(local.zones) : 0
+  s3_bucket_count             = var.enabled ? 1 : 0 # shared query results
+  alarm_count                 = 0                   # alarms are per tenant
 }
 
 locals {

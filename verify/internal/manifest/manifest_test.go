@@ -123,3 +123,54 @@ personas:
 		t.Error("inspection cases are added")
 	}
 }
+
+func TestAthenaCatalog(t *testing.T) {
+	if got := (Target{Namespace: Namespace{CatalogID: "1:s3tablescatalog/b"}}).AthenaCatalog(); got != "s3tablescatalog/b" {
+		t.Errorf("federated: %s", got)
+	}
+	if got := (Target{Namespace: Namespace{CatalogID: "123456789012"}}).AthenaCatalog(); got != "AwsDataCatalog" {
+		t.Errorf("default catalog: %s", got)
+	}
+}
+
+// TestProbeFromFullResolvesManifestValues checks that generated probe cases carry concrete
+// expectations: probe runs have no manifest to resolve "manifest" from.
+func TestProbeFromFullResolvesManifestValues(t *testing.T) {
+	m := load(t)
+	m.Personas["writer_multi"] = "arn:aws:iam::111122223333:role/lfv-abc123-writer-multi"
+	m.Tables["customers"] = Table{Columns: []Column{{Name: "customer_id", Type: "bigint"}}, Rows: 50}
+	m.AccountSettings = map[string]string{"cross_account_version": "4", "catalog_encryption_mode": "SSE-KMS-WITH-SERVICE-ROLE", "catalog_kms_key_arn": "arn:aws:kms:us-east-1:111122223333:key/c"}
+	full, err := matrix.Parse([]byte(`mode: full
+personas:
+  - key: reader_single
+    cases:
+      - {id: a, style: label, op: account_settings, expect: match, expect_values: {cross_account_version: manifest, set_context: "TRUE"}}
+      - {id: e, style: label, op: catalog_encryption, expect: match, expect_values: {mode: manifest, kms_key_arn: manifest}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ProbeFromFull(full, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, per := range p.Personas {
+		for _, c := range per.Cases {
+			for k, v := range c.ExpectValues {
+				if v == FromManifest {
+					t.Errorf("%s: expect_values %s is still %q", c.ID, k, v)
+				}
+			}
+			switch c.ID {
+			case "a/label":
+				if c.ExpectValues["cross_account_version"] != "4" || c.ExpectValues["set_context"] != "TRUE" {
+					t.Errorf("account settings case: %v", c.ExpectValues)
+				}
+			case "e/label":
+				if c.ExpectValues["mode"] != "SSE-KMS-WITH-SERVICE-ROLE" {
+					t.Errorf("encryption case: %v", c.ExpectValues)
+				}
+			}
+		}
+	}
+}

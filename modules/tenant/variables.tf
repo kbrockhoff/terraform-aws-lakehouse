@@ -55,6 +55,16 @@ variable "platform" {
     cost_estimation_enabled = bool
     common_tags             = map(string)
     data_tags               = map(string)
+    # Optional so contracts published before these fields still parse
+    sharing = optional(object({
+      consumer_accounts = map(object({
+        purpose              = string
+        outside_organization = optional(bool, false)
+      }))
+    }), { consumer_accounts = {} })
+    direct_access = optional(object({
+      exempt_principal_arns = list(string)
+    }), { exempt_principal_arns = [] })
   })
 
   validation {
@@ -76,7 +86,7 @@ variable "name" {
 # Source of truth: the root var.tenants value type (tasks.md T006). Keep the two identical so one
 # tenant definition works in both entry points.
 variable "tenant" {
-  description = "Tenant definition: owner, sensitivity ceiling, regulations, domain, zones, compliance designation, personas, row filters, and query limits."
+  description = "Tenant definition: owner, sensitivity ceiling, regulations, domain, zones, compliance designation, personas, row filters, query limits, and cross-account shares."
   type = object({
     owner                 = string
     sensitivity           = string
@@ -115,6 +125,14 @@ variable "tenant" {
     scanned_bytes_alarm_threshold  = optional(number)
     dedicated_storage              = optional(bool, false)
     dml_workgroup_enabled          = optional(bool)
+    shares = optional(map(object({
+      account_id              = string
+      zones                   = optional(list(string), ["consumption"])
+      sensitivity_values      = list(string)
+      regulations             = optional(set(string), [])
+      domains                 = optional(list(string))
+      compliance_acknowledged = optional(bool, false)
+    })), {})
   })
 
   validation {
@@ -217,6 +235,55 @@ variable "tenant" {
       toset(concat(var.tenant.stewards, [for w in values(var.tenant.writers) : w.principal_arn])),
     )) == 0
     error_message = "Tenant ${var.name}: a row-filtered reader's principal must not also be a writer or steward of the tenant, because their unfiltered SELECT would bypass the filter."
+  }
+
+  # Cross-account shares (spec 003, FR-023 and FR-024). Approval, current-account, and compliance
+  # acknowledgement checks need the platform contract and live settings, so they are preconditions
+  # in main.tf.
+  validation {
+    condition     = alltrue([for sh in values(var.tenant.shares) : can(regex("^[0-9]{12}$", sh.account_id))])
+    error_message = "Tenant ${var.name}: every share account_id must be a 12-digit AWS account ID."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for sh in values(var.tenant.shares) : concat([length(sh.sensitivity_values) > 0], [
+        for s in sh.sensitivity_values : (
+          contains(var.platform.lf_tags.sensitivity.values, s) &&
+          contains(var.platform.lf_tags.sensitivity.values, var.tenant.sensitivity) &&
+          try(index(var.platform.lf_tags.sensitivity.values, s) <= index(var.platform.lf_tags.sensitivity.values, var.tenant.sensitivity), false)
+        )
+      ])
+    ]))
+    error_message = "Tenant ${var.name}: share sensitivity_values must be non-empty platform sensitivity values at or below the tenant ceiling (${var.tenant.sensitivity})."
+  }
+
+  validation {
+    condition     = alltrue([for sh in values(var.tenant.shares) : length(setsubtract(sh.regulations, var.tenant.regulations)) == 0])
+    error_message = "Tenant ${var.name}: share regulations must be a subset of the tenant's regulations."
+  }
+
+  validation {
+    condition = alltrue([
+      for d in flatten([for sh in values(var.tenant.shares) : coalesce(sh.domains, [])]) :
+      contains(var.platform.lf_tags.domain.values, d)
+    ])
+    error_message = "Tenant ${var.name}: share domains must be platform domain values (${join(", ", var.platform.lf_tags.domain.values)})."
+  }
+
+  validation {
+    condition = alltrue([
+      for z in flatten([for sh in values(var.tenant.shares) : sh.zones]) :
+      contains(coalesce(var.tenant.zones, keys(var.platform.zones)), z)
+    ])
+    error_message = "Tenant ${var.name}: share zones must be among the tenant's zones (shares default to the consumption zone)."
+  }
+
+  # Grants are keyed by expression in Lake Formation, so two shares to one account could hold the
+  # same grant, and removing either would revoke it for both. Widen the one share instead.
+  validation {
+    condition     = length(distinct([for sh in values(var.tenant.shares) : sh.account_id])) == length(var.tenant.shares)
+    error_message = "Tenant ${var.name}: at most one share per consumer account; combine shares to the same account into one."
   }
 
   validation {

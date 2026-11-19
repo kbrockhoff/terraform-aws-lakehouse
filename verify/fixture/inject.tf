@@ -10,12 +10,14 @@
 # - drop_column_restriction: platform.tf (reader_cols sensitivity) and grants-named.tf
 # - drop_row_filter: platform.tf (row_filters) and grants-named.tf
 # - open_default: the IAM_ALLOWED_PRINCIPALS grant below
+# - bypass_exempt: platform.tf exempts the bypass persona from the table-bucket deny (spec 003)
 locals {
   inject_extra_grant             = var.inject == "extra_grant"
   inject_missing_grant           = var.inject == "missing_grant"
   inject_drop_column_restriction = var.inject == "drop_column_restriction"
   inject_drop_row_filter         = var.inject == "drop_row_filter"
   inject_open_default            = var.inject == "open_default"
+  inject_bypass_exempt           = var.inject == "bypass_exempt"
 }
 
 resource "aws_lakeformation_permissions" "inject_extra_label" {

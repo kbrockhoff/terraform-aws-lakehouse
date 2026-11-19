@@ -8,5 +8,8 @@ resource "aws_sns_topic" "alarms" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-alarms"
   })
+
+  # s3tablescatalog exists before anything else is created or changed (FR-029)
+  depends_on = [terraform_data.s3tables_catalog]
 }
 

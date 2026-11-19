@@ -94,6 +94,35 @@ It covers these personas:
     `ReadOnlyAccess` lacks it.
 - Optional: `RUNNER_ROLE_ARN` when the role running Terraform is not the runner. By default the
   fixture uses the session's role.
+- **Full mode**: `LFVERIFY_CATALOG_KEY_ARN`, a long-lived KMS key that encrypts the account's Glue
+  Data Catalog metadata (spec 003, FR-013). The fixture owns the account-wide settings, and catalog
+  metadata outlives every run, so the fixture never creates or deletes this key. Create it once per
+  sandbox account. Its policy holds three statements:
+  - account-root access;
+  - `kms:CreateGrant` for Glue, conditioned on `kms:EncryptionContext:glue_catalog_id`;
+  - a deny of `kms:ScheduleKeyDeletion` and `kms:DisableKey` to every principal.
+
+  Fixture roles get key access through their own IAM policies, so the key policy never names them.
+- Optional: `CATALOG_KEY_ACCESS_MODE=per_caller` runs the fixture in per-caller catalog encryption
+  mode. The default is `service_role`.
+- Optional: `CONSUMER_PROFILE=<aws profile>` turns on the spec 003 sharing cases (persona
+  `consumer`). Requirements for the profile's account:
+  - it is a second sandbox account in the same organization and Region, listed in
+    `sandbox-accounts.txt`;
+  - the profile's role is already a Lake Formation data-lake admin there.
+
+  Set `LFVERIFY_CONSUMER_ADMIN_ARN` to that role's ARN, and `make verify-up` (or
+  `make verify-consumer-admin`) adds it as a data-lake admin in the consumer account. It keeps
+  every other admin and setting, and the admin stays after the run.
+
+  The fixture shares tenant alpha with that account, then creates a resource link, an Athena
+  workgroup, and LF-tag grants there. It never edits the consumer's data-lake settings, which
+  would remove that account's other admins. Without the profile, the consumer persona is skipped.
+  With `RELEASE=true`, lfverify fails instead of skipping it.
+
+  | Sandbox account | Region | Alias | Key ARN |
+  |-----------------|--------|-------|---------|
+  | 492637581429 | us-east-1 | `alias/lfverify-catalog` | `arn:aws:kms:us-east-1:492637581429:key/f665a6a9-28b7-4b06-8781-198a087c42c6` |
 
 ## Make targets
 

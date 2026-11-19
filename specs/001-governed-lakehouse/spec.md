@@ -681,8 +681,8 @@ All code validation runs through `make` targets. Do not invoke `terraform`, `tfl
 - Zone- or tenant-specific retention, tiering, or recovery profiles.
 - Business intelligence and visualization tooling.
 - Network foundations and private endpoints.
-- Cross-account and cross-region data sharing and replication (candidate for a later spec;
-  MissionCritical replication deferred).
+- Cross-region data sharing and replication (cross-account sharing within the Region is specified
+  in 003-harden-catalog-settings; MissionCritical replication deferred).
 - Sensitive-data discovery, automated classification scanning, and automated roll-up enforcement
   or drift detection for table labels.
 

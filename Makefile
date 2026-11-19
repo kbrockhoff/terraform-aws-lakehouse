@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-consumer-admin verify-upgrade verify-upgrade-check verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -67,7 +67,7 @@ format: ## Format all Terraform files
 	@terraform fmt -recursive
 	@echo "$(GREEN)✓ Formatting complete$(RESET)"
 
-lint: ## Run TFLint on all Terraform files and gosec on verify/
+lint: ## Run TFLint on all Terraform files, ShellCheck on scripts/, and gosec on verify/
 	@echo "$(CYAN)Running TFLint...$(RESET)"
 	@if command -v tflint >/dev/null 2>&1; then \
 		tflint --init >/dev/null || exit 1; \
@@ -75,6 +75,13 @@ lint: ## Run TFLint on all Terraform files and gosec on verify/
 		echo "$(GREEN)✓ TFLint passed$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ TFLint not installed, skipping$(RESET)"; \
+	fi
+	@echo "$(CYAN)Running ShellCheck...$(RESET)"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck scripts/*.sh || { echo "$(RED)✗ ShellCheck found issues$(RESET)"; exit 1; }; \
+		echo "$(GREEN)✓ ShellCheck passed$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠ ShellCheck not installed, skipping...$(RESET)"; \
 	fi
 	@$(MAKE) -s lint-verify
 
@@ -124,6 +131,11 @@ test-tenancy: check-aws ## Run only tenancy tests (tenant isolation, type sync, 
 	@cd test && go test -v -timeout 30m -run 'TestAddingTenantTouchesOnlyThatTenant|TestTenantTypeInSync|TestZoneOverrideWithoutConsumption'
 	@echo "$(GREEN)✓ test-tenancy passed$(RESET)"
 
+test-account-settings: check-aws ## Run only account settings and sharing tests (spec 003)
+	@echo "$(CYAN)Running account settings and sharing tests...$(RESET)"
+	@cd test && go test -v -timeout 45m -run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestEphemeral|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare|TestStandaloneTenantRejectsUnapprovedShare'
+	@echo "$(GREEN)✓ test-account-settings passed$(RESET)"
+
 test-standalone: check-aws ## Run only standalone tenant tests
 	@echo "$(CYAN)Running standalone tenant tests...$(RESET)"
 	@cd test && go test -v -timeout 30m -run 'TestStandaloneTenant'
@@ -163,7 +175,12 @@ RUN_ID ?= $(shell cat $(VERIFY_RUN_FILE) 2>/dev/null)
 VERIFY_OUT = $(CURDIR)/verify/out/$(RUN_ID)
 LFVERIFY := $(CURDIR)/verify/out/lfverify
 VERIFY_TF = cd verify/fixture && TF_DATA_DIR=$(VERIFY_OUT)/.terraform terraform
-VERIFY_VARS = -var run_id=$(RUN_ID) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
+# Spec 003: the fixture owns the account settings and supplies a long-lived catalog key
+# (LFVERIFY_CATALOG_KEY_ARN, verify/README.md); CATALOG_KEY_ACCESS_MODE picks the mode under test
+CATALOG_KEY_ACCESS_MODE ?= service_role
+# CONSUMER_PROFILE (an AWS profile for the consumer sandbox account) turns on the sharing cases;
+# RELEASE=true makes lfverify fail instead of skipping them
+VERIFY_VARS = -var run_id=$(RUN_ID) -var catalog_kms_key_arn=$(LFVERIFY_CATALOG_KEY_ARN) -var catalog_key_access_mode=$(CATALOG_KEY_ACCESS_MODE) $(if $(CONSUMER_PROFILE),-var consumer_profile=$(CONSUMER_PROFILE),) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
 VERIFY_MANIFEST = $(VERIFY_OUT)/manifest.json
 INJECT ?=
 INJECT_PERSONA ?=
@@ -200,11 +217,17 @@ verify-new-run: ## Start a new run ID (six hex characters) and remember it
 
 verify-init:
 	@test -n "$(RUN_ID)" || { echo "$(RED)✗ RUN_ID is not set; run make verify-new-run$(RESET)"; exit 1; }
+	@test -n "$(LFVERIFY_CATALOG_KEY_ARN)" || { echo "$(RED)✗ LFVERIFY_CATALOG_KEY_ARN is not set; it names the long-lived catalog key (verify/README.md)$(RESET)"; exit 1; }
 	@mkdir -p $(VERIFY_OUT)
 	@$(VERIFY_TF) init -input=false -reconfigure -backend-config=path=$(VERIFY_OUT)/terraform.tfstate >/dev/null
 
+verify-consumer-admin: verify-build ## Make LFVERIFY_CONSUMER_ADMIN_ARN a data-lake admin in the CONSUMER_PROFILE account (kept; other settings untouched)
+	@test -n "$(CONSUMER_PROFILE)" -a -n "$(LFVERIFY_CONSUMER_ADMIN_ARN)" || { echo "$(RED)✗ set CONSUMER_PROFILE and LFVERIFY_CONSUMER_ADMIN_ARN$(RESET)"; exit 1; }
+	@AWS_PROFILE=$(CONSUMER_PROFILE) LFVERIFY_CONSUMER_ADMIN_ARN=$(LFVERIFY_CONSUMER_ADMIN_ARN) $(LFVERIFY) consumer-admin --allow-list $(CURDIR)/verify/sandbox-accounts.txt
+
 verify-up: check-aws verify-build verify-init ## Preflight, then apply fixture stage 1
 	@$(LFVERIFY) preflight --mode full --run-id $(RUN_ID) --out $(VERIFY_OUT) --allow-list $(CURDIR)/verify/sandbox-accounts.txt
+	@if [ -n "$(CONSUMER_PROFILE)" ] && [ -n "$(LFVERIFY_CONSUMER_ADMIN_ARN)" ]; then $(MAKE) -s verify-consumer-admin; fi
 	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=1
 	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
 	@echo "$(GREEN)✓ Fixture stage 1 applied (run $(RUN_ID))$(RESET)"
@@ -217,7 +240,7 @@ verify-seed: check-aws verify-build verify-init ## Seed fixture tables, then app
 	@echo "$(GREEN)✓ Fixture seeded and stage 2 applied (run $(RUN_ID))$(RESET)"
 
 verify-run: check-aws verify-build ## Run the full-mode matrix against the applied fixture
-	@$(LFVERIFY) run --mode full --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(VERIFY_MANIFEST) --out $(VERIFY_OUT)
+	@LFVERIFY_REQUIRE_SHARING=$(if $(filter true,$(RELEASE)),true,) $(LFVERIFY) run --mode full --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(VERIFY_MANIFEST) --out $(VERIFY_OUT)
 
 verify-apply: verify-init ## Re-apply stage 2 with an overlay (INJECT, INJECT_PERSONA); used by detect
 	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=2 -var inject=$(INJECT) -var inject_persona=$(INJECT_PERSONA)
@@ -243,6 +266,46 @@ verify-full: check-aws ## Full mode: new run, deploy, seed, run, and always tear
 	  $(MAKE) verify-down RUN_ID=$$run; down=$$?; \
 	  [ $$status -eq 0 ] && status=$$down; \
 	  echo "$(CYAN)Run $$run finished in $$(( $$(date +%s) - start ))s with status $$status (teardown $$down)$(RESET)"; exit $$status
+
+# Spec 003 upgrade test: the only backward-compatibility guarantee is for ephemeral test
+# deployments. Deploys the fixture from a UPGRADE_FROM worktree, then upgrades it to this checkout
+# in one apply, which must replace or destroy no Lake Formation grant, and runs the matrix.
+UPGRADE_FROM ?= v0.3.1
+verify-upgrade: check-aws ## Full mode: deploy at UPGRADE_FROM, upgrade to this checkout in one apply, run, and tear down
+	@test -n "$(LFVERIFY_CATALOG_KEY_ARN)" || { echo "$(RED)✗ LFVERIFY_CATALOG_KEY_ARN is not set$(RESET)"; exit 1; }
+	@$(MAKE) -s verify-new-run
+	@# The legacy worktree holds the run's state and settings snapshot until they are copied here.
+	@# Until then teardown runs from the worktree, and the worktree is kept whenever teardown fails.
+	@run=$$(cat $(VERIFY_RUN_FILE)); wt=$(CURDIR)/verify/out/upgrade-$$run; \
+	  git worktree add --detach $$wt $(UPGRADE_FROM) >/dev/null || exit 1; \
+	  if $(MAKE) -C $$wt verify-up verify-seed RUN_ID=$$run && \
+	    mkdir -p $(CURDIR)/verify/out/$$run && cp -R $$wt/verify/out/$$run/. $(CURDIR)/verify/out/$$run/; then \
+	    $(MAKE) verify-upgrade-check RUN_ID=$$run && $(MAKE) verify-apply RUN_ID=$$run && $(MAKE) verify-run RUN_ID=$$run; status=$$?; \
+	    $(MAKE) verify-down RUN_ID=$$run; down=$$?; \
+	  else \
+	    status=1; echo "$(RED)✗ the $(UPGRADE_FROM) deployment failed; tearing down from $$wt$(RESET)"; \
+	    $(MAKE) -C $$wt verify-down RUN_ID=$$run; down=$$?; \
+	  fi; \
+	  if [ $$down -eq 0 ]; then git worktree remove --force $$wt; \
+	  else echo "$(YELLOW)⚠ teardown failed; keeping $$wt for make -C $$wt verify-cleanup RUN_ID=$$run$(RESET)"; fi; \
+	  [ $$status -eq 0 ] && status=$$down; \
+	  echo "$(CYAN)Upgrade run $$run from $(UPGRADE_FROM) finished with status $$status (teardown $$down)$(RESET)"; exit $$status
+
+verify-upgrade-check: verify-init ## Plan the upgrade of an existing run; fail if a Lake Formation grant would be replaced or destroyed
+	@$(VERIFY_TF) plan -input=false -no-color $(VERIFY_VARS) -var stage=2 > $(VERIFY_OUT)/upgrade-plan.txt
+	@# Module grants only: the fixture's own owner_* grants are replaced on every re-apply (awslkhs-8oof)
+	@grep -E '^  # module\.lakehouse\..*aws_lakeformation_permissions\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
+	  { echo "$(RED)✗ the upgrade replaces or destroys Lake Formation grants (see $(VERIFY_OUT)/upgrade-plan.txt)$(RESET)"; exit 1; } || true
+	@# Generic across starting versions: the data-lake settings must be moved or updated in place,
+	@# never recreated, and s3tablescatalog must never be destroyed (spec 003 FR-030, FR-031)
+	@grep -E '^  # .*aws_lakeformation_data_lake_settings\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
+	  { echo "$(RED)✗ the upgrade recreates the data-lake settings$(RESET)"; exit 1; } || true
+	@grep -E '^  # .*aws_glue_catalog\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
+	  { echo "$(RED)✗ the upgrade destroys s3tablescatalog$(RESET)"; exit 1; } || true
+	@grep -E 'has moved to|will no longer be managed by Terraform, but will not be destroyed' $(VERIFY_OUT)/upgrade-plan.txt | sed 's/^ *# /  /' || true
+	@grep -E '^  # module\.lakehouse\..* must be replaced' $(VERIFY_OUT)/upgrade-plan.txt | sed 's/^  # /  replaced: /' || true
+	@grep -E '^Plan:' $(VERIFY_OUT)/upgrade-plan.txt
+	@echo "$(GREEN)✓ Upgrade plan keeps every Lake Formation grant$(RESET)"
 
 verify-detect: check-aws ## Full mode: apply each misconfiguration overlay and require a failing case
 	@$(MAKE) -s verify-new-run

@@ -22,3 +22,20 @@ provider "aws" {
     }
   }
 }
+
+# Consumer account for the spec 003 sharing cases. Without consumer_profile it uses the default
+# credentials, and every consumer resource has count 0. Sharing is same-Region, and lfverify's
+# consumer clients use the producer's Region, so the profile's own Region is overridden.
+provider "aws" {
+  alias   = "consumer"
+  profile = var.consumer_profile != "" ? var.consumer_profile : null
+  region  = data.aws_region.current.region
+
+  default_tags {
+    tags = {
+      LfverifyRun = var.run_id
+      Purpose     = "access-verification"
+    }
+  }
+}
+

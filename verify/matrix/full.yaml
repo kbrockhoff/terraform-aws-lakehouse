@@ -99,6 +99,54 @@ personas:
         rule: Row filter expressions cannot reference array or map columns
 
   # ---------------------------------------------------------------- FR-010
+      # ------------------------------------------------ spec 003 FR-020 cases 3 to 5
+      # Account-wide settings, read once (style label). "manifest" takes the fixture's value.
+      - id: admin-account-settings
+        style: label
+        op: account_settings
+        expect: match
+        expect_values:
+          cross_account_version: manifest
+          set_context: "TRUE"
+          allow_external_data_filtering: "false"
+          allow_full_table_external_data_access: "false"
+          external_data_filtering_allow_list: none
+          authorized_session_tag_values: none
+          trusted_resource_owners: none
+          create_database_default_permissions: none
+          create_table_default_permissions: none
+        rule: spec 003 FR-003 and FR-005 - every data-lake setting is declared, version pinned
+      - id: admin-catalog-encryption
+        style: label
+        op: catalog_encryption
+        expect: match
+        expect_values:
+          mode: manifest
+          kms_key_arn: manifest
+          connection_passwords_encrypted: "true"
+        rule: spec 003 FR-009 and FR-010 - catalog metadata uses the dedicated catalog key
+      - id: admin-s3tables-catalog
+        style: label
+        op: s3tables_catalog
+        expect: match
+        expect_values:
+          exists: "true"
+          federated_identifier: manifest
+          connection: aws:s3tables
+          create_database_default_permissions: none
+          create_table_default_permissions: none
+          allow_full_table_external_data_access: manifest
+        rule: spec 003 FR-029 - s3tablescatalog exists, federated over every table bucket, no identity-policy-only defaults
+      - id: admin-catalog-resource-policy
+        style: label
+        op: catalog_resource_policy
+        expect: match
+        rule: spec 003 FR-006 - no catalog resource policy, or one that allows RAM sharing
+      - id: admin-no-iam-allowed-principals
+        style: label
+        op: no_iam_allowed_principals
+        expect: match
+        rule: spec 003 FR-020 case 5 - no identity-policy-only grants on platform catalogs
   - key: roadmin
     cases:
       - id: roadmin-get-settings
@@ -776,3 +824,98 @@ personas:
         resource: { tenant: alpha, table: customers }
         expect: denied
         rule: No grants, no writes
+
+  # ---------------------------------------------- spec 003 FR-020 cases 1 and 2
+  # Holds s3tables:* and S3 object access on table storage and a reader's Athena and Glue access,
+  # but no Lake Formation grant. Only the table-bucket deny stops its direct calls (FR-015).
+  # Label style only: the deny is on the module's zone buckets, not the named baseline bucket.
+  - key: bypass
+    cases:
+      - id: bypass-storage-read
+        style: label
+        op: storage_read
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        rule: spec 003 FR-015 - the table-bucket deny refuses direct reads despite IAM access
+      - id: bypass-storage-write
+        style: label
+        op: storage_write
+        resource: { tenant: alpha, table: scratch }
+        expect: denied
+        rule: spec 003 FR-015 - the table-bucket deny refuses direct writes despite IAM access
+      - id: bypass-select
+        style: label
+        op: select
+        resource: { tenant: alpha, table: orders }
+        expect: denied
+        denied_by: lake_formation
+        rule: spec 003 FR-020 case 2 - no Lake Formation grant, no governed access
+
+  # ---------------------------------------------- spec 003 FR-020 cases 6 to 10
+  # A persona in the consumer account (make ... CONSUMER_PROFILE=...). The producer shares tenant
+  # alpha's curated namespace, public and internal labels, read-only; the consumer's admin grants
+  # this persona by LF-tag expression through a resource link (tenant: consumer). Row-filtered
+  # tables (orders at stage 2) are never shared. Skipped without a consumer account.
+  - key: consumer
+    requires: consumer
+    cases:
+      - id: consumer-count-shared
+        style: label
+        op: count
+        resource: { tenant: consumer, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: spec 003 FR-021 - shared, label-matching tables are readable in the consumer
+      - id: consumer-orders-not-shared
+        style: label
+        op: get_table
+        resource: { tenant: consumer, table: orders }
+        expect: denied
+        rule: spec 003 FR-024 - row-filtered tables are excluded from shares
+      - id: consumer-select-orders
+        style: label
+        op: select
+        resource: { tenant: consumer, table: orders }
+        expect: denied
+        rule: spec 003 FR-024 - row filters are not shared, so the table is not either
+      - id: consumer-other-tenant
+        style: label
+        op: get_database
+        resource: { tenant: beta }
+        expect: denied
+        rule: spec 003 FR-023 - every share is bounded by the tenant tag
+      - id: consumer-other-zone
+        style: label
+        op: get_database
+        resource: { tenant: alpha, zone: raw }
+        expect: denied
+        rule: spec 003 FR-023 - only the shared zones are visible
+      - id: consumer-storage-bypass
+        style: label
+        op: storage_read
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: spec 003 FR-015 - consumers read only through credentials the producer vends
+      - id: consumer-insert
+        style: label
+        phase: scenario
+        op: insert
+        resource: { tenant: consumer, table: customers }
+        expect: denied
+        rule: spec 003 FR-024 - shares are read-only
+      - id: consumer-drop
+        style: label
+        phase: scenario
+        op: drop_table
+        resource: { tenant: consumer, table: scratch }
+        expect: denied
+        rule: spec 003 FR-024 - shares are read-only
+      - id: consumer-revoked
+        style: label
+        phase: scenario
+        setup: revoke_share
+        op: count
+        resource: { tenant: consumer, table: customers }
+        expect: denied
+        rule: spec 003 FR-025 - removing a share revokes consumer access
+

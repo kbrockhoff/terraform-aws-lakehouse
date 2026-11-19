@@ -22,7 +22,8 @@ func fixtureOptions(t *testing.T, vars map[string]interface{}) *terraform.Option
 	b := make([]byte, 3)
 	_, err := rand.Read(b)
 	require.NoError(t, err)
-	opts.Vars = map[string]interface{}{"run_id": hex.EncodeToString(b)}
+	// The fixture supplies the long-lived catalog key instead of creating one (spec 003 FR-013)
+	opts.Vars = map[string]interface{}{"run_id": hex.EncodeToString(b), "catalog_kms_key_arn": existingCatalogKey(t)}
 	for k, v := range vars {
 		opts.Vars[k] = v
 	}
@@ -58,8 +59,9 @@ func TestVerifyFixture(t *testing.T) {
 	t.Run("stage1", func(t *testing.T) {
 		t.Parallel()
 		a := addresses(t, map[string]interface{}{"stage": 1})
-		assert.Equal(t, 13, countWithPrefix(a, "aws_iam_role.persona["), "one role per persona")
-		assert.Contains(t, a, "module.lakehouse.module.catalog_integration[0].aws_lakeformation_data_lake_settings.this")
+		assert.Equal(t, 14, countWithPrefix(a, "aws_iam_role.persona["), "one role per persona")
+		assert.Contains(t, a, "aws_iam_role_policy.bypass", "the bypass persona holds direct storage permissions")
+		assert.Contains(t, a, "module.lakehouse.module.account_settings[0].aws_lakeformation_data_lake_settings.this")
 		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_data_cells_filter."), "named filters need tables")
 		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_permissions.named_table["))
 		assert.Zero(t, countWithPrefix(a, "aws_lakeformation_permissions.named_columns["))
@@ -85,8 +87,8 @@ func TestVerifyFixture(t *testing.T) {
 		assert.Contains(t, a, `aws_lakeformation_permissions.named_table["meta_writer/table/n_alpha/scratch"]`)
 		assert.Equal(t, 3, countWithPrefix(a, `module.lakehouse.module.tenant["alpha"].aws_lakeformation_data_cells_filter.this[`))
 		// alpha raw, alpha curated, beta curated, gamma curated
-		assert.Equal(t, 4, countWithPrefix(a, "aws_lakeformation_resource_lf_tags.orders_restricted_columns["))
-		assert.Contains(t, a, "aws_lakeformation_resource_lf_tags.scratch_mw[0]")
+		assert.Equal(t, 4, countWithPrefix(a, "aws_lakeformation_resource_lf_tag.orders_restricted_columns["))
+		assert.Contains(t, a, "aws_lakeformation_resource_lf_tag.scratch_mw[0]")
 		assert.NotContains(t, a, "aws_lakeformation_permissions.inject_open_default[0]")
 	})
 

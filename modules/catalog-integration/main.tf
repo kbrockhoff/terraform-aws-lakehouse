@@ -2,6 +2,18 @@ locals {
   table_buckets_arn = "arn:${var.partition}:s3tables:${var.region}:${var.account_id}:bucket/*"
 }
 
+# Carries the root's s3tablescatalog step ID (empty when another deployment owns the account
+# settings), so the catalog exists before anything here is created or changed (spec 003 FR-029)
+resource "terraform_data" "catalog_ready" {
+  input = var.catalog_ready
+}
+
+# The data-lake settings live in modules/account-settings, which another deployment may own. This
+# carries their ID (or the settings guard's) so registration waits for the deployer's admin rights.
+resource "terraform_data" "settings_ready" {
+  input = var.settings_ready
+}
+
 # ----
 # S3 Tables integration with Lake Formation
 # ----
@@ -13,43 +25,17 @@ resource "aws_lakeformation_resource" "s3tables" {
   with_federation       = true
   hybrid_access_enabled = false
 
-  # Registration and the catalog need the deploying role to be a data-lake admin first
-  depends_on = [aws_iam_role_policy.lf_s3tables_access, aws_lakeformation_data_lake_settings.this]
+  # Registration needs the deploying role to be a data-lake admin first
+  depends_on = [aws_iam_role_policy.lf_s3tables_access, terraform_data.settings_ready]
 }
 
-# Federated catalog exposing S3 table buckets to Glue, Athena, and Lake Formation
-resource "aws_glue_catalog" "s3tables" {
-  name = "s3tablescatalog"
-
-  federated_catalog {
-    identifier      = local.table_buckets_arn
-    connection_name = "aws:s3tables"
-  }
-
-  allow_full_table_external_data_access = var.allow_full_table_external_data_access ? "True" : "False"
-
-  tags = var.tags
-
-  depends_on = [aws_lakeformation_resource.s3tables, aws_lakeformation_data_lake_settings.this]
-}
-
-# Authoritative for ALL data-lake settings in the account and Region: admins not listed here are
-# removed. Tenant pipeline roles and secondary deployers must be in admin_principal_arns.
-resource "aws_lakeformation_data_lake_settings" "this" {
-  admins = var.admin_principal_arns
-
-  # PutDataLakeSettings replaces the whole settings object, so omitting this would erase any
-  # read-only admins configured outside Terraform on every apply.
-  read_only_admins = var.read_only_admin_principal_arns
-
-  # No create_*_default_permissions blocks: omitting them sends empty lists, which removes the
-  # IAM_ALLOWED_PRINCIPALS defaults, so Lake Formation grants are the only access to new
-  # databases and tables. (An empty block would send an empty principal, which the API rejects.)
+# The federated s3tablescatalog moved to modules/account-settings, which creates it only when it
+# is missing and never deletes it (spec 003 FR-029 to FR-031). Forget the catalog without deleting
+# it: a delete would drop every catalog grant and bucket catalog for all deployments in the account.
+removed {
+  from = aws_glue_catalog.s3tables
 
   lifecycle {
-    precondition {
-      condition     = contains(var.admin_principal_arns, var.deployer_role_arn)
-      error_message = "The deploying role (${var.deployer_role_arn}) must be in admin_principal_arns, or this apply would remove its own data-lake admin rights and fail every later grant."
-    }
+    destroy = false
   }
 }

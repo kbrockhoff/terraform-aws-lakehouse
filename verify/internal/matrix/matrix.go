@@ -52,6 +52,8 @@ const (
 	// Inspect compares the persona's effective permissions instead of attempting the operation
 	// (probe mode, FR-029)
 	Inspect Expect = "inspect"
+	// Match runs a check op and passes when the live settings match expect_values (spec 003)
+	Match Expect = "match"
 )
 
 // Op is an operation a persona attempts.
@@ -81,6 +83,16 @@ const (
 	GetSettings     Op = "get_settings"
 	PutSettings     Op = "put_settings"
 	StorageRead     Op = "storage_read"
+	// StorageWrite writes an object to table storage with the persona's own credentials, bypassing
+	// Lake Formation (spec 003 FR-015)
+	StorageWrite Op = "storage_write"
+
+	// Check ops read account-wide settings and compare them with expect_values (spec 003 FR-020)
+	AccountSettings        Op = "account_settings"
+	CatalogEncryption      Op = "catalog_encryption"
+	CatalogResourcePolicy  Op = "catalog_resource_policy"
+	S3TablesCatalog        Op = "s3tables_catalog"
+	NoIAMAllowedPrincipals Op = "no_iam_allowed_principals"
 
 	// Rule-boundary operations (FR-021): each attempts a grant the permission service must reject
 	GrantColumnsWithWrite Op = "grant_columns_with_write"
@@ -93,10 +105,13 @@ var readOps = []Op{
 	ListPermissions, GetSettings,
 }
 
+// CheckOps compare live settings with expectations instead of testing a persona's access.
+var CheckOps = []Op{AccountSettings, CatalogEncryption, CatalogResourcePolicy, S3TablesCatalog, NoIAMAllowedPrincipals}
+
 var writeOps = []Op{
 	Insert, Update, Delete, CreateTable, AlterTable, DropTable, Grant, Revoke, AddLFTags,
 	CreateLFTag, CreateFilter, PutSettings, GrantColumnsWithWrite, GrantExcludePartition,
-	CreateFilterMapColumn,
+	CreateFilterMapColumn, StorageWrite,
 }
 
 // QueryOps run through the query engine and need a workgroup.
@@ -106,7 +121,7 @@ var QueryOps = []Op{Select, SelectColumns, Count, Insert, Update, Delete}
 func (o Op) IsWrite() bool { return slices.Contains(writeOps, o) }
 
 func (o Op) known() bool {
-	return slices.Contains(readOps, o) || slices.Contains(writeOps, o) || o == StorageRead
+	return slices.Contains(readOps, o) || slices.Contains(writeOps, o) || slices.Contains(CheckOps, o) || o == StorageRead
 }
 
 // Setup is a mutation the runner applies before one scenario case.
@@ -121,10 +136,15 @@ const (
 	LateTable Setup = "late_table"
 	// AllRowsFilter grants reader_rows an all-rows filter on orders (FR-018)
 	AllRowsFilter Setup = "all_rows_filter"
+	// RevokeShare revokes the cross-account share's table grant and restores it (spec 003 FR-025)
+	RevokeShare Setup = "revoke_share"
 )
 
 // Setups lists the known setup mutations.
-var Setups = []Setup{RelabelColumnRestricted, RelabelTableRestricted, LateTable, AllRowsFilter}
+var Setups = []Setup{RelabelColumnRestricted, RelabelTableRestricted, LateTable, AllRowsFilter, RevokeShare}
+
+// Consumer is the only fixture capability a persona can require.
+const Consumer = "consumer"
 
 // Defaults are run-wide settings; zero values in the file take these defaults.
 type Defaults struct {
@@ -178,12 +198,15 @@ type Case struct {
 	Resource Resource `yaml:"resource"`
 	Expect   Expect   `yaml:"expect"`
 
-	ExpectColumns     []string             `yaml:"expect_columns,omitempty"`
-	AbsentColumns     []string             `yaml:"absent_columns,omitempty"`
-	ExpectPermissions []string             `yaml:"expect_permissions,omitempty"`
-	ExpectRows        *Rows                `yaml:"expect_rows,omitempty"`
-	RowPredicate      *predicate.Predicate `yaml:"row_predicate,omitempty"`
-	MaxRows           *int                 `yaml:"max_rows,omitempty"`
+	ExpectColumns     []string `yaml:"expect_columns,omitempty"`
+	AbsentColumns     []string `yaml:"absent_columns,omitempty"`
+	ExpectPermissions []string `yaml:"expect_permissions,omitempty"`
+	// ExpectValues are the settings a check op compares (expect: match). In full mode a value of
+	// "manifest" takes the fixture's expected value instead.
+	ExpectValues map[string]string    `yaml:"expect_values,omitempty"`
+	ExpectRows   *Rows                `yaml:"expect_rows,omitempty"`
+	RowPredicate *predicate.Predicate `yaml:"row_predicate,omitempty"`
+	MaxRows      *int                 `yaml:"max_rows,omitempty"`
 
 	// Setup names a mutation the runner applies before the case and reverts after it (full
 	// mode, phase scenario only)
@@ -201,6 +224,9 @@ type Case struct {
 // Persona is one identity under test.
 type Persona struct {
 	Key string `yaml:"key"`
+	// Requires names a fixture capability the persona needs. "consumer" personas run only when
+	// the fixture has a consumer account (spec 003); otherwise they are skipped.
+	Requires string `yaml:"requires,omitempty"`
 	// RoleARN is required in probe mode; full mode resolves it from the manifest
 	RoleARN string `yaml:"role_arn,omitempty"`
 	Cases   []Case `yaml:"cases"`
@@ -302,6 +328,9 @@ func (m *Matrix) Validate() error {
 		if m.Mode == Full && p.RoleARN != "" {
 			errs = append(errs, fmt.Errorf("persona %s: role_arn comes from the manifest in full mode", p.Key))
 		}
+		if p.Requires != "" && (p.Requires != Consumer || m.Mode != Full) {
+			errs = append(errs, fmt.Errorf("persona %s: requires must be %q, in full mode", p.Key, Consumer))
+		}
 		for _, c := range p.Cases {
 			if ids[c.ID] {
 				errs = append(errs, fmt.Errorf("duplicate case id %q", c.ID))
@@ -330,8 +359,17 @@ func (m *Matrix) validateCase(c Case) []error {
 	if !slices.Contains([]Phase{Static, Scenario, Boundary}, c.Phase) {
 		add("unknown phase %q", c.Phase)
 	}
-	if !slices.Contains([]Expect{Allowed, Denied, Rejected, Absent, Inspect}, c.Expect) {
+	if !slices.Contains([]Expect{Allowed, Denied, Rejected, Absent, Inspect, Match}, c.Expect) {
 		add("unknown expect %q", c.Expect)
+	}
+	if slices.Contains(CheckOps, c.Op) != (c.Expect == Match) {
+		add("expect match is for check ops (%v), and check ops need expect: match", CheckOps)
+	}
+	if len(c.ExpectValues) > 0 && c.Expect != Match {
+		add("expect_values needs expect: match")
+	}
+	if slices.Contains(CheckOps, c.Op) && m.Mode == Full && c.Style != Label {
+		add("check ops read account-wide settings once; use style: label")
 	}
 	if c.Expect == Absent && len(c.AbsentColumns) == 0 && !slices.Contains([]Op{ListCatalogs, ListDatabases, ListTables}, c.Op) {
 		add("expect absent needs absent_columns, or a list op")
@@ -351,8 +389,8 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Expect != Denied {
 			add("denied_by needs expect: denied")
 		}
-		if c.Op == StorageRead {
-			add("denied_by does not apply to storage_read, which bypasses Lake Formation")
+		if c.Op == StorageRead || c.Op == StorageWrite {
+			add("denied_by does not apply to %s, which bypasses Lake Formation", c.Op)
 		}
 	}
 	if c.RowPredicate != nil {
@@ -374,7 +412,7 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Expect == Inspect && len(c.ExpectPermissions) == 0 {
 			add("expect inspect needs expect_permissions")
 		}
-		if c.Op != GetSettings && c.Op != ListCatalogs && (c.Resource.CatalogID == "" || c.Resource.Database == "") {
+		if c.Op != GetSettings && c.Op != ListCatalogs && c.Op != AccountSettings && c.Op != CatalogEncryption && c.Op != CatalogResourcePolicy && c.Op != S3TablesCatalog && (c.Resource.CatalogID == "" || c.Resource.Database == "") {
 			add("probe resources need catalog_id and database")
 		}
 		if slices.Contains(QueryOps, c.Op) && c.Expect != Inspect && c.Resource.Workgroup == "" {
@@ -386,6 +424,9 @@ func (m *Matrix) validateCase(c Case) []error {
 		}
 		if c.Resource.CatalogID != "" || c.Resource.Database != "" || c.Resource.Workgroup != "" {
 			add("full mode resources use symbolic tenant names, not catalog_id, database, or workgroup")
+		}
+		if c.Resource.Tenant == Consumer && c.Style != Label {
+			add("tenant consumer is the consumer's resource link; use style: label")
 		}
 		if c.Style == Named && c.Resource.Zone != "" && c.Resource.Zone != "curated" {
 			add("the named baseline mirrors curated namespaces only")
@@ -430,4 +471,20 @@ func (m *Matrix) Expand() []Instance {
 		}
 	}
 	return out
+}
+
+// WithoutUnmet returns the matrix without personas whose required capability the fixture lacks,
+// and the keys it dropped. have reports whether a capability is available.
+func (m *Matrix) WithoutUnmet(have func(string) bool) (*Matrix, []string) {
+	out := *m
+	out.Personas = nil
+	var dropped []string
+	for _, p := range m.Personas {
+		if p.Requires != "" && !have(p.Requires) {
+			dropped = append(dropped, p.Key)
+			continue
+		}
+		out.Personas = append(out.Personas, p)
+	}
+	return &out, dropped
 }

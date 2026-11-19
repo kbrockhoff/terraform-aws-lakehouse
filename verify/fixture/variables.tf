@@ -23,6 +23,33 @@ variable "runner_role_arn" {
   }
 }
 
+variable "catalog_kms_key_arn" {
+  description = "Long-lived KMS key for Glue Data Catalog metadata (verify/README.md). The fixture owns the account settings but never creates or deletes this key: catalog metadata outlives every run (spec 003 FR-013)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9a-f-]+$", var.catalog_kms_key_arn))
+    error_message = "catalog_kms_key_arn must be a KMS key ARN. Set LFVERIFY_CATALOG_KEY_ARN."
+  }
+}
+
+variable "consumer_profile" {
+  description = "AWS profile for the consumer sandbox account of the spec 003 sharing cases. Empty skips them. Its role must already be a Lake Formation data-lake admin there, and the account must be in verify/sandbox-accounts.txt."
+  type        = string
+  default     = ""
+}
+
+variable "catalog_key_access_mode" {
+  description = "Catalog encryption key-access mode under test: service_role or per_caller."
+  type        = string
+  default     = "service_role"
+
+  validation {
+    condition     = contains(["service_role", "per_caller"], var.catalog_key_access_mode)
+    error_message = "catalog_key_access_mode must be service_role or per_caller."
+  }
+}
+
 variable "read_only_runner_arns" {
   description = "Extra read-only Lake Formation admins, such as the probe-mode runner used for the full/probe cross-check."
   type        = list(string)
@@ -55,8 +82,8 @@ variable "inject" {
   default     = ""
 
   validation {
-    condition     = contains(["", "extra_grant", "missing_grant", "drop_column_restriction", "drop_row_filter", "open_default"], var.inject)
-    error_message = "inject must be empty or one of extra_grant, missing_grant, drop_column_restriction, drop_row_filter, open_default."
+    condition     = contains(["", "extra_grant", "missing_grant", "drop_column_restriction", "drop_row_filter", "open_default", "bypass_exempt"], var.inject)
+    error_message = "inject must be empty or one of extra_grant, missing_grant, drop_column_restriction, drop_row_filter, open_default, bypass_exempt."
   }
 
   validation {

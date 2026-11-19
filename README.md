@@ -247,15 +247,219 @@ Lake Formation does not enforce the roll-up, and the module does not detect drif
 ## Account-Level Integration Ownership
 
 The catalog integration (`modules/catalog-integration`) is an account and Region singleton: the Lake Formation
-data-access role, the `bucket/*` registration, the federated `s3tablescatalog`, and the data-lake settings.
+data-access role and the `bucket/*` registration. The federated `s3tablescatalog` belongs to the account settings
+(see [S3 Tables Catalog](#s3-tables-catalog)).
 
 - Exactly one deployment per account and Region keeps `catalog_integration_config.enabled = true`.
-- Its data-lake settings are **authoritative**: admins not in `governance_config.admin_principal_arns` are removed,
-  including console-added ones, and the default `IAM_ALLOWED_PRINCIPALS` permissions are cleared. List the deploying
-  role, every secondary deployment's role, and every tenant pipeline role. Read-only admins (auditors) are
-  likewise authoritative: list them in `governance_config.read_only_admin_principal_arns`.
 - Secondary deployments set `enabled = false` and pass the owner's `data_access_role_arn` output (see
   [`examples/secondary`](examples/secondary)).
+
+## Account Settings Ownership
+
+The account-wide Lake Formation and Glue Data Catalog settings live in `modules/account-settings`: the data-lake
+settings, catalog metadata encryption with its dedicated key, the optional catalog resource policy, and the
+federated `s3tablescatalog`.
+`account_settings_config.owner` says whether this deployment manages them. Exactly one deployment per account and
+Region sets it to `true`. When it is null, it follows `catalog_integration_config.enabled`.
+
+The data-lake settings are **authoritative**: admins not in `governance_config.admin_principal_arns` (plus
+`studio_config.integration_principal_arns`) are removed, including console-added ones, and the default
+`IAM_ALLOWED_PRINCIPALS` permissions are cleared. List the deploying role, every secondary deployment's role, and
+every tenant pipeline role. Read-only admins are authoritative in the same way
+(`governance_config.read_only_admin_principal_arns`).
+
+| `owner` | `catalog_integration_config.enabled` | Behavior |
+| ------- | ------------------------------------ | -------- |
+| `true`  | `true`  | The default single-deployment owner: manages the settings and the integration. |
+| `true`  | `false` | Manages the settings; another deployment owns the integration. List that deployment's role as an admin. |
+| `false` | `true`  | Owns the integration only; `terraform_data.settings_guard` checks the live settings at plan time. |
+| `false` | `false` | A secondary deployment, with the same guard. |
+
+On a non-owner deployment, owner-only inputs (`cross_account_version`, `data_lake`, `catalog_encryption`,
+`catalog_resource_policy`, `permissions_boundary_arn`, `s3tables_catalog`) must keep their defaults, and each guard
+failure names the owner deployment as the place to fix it. The guard checks that the deployer and the studio
+principals are already admins, that catalog encryption is on, and, when tenants declare `shares`, that the
+cross-account version is at least 4.
+
+### Handing over ownership
+
+Destroying the settings resources is **not** a no-op. Destroying the encryption settings resets the catalog to
+`DISABLED`, and destroying the data-lake settings empties the admin list (sandbox-verified). To hand over ownership
+without touching the live settings:
+
+1. In the new owner, set `owner = true` with the same admins, key, and key-access mode, and import the settings, or
+   let its first apply overwrite them with identical values.
+2. In the old owner, set `owner = false` and add a `removed` block so Terraform forgets the settings without
+   destroying them:
+
+   ```hcl
+   removed {
+     from = module.lakehouse.module.account_settings[0]
+     lifecycle {
+       destroy = false
+     }
+   }
+   ```
+
+3. Apply the old owner and confirm that the plan shows no destroy for `module.account_settings`.
+
+The catalog key and the catalog-encryption role are removed from state the same way and stay in place. The new
+owner passes the key as `catalog_encryption.kms_key_arn` and adds its `required_catalog_kms_key_policy_json` output
+to the key policy before its first apply, so its own catalog-encryption role can use the key. `s3tablescatalog` needs
+nothing: it is never in state, and the new owner finds it and leaves it unchanged.
+
+## S3 Tables Catalog
+
+Every deployment in an account and Region shares one federated catalog, `s3tablescatalog`, over all the account's
+table buckets. The account-settings owner makes sure it exists:
+
+- **Created first, only when missing.** At apply time, before the deployment creates or changes any other
+  resource, `terraform_data.s3tables_catalog` (root `catalog.tf`) runs `scripts/ensure-s3tables-catalog.sh`:
+  - when `aws glue get-catalog` finds the catalog, it leaves it exactly as it is;
+  - otherwise it runs `aws glue create-catalog`, federated over `bucket/*` with connection `aws:s3tables`, empty
+    default permissions for new databases and tables, the common tags, and
+    `account_settings_config.s3tables_catalog.allow_full_table_external_data_access`.
+
+  Terraform can't test for the catalog at plan time, so the check runs at apply time and the catalog is not in
+  Terraform state.
+- **Never deleted.** No destroy, owner hand-over, Ephemeral teardown, or upgrade deletes the catalog. Deleting it
+  would drop every grant on it and every bucket catalog under it, for all deployments in the account. The deployer
+  policy denies `glue:DeleteCatalog` on it.
+- **Not reconciled.** An existing catalog is never updated, so changing `allow_full_table_external_data_access`
+  later has no effect on it. Plans show no drift for the catalog. The `lfverify` check `admin-s3tables-catalog`
+  (`auditor-s3tables-catalog` in probe mode) reports its attributes.
+- **Full-table external access (default `true`).** Third-party engines get credentials without session tags when the
+  caller has full table access. Set it to `false` before the catalog is first created if no such engine (for
+  example an IAM-based SageMaker Unified Studio domain) needs it.
+
+**Requirements where the owner is applied**: AWS CLI v2 and bash. The script uses the environment's AWS
+credentials and the deployment's Region, not Terraform's provider configuration, so a provider `assume_role` does
+not carry over. The script refuses to act unless the credentials belong to the deployment's account.
+
+**Upgrading** from a version whose `modules/catalog-integration` created the catalog: a `removed` block forgets
+`aws_glue_catalog.s3tables` without deleting it. The plan reports it as "will no longer be managed by Terraform, but
+will not be destroyed", and the next step finds the catalog and leaves it unchanged. Move
+`catalog_integration_config.allow_full_table_external_data_access`, if set, to
+`account_settings_config.s3tables_catalog`; the old attribute is rejected.
+
+## Catalog Metadata Encryption
+
+The owner encrypts Glue Data Catalog metadata at rest, and connection passwords, with a **dedicated** catalog key.
+The key is never the platform or a tenant key (a plan-time check rejects both). `catalog_encryption.kms_key_arn`
+supplies an existing key; empty creates one. Encryption covers Glue-native objects only: `s3tablescatalog`
+metadata is protected by the table bucket keys.
+
+- **Key-access mode** (`catalog_encryption.key_access_mode`):
+  - `service_role` (default): Glue uses one module-created role (`SSE-KMS-WITH-SERVICE-ROLE`), so callers need no
+    key permissions. Its trust uses `aws:SourceAccount` only; Glue supplies no source ARN, and adding one breaks
+    every catalog call.
+  - `per_caller`: every caller needs `kms:Decrypt` and `kms:GenerateDataKey` on the key, and appears in key-use
+    audit records. Add callers with `catalog_encryption.additional_key_user_arns`.
+
+  Switching modes is one apply and replaces no Lake Formation grant.
+- **Latency**: each lookup of an object written under encryption pays a KMS decrypt, about +52 ms in service-role
+  mode and +34 ms per-caller in the sandbox. Unencrypted objects keep baseline latency.
+- **Key protection**: the key policy denies `ScheduleKeyDeletion` and `DisableKey` to everyone except
+  `catalog_encryption.key_deletion_principal_arns`. Empty makes the protection absolute, because encrypted metadata
+  outlives the settings. Ephemeral environments that own the settings should pass a long-lived key: teardown cannot
+  delete the key, and a `check` warns when an Ephemeral owner creates one.
+- **Changing the key** after installation is rejected outside Ephemeral environments.
+
+### Migrating catalog encryption
+
+Encryption is not retroactive. Enabling it, or changing the key, covers only objects written afterwards. Objects
+written earlier stay as they were, and disabling encryption leaves encrypted objects encrypted.
+
+- **Already encrypted with another key**: outside Ephemeral environments the owner rejects a live key other than the
+  configured one, including the AWS managed `aws/glue` key. Service-role mode would also make `aws/glue` objects
+  inaccessible. To adopt such an account, set catalog encryption to `DISABLED` outside Terraform (existing objects
+  stay readable with their old key), apply the owner in `per_caller` mode, re-encrypt (below), then switch to
+  `service_role`.
+- **Asynchronous enablement**: the first apply waits about 20 seconds for the new role to propagate before Glue
+  accepts it.
+- **Re-encrypting existing objects**: rewrite each platform database and table with its unchanged definition, so
+  Glue writes it again under the current key:
+
+  ```sh
+  aws glue get-database --name <db> --query 'Database.{Name:Name,Description:Description,Parameters:Parameters,LocationUri:LocationUri,CreateTableDefaultPermissions:CreateTableDefaultPermissions}' > db.json
+  aws glue update-database --name <db> --database-input file://db.json
+  # Per table: strip the read-only fields (DatabaseName, CreateTime, UpdateTime, CreatedBy,
+  # IsRegisteredWithLakeFormation, CatalogId, VersionId, FederatedTable) from get-table output first
+  aws glue update-table --database-name <db> --table-input file://table.json
+  ```
+
+## SageMaker Unified Studio
+
+Set `studio_config.enabled = true` and list the studio roles in `studio_config.integration_principal_arns`. The owner
+makes them data-lake admins so the studio can fulfill subscriptions; non-owners check that they already are. The
+module creates no studio resources. List:
+
+- the blueprint provisioning role, `AmazonSageMakerProvisioning-<account>`;
+- the domain manage-access role, `AmazonSageMakerManageAccess-<region>-<domain_id>`;
+- for IAM-based domains, the domain execution role.
+
+A deployed domain adds the first two as admins itself; omitting them here removes them on the next apply.
+
+Some studio features need account-wide settings that weaken Lake Formation enforcement for external engines. They stay
+off unless set explicitly in the owner's `account_settings_config.data_lake`:
+
+- **IAM-based domains**: `allow_full_table_external_data_access = true`. Third-party engines then get credentials
+  without session tags whenever the caller has full table access.
+- **EMR fine-grained access**: `allow_external_data_filtering = true`, the EMR accounts in
+  `external_data_filtering_allow_list`, and `authorized_session_tag_values = ["Amazon EMR"]`. EMR clusters in those
+  accounts then enforce Lake Formation filters themselves, so a compromised cluster can read unfiltered data.
+
+## Cross-Account Sharing
+
+Tenants share consumption data read-only with other accounts in the same Region, through Lake Formation LF-tag grants
+on cross-account version 4 (`account_settings_config.cross_account_version`, the default).
+
+- **Approved accounts**: `sharing_config.consumer_accounts`, keyed by account ID with a `purpose`. A tenant can share
+  only with these accounts, never with its own. Removing an account that a share still references fails the plan.
+- **Tenant shares**: each tenant's `shares` map names the consumer account, the zones (default `consumption`), and the
+  sensitivity values, regulations, and domains to share. Regulated data is excluded unless listed, and row-filtered
+  tables are never shared. A compliance-designated tenant must set `compliance_acknowledged = true`.
+- **What the consumer gets**: `DESCRIBE` on the database and `DESCRIBE`/`SELECT` on matching tables, each with grant
+  option. So the consumer can re-grant by tag, it also gets `DESCRIBE` (with grant option) on the tag keys in the
+  expression:
+  - the tenant grants its own keys (its tenant key and row-filter exclusion keys);
+  - the platform grants its keys (zone, sensitivity, regulations, domain) with every value, once per approved
+    account, so tenants sharing with the same account never revoke each other's tag visibility.
+
+  No key grant is needed. A tenant has at most one share per consumer account; widen that share instead of adding
+  a second.
+- **Consumer onboarding**, using the `tenants[<name>].shares` output (consumer account, catalog IDs, databases, and
+  label expression):
+  1. Accounts outside the organization (`outside_organization = true`) accept the AWS RAM invitation.
+  2. A consumer data-lake admin creates a resource link to each shared database.
+  3. The admin grants local principals `DESCRIBE` on the link and `SELECT` on the shared tables (by name, or by the
+     shared tag expression).
+- **Revocation**: remove the share and apply. Consumer access stops within 15 minutes (the sandbox observed it within
+  30 seconds). Remove the account from `sharing_config` only after no tenant share references it.
+
+## Direct Storage Access
+
+Every zone table bucket, and every designated tenant's bucket, carries a `DenyDirectTableAccess` statement. It denies
+table data and metadata-location calls (`s3tables:GetTableData`, `PutTableData`, `GetTableMetadataLocation`, and so
+on) to every principal except:
+
+- the Lake Formation data-access role, which vends governed credentials;
+- AWS service principals (S3 Tables maintenance keeps working; verified in the sandbox);
+- `governance_config.direct_access_exempt_principal_arns`, for break-glass or migration roles.
+
+This closes the bypass where a role with `s3tables:*` reads table files without Lake Formation. Roles outside these
+buckets' policies, in other accounts or through other buckets, are not covered. As defense in depth, an organization
+SCP that denies the same actions outside the exempt roles is recommended. The module does not create it.
+
+## Catalog Resource Policy
+
+LF-tag sharing on cross-account version 4 needs **no** Glue catalog resource policy, so none is created by default.
+`catalog_resource_policy.enabled` adds one with the `glue:ShareResource` statement for RAM, `EnableHybrid = TRUE`,
+and only the Deny statements you supply in `deny_policy_jsons`.
+
+Before enabling sharing, check for an existing policy (`aws glue get-resource-policy`). An unmanaged policy that lacks
+the RAM statement breaks every share, and Terraform cannot read the policy at plan time. The `lfverify` check
+`admin-catalog-resource-policy` reports it.
 
 ## Audit Trail Prerequisites
 
@@ -379,19 +583,21 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | Name | Version |
 | ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.11 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.59.0, < 7.0.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.59.0 |
+| <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.12 |
 
 ## Providers
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0, < 7.0.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0 |
 | <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 
 ## Modules
 
 | Name | Source | Version |
 | ---- | ------ | ------- |
+| <a name="module_account_settings"></a> [account\_settings](#module\_account\_settings) | ./modules/account-settings | n/a |
 | <a name="module_catalog_integration"></a> [catalog\_integration](#module\_catalog\_integration) | ./modules/catalog-integration | n/a |
 | <a name="module_pricing"></a> [pricing](#module\_pricing) | ./modules/cost-estimation | n/a |
 | <a name="module_tenant"></a> [tenant](#module\_tenant) | ./modules/tenant | n/a |
@@ -406,6 +612,7 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | [aws_lakeformation_lf_tag.regulation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_lakeformation_lf_tag.sensitivity](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_lakeformation_lf_tag.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
+| [aws_lakeformation_permissions.consumer_tag_describe](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_permissions) | resource |
 | [aws_s3_bucket.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket_lifecycle_configuration.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_lifecycle_configuration) | resource |
 | [aws_s3_bucket_ownership_controls.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_ownership_controls) | resource |
@@ -415,35 +622,46 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | [aws_s3tables_table_bucket.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3tables_table_bucket) | resource |
 | [aws_s3tables_table_bucket_policy.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3tables_table_bucket_policy) | resource |
 | [aws_sns_topic.alarms](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic) | resource |
-| [terraform_data.secondary_admin_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.catalog_key_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.s3tables_catalog](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.settings_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.sharing_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.studio_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_name_prefix"></a> [name\_prefix](#input\_name\_prefix) | Organization unique prefix to use for resource names. Designed to be generated by terraform-external-context module. | `string` | n/a | yes |
+| <a name="input_account_settings_config"></a> [account\_settings\_config](#input\_account\_settings\_config) | Account- and Region-wide Lake Formation and Glue Data Catalog settings, managed by exactly one<br/>deployment per account and Region (the owner). Every non-default value weakens or changes an<br/>account-wide control:<br/>- owner: whether this deployment manages the settings. Null follows catalog\_integration\_config.enabled.<br/>- cross\_account\_version: Lake Formation cross-account version. 4 is the minimum for sharing<br/>  federated (S3 Tables) catalogs. 5 is irreversible; a custom cross-account grantor policy then<br/>  also needs ram:AssociateResourceSharePermission and ram:ListResourceSharePermissions.<br/>- data\_lake.allow\_external\_data\_filtering: lets EMR clusters in the allow-listed accounts filter<br/>  Lake Formation data themselves (needed for SageMaker Unified Studio EMR fine-grained access).<br/>- data\_lake.authorized\_session\_tag\_values: session tag values a trusted engine must present<br/>  (for example "Amazon EMR").<br/>- data\_lake.allow\_full\_table\_external\_data\_access: third-party engines get credentials without<br/>  session tags when the caller has full table access (needed by IAM-based Unified Studio domains).<br/>- data\_lake.trusted\_resource\_owners: accounts allowed to see caller ARNs in their CloudTrail logs.<br/>- catalog\_encryption.key\_access\_mode: service\_role (one Glue role uses the key) or per\_caller<br/>  (every caller needs key permissions and appears in key-use audit records).<br/>- catalog\_encryption.kms\_key\_arn: an existing catalog-metadata key. Empty creates a dedicated key.<br/>  It must never be the platform key or a tenant key.<br/>- catalog\_encryption.key\_deletion\_principal\_arns: break-glass principals that may schedule<br/>  deletion of, or disable, the catalog key. Empty makes the protection absolute.<br/>- catalog\_resource\_policy: optional Glue resource policy; only RAM sharing plus Deny statements.<br/>- permissions\_boundary\_arn: boundary for the module-created Lake Formation and Glue roles.<br/>- s3tables\_catalog.allow\_full\_table\_external\_data\_access (default true): set on s3tablescatalog<br/>  when the owner creates it, which happens only when it is missing; an existing catalog is never<br/>  changed or deleted. True lets third-party engines get credentials without session tags when<br/>  the caller has full table access. | <pre>object({<br/>    owner                 = optional(bool)<br/>    cross_account_version = optional(number, 4)<br/>    data_lake = optional(object({<br/>      allow_external_data_filtering         = optional(bool, false)<br/>      external_data_filtering_allow_list    = optional(list(string), [])<br/>      authorized_session_tag_values         = optional(list(string), [])<br/>      allow_full_table_external_data_access = optional(bool, false)<br/>      trusted_resource_owners               = optional(list(string), [])<br/>    }), {})<br/>    catalog_encryption = optional(object({<br/>      key_access_mode             = optional(string, "service_role")<br/>      kms_key_arn                 = optional(string, "")<br/>      additional_key_user_arns    = optional(list(string), [])<br/>      key_deletion_principal_arns = optional(list(string), [])<br/>    }), {})<br/>    catalog_resource_policy = optional(object({<br/>      enabled           = optional(bool, false)<br/>      deny_policy_jsons = optional(list(string), [])<br/>    }), {})<br/>    permissions_boundary_arn = optional(string, "")<br/>    s3tables_catalog = optional(object({<br/>      allow_full_table_external_data_access = optional(bool, true)<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_alarms_config"></a> [alarms\_config](#input\_alarms\_config) | Configuration object for metric alarms and notifications | <pre>object({<br/>    enabled                 = bool<br/>    create_sns_topic        = bool<br/>    sns_topic_arn           = string<br/>    scanned_bytes_threshold = optional(number)<br/>  })</pre> | <pre>{<br/>  "create_sns_topic": true,<br/>  "enabled": false,<br/>  "sns_topic_arn": ""<br/>}</pre> | no |
-| <a name="input_catalog_integration_config"></a> [catalog\_integration\_config](#input\_catalog\_integration\_config) | Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN. | <pre>object({<br/>    enabled                               = bool<br/>    data_access_role_arn                  = string<br/>    allow_full_table_external_data_access = bool<br/>  })</pre> | <pre>{<br/>  "allow_full_table_external_data_access": false,<br/>  "data_access_role_arn": "",<br/>  "enabled": true<br/>}</pre> | no |
-| <a name="input_cost_estimation_config"></a> [cost\_estimation\_config](#input\_cost\_estimation\_config) | Configuration object for monthly cost estimation | <pre>object({<br/>    enabled = bool<br/>  })</pre> | <pre>{<br/>  "enabled": true<br/>}</pre> | no |
+| <a name="input_catalog_integration_config"></a> [catalog\_integration\_config](#input\_catalog\_integration\_config) | Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN. allow\_full\_table\_external\_data\_access moved to account\_settings\_config.s3tables\_catalog. | <pre>object({<br/>    enabled                               = bool<br/>    data_access_role_arn                  = string<br/>    allow_full_table_external_data_access = optional(bool)<br/>  })</pre> | <pre>{<br/>  "data_access_role_arn": "",<br/>  "enabled": true<br/>}</pre> | no |
+| <a name="input_cost_estimation_config"></a> [cost\_estimation\_config](#input\_cost\_estimation\_config) | Configuration object for monthly cost estimation. catalog\_kms\_requests\_per\_month estimates Glue catalog metadata encryption requests to the catalog key in the deployment that owns the account settings. | <pre>object({<br/>    enabled                        = bool<br/>    catalog_kms_requests_per_month = optional(number, 100000)<br/>  })</pre> | <pre>{<br/>  "enabled": true<br/>}</pre> | no |
 | <a name="input_data_tags"></a> [data\_tags](#input\_data\_tags) | Additional tags to apply only to resources containing data-at-rest (S3 and S3 Tables buckets), beyond the common tags (usually generated by terraform-external-context). | `map(string)` | `{}` | no |
 | <a name="input_enabled"></a> [enabled](#input\_enabled) | Set to false to prevent the module from creating any resources | `bool` | `true` | no |
 | <a name="input_encryption_config"></a> [encryption\_config](#input\_encryption\_config) | Configuration object for encryption settings and KMS key management | <pre>object({<br/>    create_kms_key               = bool<br/>    kms_key_id                   = string<br/>    kms_key_deletion_window_days = number<br/>  })</pre> | <pre>{<br/>  "create_kms_key": true,<br/>  "kms_key_deletion_window_days": 14,<br/>  "kms_key_id": ""<br/>}</pre> | no |
 | <a name="input_environment_type"></a> [environment\_type](#input\_environment\_type) | Environment type for resource configuration defaults. Select 'None' to use individual config values. | `string` | `"Development"` | no |
-| <a name="input_governance_config"></a> [governance\_config](#input\_governance\_config) | Lake Formation governance: data-lake admins, read-only admins, and the platform LF-tag vocabularies for sensitivity, regulations, and domains. | <pre>object({<br/>    admin_principal_arns           = list(string)<br/>    read_only_admin_principal_arns = optional(list(string), [])<br/>    sensitivity_values             = optional(list(string), ["public", "internal", "confidential", "restricted"])<br/>    regulation_values              = optional(list(string), ["gdpr", "hipaa", "pci_dss"])<br/>    domain_values                  = optional(list(string), ["general"])<br/>    shared_storage_classification  = optional(string)<br/>    writer_drop_enabled            = optional(bool)<br/>  })</pre> | <pre>{<br/>  "admin_principal_arns": []<br/>}</pre> | no |
+| <a name="input_governance_config"></a> [governance\_config](#input\_governance\_config) | Lake Formation governance: data-lake admins, read-only admins, the platform LF-tag vocabularies for sensitivity, regulations, and domains, and the principals exempt from the table-bucket deny on direct storage access (each exemption bypasses Lake Formation for table data). | <pre>object({<br/>    admin_principal_arns           = list(string)<br/>    read_only_admin_principal_arns = optional(list(string), [])<br/>    sensitivity_values             = optional(list(string), ["public", "internal", "confidential", "restricted"])<br/>    regulation_values              = optional(list(string), ["gdpr", "hipaa", "pci_dss"])<br/>    domain_values                  = optional(list(string), ["general"])<br/>    shared_storage_classification  = optional(string)<br/>    writer_drop_enabled            = optional(bool)<br/><br/>    direct_access_exempt_principal_arns = optional(list(string), [])<br/>  })</pre> | <pre>{<br/>  "admin_principal_arns": []<br/>}</pre> | no |
 | <a name="input_monitoring_config"></a> [monitoring\_config](#input\_monitoring\_config) | Configuration object for optional monitoring | <pre>object({<br/>    enabled = bool<br/>  })</pre> | <pre>{<br/>  "enabled": false<br/>}</pre> | no |
 | <a name="input_query_config"></a> [query\_config](#input\_query\_config) | Platform query defaults that tenants may override. Null values use the environment default. dml\_workgroup\_enabled adds a second workgroup per tenant for INSERT, UPDATE, DELETE, and MERGE, which a result-encrypted workgroup cannot run against S3 Tables. | <pre>object({<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    results_expiration_days        = optional(number)<br/>    dml_workgroup_enabled          = optional(bool, false)<br/>  })</pre> | `{}` | no |
+| <a name="input_sharing_config"></a> [sharing\_config](#input\_sharing\_config) | Same-Region cross-account sharing. consumer\_accounts is the approved list, keyed by 12-digit account ID; tenants may share only with these accounts. outside\_organization marks an account outside this organization, whose administrator must accept the RAM share invitation. | <pre>object({<br/>    consumer_accounts = optional(map(object({<br/>      purpose              = string<br/>      outside_organization = optional(bool, false)<br/>    })), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_storage_config"></a> [storage\_config](#input\_storage\_config) | Table storage settings. Null values use the environment default. | <pre>object({<br/>    table_storage_class = optional(string)<br/>  })</pre> | `{}` | no |
+| <a name="input_studio_config"></a> [studio\_config](#input\_studio\_config) | SageMaker Unified Studio support. When enabled, integration\_principal\_arns (the blueprint provisioning role AmazonSageMakerProvisioning-<account>, the domain manage-access role AmazonSageMakerManageAccess-<region>-<domain\_id>, and, for IAM-based domains, the domain execution role) become Lake Formation data-lake admins so the studio can fulfill subscriptions. The module creates no studio resources. | <pre>object({<br/>    enabled                    = optional(bool, false)<br/>    integration_principal_arns = optional(list(string), [])<br/>  })</pre> | `{}` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags/labels to apply to all resources (usually generated by terraform-external-context). | `map(string)` | `{}` | no |
-| <a name="input_tenants"></a> [tenants](#input\_tenants) | Tenants to provision with the platform, keyed by tenant name. Each entry is applied through modules/tenant. | <pre>map(object({<br/>    owner                 = string<br/>    sensitivity           = string<br/>    regulations           = optional(set(string), [])<br/>    domain                = optional(string)<br/>    zones                 = optional(list(string))<br/>    compliance_frameworks = optional(set(string), [])<br/>    stewards              = optional(list(string), [])<br/>    writers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    readers = optional(map(object({<br/>      principal_arn      = string<br/>      zones              = optional(list(string))<br/>      sensitivity_values = list(string)<br/>      regulations        = optional(set(string), [])<br/>      domains            = optional(list(string))<br/>    })), {})<br/>    metadata_readers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    metadata_writers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    row_filters = optional(map(object({<br/>      reader                = string<br/>      zone                  = string<br/>      table                 = string<br/>      row_filter_expression = string<br/>      column_names          = optional(list(string))<br/>    })), {})<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    scanned_bytes_alarm_threshold  = optional(number)<br/>    dedicated_storage              = optional(bool, false)<br/>    dml_workgroup_enabled          = optional(bool)<br/>  }))</pre> | `{}` | no |
+| <a name="input_tenants"></a> [tenants](#input\_tenants) | Tenants to provision with the platform, keyed by tenant name. Each entry is applied through modules/tenant. | <pre>map(object({<br/>    owner                 = string<br/>    sensitivity           = string<br/>    regulations           = optional(set(string), [])<br/>    domain                = optional(string)<br/>    zones                 = optional(list(string))<br/>    compliance_frameworks = optional(set(string), [])<br/>    stewards              = optional(list(string), [])<br/>    writers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    readers = optional(map(object({<br/>      principal_arn      = string<br/>      zones              = optional(list(string))<br/>      sensitivity_values = list(string)<br/>      regulations        = optional(set(string), [])<br/>      domains            = optional(list(string))<br/>    })), {})<br/>    metadata_readers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    metadata_writers = optional(map(object({<br/>      principal_arn = string<br/>      zones         = optional(list(string))<br/>    })), {})<br/>    row_filters = optional(map(object({<br/>      reader                = string<br/>      zone                  = string<br/>      table                 = string<br/>      row_filter_expression = string<br/>      column_names          = optional(list(string))<br/>    })), {})<br/>    bytes_scanned_cutoff_per_query = optional(number)<br/>    scanned_bytes_alarm_threshold  = optional(number)<br/>    dedicated_storage              = optional(bool, false)<br/>    dml_workgroup_enabled          = optional(bool)<br/>    shares = optional(map(object({<br/>      account_id              = string<br/>      zones                   = optional(list(string), ["consumption"])<br/>      sensitivity_values      = list(string)<br/>      regulations             = optional(set(string), [])<br/>      domains                 = optional(list(string))<br/>      compliance_acknowledged = optional(bool, false)<br/>    })), {})<br/>  }))</pre> | `{}` | no |
 | <a name="input_zones_config"></a> [zones\_config](#input\_zones\_config) | Data zones shared by the platform. Each zone becomes an S3 table bucket named <name\_prefix>-<zone>. | <pre>object({<br/>    zones = list(string)<br/>  })</pre> | <pre>{<br/>  "zones": [<br/>    "raw",<br/>    "curated",<br/>    "consumption"<br/>  ]<br/>}</pre> | no |
 
 ## Outputs
 
 | Name | Description |
 | ---- | ----------- |
+| <a name="output_account_settings_owner"></a> [account\_settings\_owner](#output\_account\_settings\_owner) | Whether this deployment owns the account- and Region-wide Lake Formation and Glue Data Catalog settings. |
 | <a name="output_alarm_sns_topic_arn"></a> [alarm\_sns\_topic\_arn](#output\_alarm\_sns\_topic\_arn) | ARN of the SNS topic used for alarm notifications |
 | <a name="output_alarm_sns_topic_name"></a> [alarm\_sns\_topic\_name](#output\_alarm\_sns\_topic\_name) | Name of the SNS topic used for alarm notifications |
-| <a name="output_catalog_name"></a> [catalog\_name](#output\_catalog\_name) | Name of the federated S3 Tables Glue catalog. Empty when this deployment does not own the catalog integration or enabled = false. |
+| <a name="output_catalog_encryption_mode"></a> [catalog\_encryption\_mode](#output\_catalog\_encryption\_mode) | Glue Data Catalog encryption mode set by this deployment (SSE-KMS-WITH-SERVICE-ROLE or SSE-KMS). Empty when it does not own the account settings. |
+| <a name="output_catalog_encryption_role_arn"></a> [catalog\_encryption\_role\_arn](#output\_catalog\_encryption\_role\_arn) | ARN of the Glue catalog-encryption role. Empty when this deployment does not own the account settings or uses per\_caller mode. |
+| <a name="output_catalog_kms_key_arn"></a> [catalog\_kms\_key\_arn](#output\_catalog\_kms\_key\_arn) | ARN of the dedicated Glue Data Catalog metadata key, created by this deployment or supplied. Empty when this deployment does not own the account settings. |
+| <a name="output_catalog_name"></a> [catalog\_name](#output\_catalog\_name) | Name of the federated S3 Tables Glue catalog, which every deployment in the account and Region shares. The account-settings owner creates it when missing and never deletes it. Empty when enabled = false. |
 | <a name="output_cost_breakdown"></a> [cost\_breakdown](#output\_cost\_breakdown) | Breakdown of the platform's own monthly cost by service; tenant estimates are in the tenants output |
 | <a name="output_data_access_role_arn"></a> [data\_access\_role\_arn](#output\_data\_access\_role\_arn) | Lake Formation data-access role for S3 Tables. Secondary deployments pass this as catalog\_integration\_config.data\_access\_role\_arn. |
 | <a name="output_kms_alias_name"></a> [kms\_alias\_name](#output\_kms\_alias\_name) | Name of the KMS key alias |
@@ -453,7 +671,9 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | <a name="output_monthly_cost_estimate"></a> [monthly\_cost\_estimate](#output\_monthly\_cost\_estimate) | Estimated idle monthly cost in USD of the platform plus every platform-applied tenant. Standalone tenants report their own estimate. |
 | <a name="output_platform_contract"></a> [platform\_contract](#output\_platform\_contract) | Versioned public interface consumed by modules/tenant, both platform-applied and standalone: identifiers and effective settings only. Adding a field is a minor change; removing or renaming one is a major change. Null when enabled = false. |
 | <a name="output_query_results_bucket_arn"></a> [query\_results\_bucket\_arn](#output\_query\_results\_bucket\_arn) | ARN of the shared Athena query results bucket. |
-| <a name="output_required_kms_key_policy_json"></a> [required\_kms\_key\_policy\_json](#output\_required\_kms\_key\_policy\_json) | Key policy statements the platform key needs (S3 Tables maintenance, Lake Formation data access, Athena results). Merge them into a consumer-supplied key's policy. Empty when enabled = false. |
+| <a name="output_required_catalog_kms_key_policy_json"></a> [required\_catalog\_kms\_key\_policy\_json](#output\_required\_catalog\_kms\_key\_policy\_json) | Key policy statements a consumer-supplied catalog key needs (Glue grant creation, plus the catalog-encryption role or per-caller key users, plus deletion protection). Account-root access is the key owner's own responsibility. Empty when this deployment does not own the account settings. |
+| <a name="output_required_kms_key_policy_json"></a> [required\_kms\_key\_policy\_json](#output\_required\_kms\_key\_policy\_json) | Key policy statements the platform key needs (S3 Tables maintenance, Lake Formation data access, Athena results). Covers the platform key only; the catalog key has its own (required\_catalog\_kms\_key\_policy\_json). Merge them into a consumer-supplied key's policy. Empty when enabled = false. |
+| <a name="output_studio_integration_principal_arns"></a> [studio\_integration\_principal\_arns](#output\_studio\_integration\_principal\_arns) | SageMaker Unified Studio integration principals made data-lake admins. Integration principals, not platform deployers (FR-007). |
 | <a name="output_tenants"></a> [tenants](#output\_tenants) | Outputs of each platform-applied tenant, keyed by tenant name. |
 | <a name="output_usage_rates"></a> [usage\_rates](#output\_usage\_rates) | Usage-based list prices in USD (S3 Tables storage and maintenance, Athena per TB scanned, S3 Standard storage) for estimating data-dependent costs |
 | <a name="output_zone_table_bucket_arns"></a> [zone\_table\_bucket\_arns](#output\_zone\_table\_bucket\_arns) | ARN of the shared table bucket per zone. |

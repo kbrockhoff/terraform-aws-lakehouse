@@ -59,3 +59,16 @@ func TestStandaloneTenantRejectsInvalidAgainstContract(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain and reader domains must be platform domain values")
 }
+
+// TestStandaloneTenantRejectsUnapprovedShare checks spec 003 FR-023: a standalone tenant shares
+// only with accounts the platform contract approves.
+func TestStandaloneTenantRejectsUnapprovedShare(t *testing.T) {
+	t.Parallel()
+	vars := standaloneVars()
+	vars["tenant_overrides"] = map[string]interface{}{"shares": map[string]interface{}{
+		"partner": map[string]interface{}{"account_id": "444455556666", "sensitivity_values": []string{"public"}},
+	}}
+	_, err := terraform.InitAndPlanE(t, exampleOptions(t, "standalone-tenant", vars))
+	require.Error(t, err)
+	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "target accounts that are not approved")
+}

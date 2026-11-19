@@ -27,6 +27,13 @@ locals {
     },
     var.extra_tenants,
   )
+
+  studio_config = merge(var.studio_config, {
+    integration_principal_arns = [
+      for a in lookup(var.studio_config, "integration_principal_arns", []) :
+      replace(a, "ACCOUNT_ID", data.aws_caller_identity.current.account_id)
+    ]
+  })
 }
 
 module "main" {
@@ -51,6 +58,9 @@ module "main" {
   query_config           = var.query_config
 
   catalog_integration_config = var.catalog_integration_config
+  account_settings_config    = var.account_settings_config
+  studio_config              = local.studio_config
+  sharing_config             = var.sharing_config
 
   governance_config = merge(var.governance_config, {
     admin_principal_arns = length(var.admin_principal_arns) > 0 ? var.admin_principal_arns : [data.aws_iam_session_context.current.issuer_arn]

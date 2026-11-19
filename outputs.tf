@@ -8,13 +8,33 @@ output "zone_table_bucket_arns" {
 }
 
 output "catalog_name" {
-  description = "Name of the federated S3 Tables Glue catalog. Empty when this deployment does not own the catalog integration or enabled = false."
-  value       = var.enabled && var.catalog_integration_config.enabled ? module.catalog_integration[0].catalog_name : ""
+  description = "Name of the federated S3 Tables Glue catalog, which every deployment in the account and Region shares. The account-settings owner creates it when missing and never deletes it. Empty when enabled = false."
+  value       = var.enabled ? "s3tablescatalog" : ""
 }
 
 output "data_access_role_arn" {
   description = "Lake Formation data-access role for S3 Tables. Secondary deployments pass this as catalog_integration_config.data_access_role_arn."
   value       = var.enabled ? local.data_access_role_arn : ""
+}
+
+output "account_settings_owner" {
+  description = "Whether this deployment owns the account- and Region-wide Lake Formation and Glue Data Catalog settings."
+  value       = var.enabled && local.settings_owner
+}
+
+output "catalog_encryption_role_arn" {
+  description = "ARN of the Glue catalog-encryption role. Empty when this deployment does not own the account settings or uses per_caller mode."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_encryption_role_arn : ""
+}
+
+output "catalog_encryption_mode" {
+  description = "Glue Data Catalog encryption mode set by this deployment (SSE-KMS-WITH-SERVICE-ROLE or SSE-KMS). Empty when it does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_encryption_mode : ""
+}
+
+output "studio_integration_principal_arns" {
+  description = "SageMaker Unified Studio integration principals made data-lake admins. Integration principals, not platform deployers (FR-007)."
+  value       = var.enabled && var.studio_config.enabled ? var.studio_config.integration_principal_arns : []
 }
 
 output "query_results_bucket_arn" {
@@ -74,8 +94,12 @@ output "tenants" {
       persona_policy_json     = t.persona_policy_json
       monthly_cost_estimate   = t.monthly_cost_estimate
       compliance_monthly_cost = t.compliance_monthly_cost
+      shares                  = t.shares
     }
   }
+
+  # Consumers act on shares only once the platform tag grants exist too (FR-024)
+  depends_on = [aws_lakeformation_permissions.consumer_tag_describe]
 }
 
 # ----
@@ -98,8 +122,18 @@ output "kms_alias_name" {
 }
 
 output "required_kms_key_policy_json" {
-  description = "Key policy statements the platform key needs (S3 Tables maintenance, Lake Formation data access, Athena results). Merge them into a consumer-supplied key's policy. Empty when enabled = false."
+  description = "Key policy statements the platform key needs (S3 Tables maintenance, Lake Formation data access, Athena results). Covers the platform key only; the catalog key has its own (required_catalog_kms_key_policy_json). Merge them into a consumer-supplied key's policy. Empty when enabled = false."
   value       = var.enabled ? data.aws_iam_policy_document.required_kms_statements[0].json : ""
+}
+
+output "catalog_kms_key_arn" {
+  description = "ARN of the dedicated Glue Data Catalog metadata key, created by this deployment or supplied. Empty when this deployment does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_kms_key_arn : ""
+}
+
+output "required_catalog_kms_key_policy_json" {
+  description = "Key policy statements a consumer-supplied catalog key needs (Glue grant creation, plus the catalog-encryption role or per-caller key users, plus deletion protection). Account-root access is the key owner's own responsibility. Empty when this deployment does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].required_catalog_kms_key_policy_json : ""
 }
 
 # ----

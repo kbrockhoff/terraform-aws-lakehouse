@@ -11,7 +11,7 @@ resource "aws_lakeformation_lf_tag" "sensitivity" {
   key    = "${local.name_prefix}-sensitivity"
   values = local.sensitivity_values
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [terraform_data.s3tables_catalog, module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 # One key per regulation, because a resource holds only one value per LF-tag key and a column can
@@ -22,7 +22,7 @@ resource "aws_lakeformation_lf_tag" "regulation" {
   key    = "${local.name_prefix}-reg-${each.key}"
   values = ["no", "yes"]
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [terraform_data.s3tables_catalog, module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 # Zone of each tenant database. Lake Formation only accepts account-level LF-tag policy grants
@@ -35,7 +35,7 @@ resource "aws_lakeformation_lf_tag" "zone" {
   key    = "${local.name_prefix}-zone"
   values = sort(tolist(local.zones))
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [terraform_data.s3tables_catalog, module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 resource "aws_lakeformation_lf_tag" "domain" {
@@ -44,7 +44,7 @@ resource "aws_lakeformation_lf_tag" "domain" {
   key    = "${local.name_prefix}-domain"
   values = local.domain_values
 
-  depends_on = [module.catalog_integration, terraform_data.secondary_admin_guard]
+  depends_on = [terraform_data.s3tables_catalog, module.account_settings, module.catalog_integration, terraform_data.settings_guard]
 }
 
 # Lake Formation admins do not implicitly hold ASSOCIATE on LF-tags another principal created, so
@@ -52,3 +52,43 @@ resource "aws_lakeformation_lf_tag" "domain" {
 # one-time grants"). They are not managed here: AWS provider 6.69 reads the tag creator's
 # grantable permissions back onto grants to other admins, which forces replacement and an
 # invalid revoke on every apply (found in the T076 sandbox).
+
+# ----
+# Platform tag visibility for approved consumer accounts (FR-024)
+# ----
+
+# Consumer administrators re-grant shared tables by tag only with DESCRIBE on every key in the share
+# expression (sandbox-results.md item 5). Lake Formation keeps one grant per principal, key, and
+# value, so tenants granting the same platform tag values to one account would revoke each other's
+# on removal. The platform therefore owns these grants, one per approved account and platform key,
+# with every value: the values are vocabulary, not data. Tenants grant only their own keys.
+locals {
+  platform_lf_tags = var.enabled ? merge(
+    {
+      sensitivity = { key = aws_lakeformation_lf_tag.sensitivity[0].key, values = local.sensitivity_values }
+      zone        = { key = aws_lakeformation_lf_tag.zone[0].key, values = sort(tolist(local.zones)) }
+      domain      = { key = aws_lakeformation_lf_tag.domain[0].key, values = local.domain_values }
+    },
+    { for r, t in aws_lakeformation_lf_tag.regulation : "reg-${r}" => { key = t.key, values = ["no", "yes"] } },
+  ) : {}
+
+  consumer_tag_grants = {
+    for pair in setproduct(keys(var.sharing_config.consumer_accounts), keys(local.platform_lf_tags)) :
+    "${pair[0]}/${pair[1]}" => { account_id = pair[0], tag = local.platform_lf_tags[pair[1]] }
+  }
+}
+
+resource "aws_lakeformation_permissions" "consumer_tag_describe" {
+  for_each = local.consumer_tag_grants
+
+  principal                     = each.value.account_id
+  permissions                   = ["DESCRIBE"]
+  permissions_with_grant_option = ["DESCRIBE"]
+
+  lf_tag {
+    key    = each.value.tag.key
+    values = each.value.tag.values
+  }
+
+  depends_on = [aws_lakeformation_lf_tag.sensitivity, aws_lakeformation_lf_tag.regulation, aws_lakeformation_lf_tag.zone, aws_lakeformation_lf_tag.domain, terraform_data.sharing_guard, terraform_data.settings_guard]
+}

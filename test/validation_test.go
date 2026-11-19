@@ -97,7 +97,7 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"unknown compliance framework", map[string]interface{}{"claims_compliance_frameworks": []string{"HIPAA", "ISO27001"}},
 			"compliance_frameworks may contain only"},
 		{"integration disabled without role", map[string]interface{}{"catalog_integration_config": map[string]interface{}{
-			"enabled": false, "data_access_role_arn": "", "allow_full_table_external_data_access": false}},
+			"enabled": false, "data_access_role_arn": ""}},
 			"valid IAM role ARN when enabled is false"},
 		{"zone with underscore", map[string]interface{}{"zones_config": map[string]interface{}{"zones": []string{"raw", "raw_v2"}}},
 			"no underscores"},
@@ -125,6 +125,34 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 			"governance_config": map[string]interface{}{
 				"read_only_admin_principal_arns": []string{"arn:aws:iam::123456789012:role/lakehouse-admin"}}},
 			"cannot be both a data-lake admin and a read-only admin"},
+		// Spec 003: account settings, studio support, and sharing inputs
+		{"cross-account version below 4", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"cross_account_version": 3}},
+			"cross_account_version must be 4 or 5"},
+		{"external filtering without allow list", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"data_lake": map[string]interface{}{"allow_external_data_filtering": true}}},
+			"requires a non-empty external_data_filtering_allow_list"},
+		{"catalog flag in its old place", map[string]interface{}{"catalog_integration_config": map[string]interface{}{
+			"enabled": true, "data_access_role_arn": "", "allow_full_table_external_data_access": true}},
+			"moved to account_settings_config.s3tables_catalog"},
+		{"invalid key access mode", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"catalog_encryption": map[string]interface{}{"key_access_mode": "shared"}}},
+			"must be service_role or per_caller"},
+		{"studio enabled without principals", map[string]interface{}{"studio_config": map[string]interface{}{"enabled": true}},
+			"requires at least one integration_principal_arns entry"},
+		{"studio disabled with principals", map[string]interface{}{"studio_config": map[string]interface{}{
+			"enabled": false, "integration_principal_arns": []string{"arn:aws:iam::123456789012:role/studio"}}},
+			"must be empty when studio support is disabled"},
+		{"wildcard direct-access exemption", map[string]interface{}{"governance_config": map[string]interface{}{
+			"domain_values":                       []string{"general", "sales", "finance", "health"},
+			"direct_access_exempt_principal_arns": []string{"arn:aws:iam::123456789012:role/*"}}},
+			"IAM role or user ARNs, without wildcards"},
+		{"consumer account not 12 digits", map[string]interface{}{"sharing_config": map[string]interface{}{
+			"consumer_accounts": map[string]interface{}{"12345": map[string]interface{}{"purpose": "x"}}}},
+			"must be 12-digit AWS account IDs"},
+		{"share account not 12 digits", override("finance", map[string]interface{}{"shares": map[string]interface{}{
+			"p": map[string]interface{}{"account_id": "partner", "sensitivity_values": []string{"public"}}}}),
+			"every share account_id must be a 12-digit AWS account ID"},
 	}
 
 	for _, c := range cases {
@@ -152,4 +180,16 @@ func TestRegulatedDataInBaselineWarns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "regulated_data_in_baseline")
 	assert.Contains(t, spaces.ReplaceAllString(out, " "), "Tenant claims is designated")
+}
+
+// TestCatalogResourcePolicyRejectsAllow checks spec 003 FR-006: caller statements must be Deny.
+// The policy JSON goes through a var file, because -var values cannot carry JSON strings.
+func TestCatalogResourcePolicyRejectsAllow(t *testing.T) {
+	t.Parallel()
+	jsonVars := map[string]interface{}{"account_settings_config": map[string]interface{}{
+		"catalog_resource_policy": map[string]interface{}{"enabled": true, "deny_policy_jsons": []string{
+			`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"glue:*","Resource":"*"}]}`}}}}
+	_, err := terraform.InitAndPlanE(t, exampleOptionsJSONVars(t, "complete", completeVars(generateTestNamePrefix("rpa")), jsonVars))
+	require.Error(t, err)
+	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "statements all have Effect = Deny")
 }

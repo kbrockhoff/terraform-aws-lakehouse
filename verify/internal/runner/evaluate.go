@@ -70,6 +70,14 @@ func Evaluate(c matrix.Case, res ops.Result, obs Observation) (report.Status, st
 			return report.Fail, fmt.Sprintf("expected access, got %s", res.Outcome)
 		}
 		return checkAllowed(c, res, obs)
+	case matrix.Match:
+		if res.Outcome != classify.Allowed {
+			return report.NotRun, fmt.Sprintf("settings could not be read: %s", firstLine(res.Evidence.Code+" "+res.Evidence.Message))
+		}
+		if len(res.Mismatches) > 0 {
+			return report.Fail, strings.Join(res.Mismatches, "; ")
+		}
+		return report.Pass, ""
 	}
 	return report.NotRun, fmt.Sprintf("expectation %q is not evaluated by attempting the operation", c.Expect)
 }

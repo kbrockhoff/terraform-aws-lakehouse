@@ -103,3 +103,19 @@ func TestRedactQueryEvidence(t *testing.T) {
 		t.Errorf("reason leaks or loses the code: %s %q", status, why)
 	}
 }
+
+// TestEvaluateMatch checks spec 003 check cases: they pass only when the settings were read and
+// nothing differs.
+func TestEvaluateMatch(t *testing.T) {
+	c := matrix.Case{Op: matrix.AccountSettings, Expect: matrix.Match}
+	if got, _ := Evaluate(c, ops.Result{Outcome: classify.Allowed}, Observation{}); got != report.Pass {
+		t.Errorf("no mismatches: got %s", got)
+	}
+	got, why := Evaluate(c, ops.Result{Outcome: classify.Allowed, Mismatches: []string{"cross_account_version is \"1\", want \"4\""}}, Observation{})
+	if got != report.Fail || !strings.Contains(why, "cross_account_version") {
+		t.Errorf("mismatch: got %s %q", got, why)
+	}
+	if got, _ := Evaluate(c, ops.Result{Outcome: classify.Denied}, Observation{}); got != report.NotRun {
+		t.Errorf("unreadable settings: got %s", got)
+	}
+}

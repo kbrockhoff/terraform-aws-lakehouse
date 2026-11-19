@@ -117,6 +117,10 @@ locals {
     values(local.sns_requests_on_demand[0].priceDimensions)[0].pricePerUnit.USD
   ) : "0.0000005" # Default: $0.50 per million requests
 
+  # KMS symmetric-key requests at the list price: $0.03 per 10,000 (2026-11). A fixed rate rather
+  # than a Pricing API lookup, because the free-tier and request tiers make the lookup ambiguous.
+  kms_request_rate = "0.000003"
+
   # Calculate SNS requests based on CloudWatch alarms (720 = 24 hours * 30 days, assuming 1 alarm per hour)
   sns_requests_per_month = var.alarm_count * 720
 
@@ -128,6 +132,7 @@ locals {
     cloudwatch_metrics  = var.cloudwatch_metric_count * tonumber(local.cloudwatch_metrics_monthly)
     cloudwatch_alarms   = var.alarm_count * tonumber(local.cloudwatch_alarms_monthly)
     sns_requests        = local.sns_requests_per_month * tonumber(local.sns_requests_per_unit)
+    kms_requests        = var.kms_request_count_per_month * tonumber(local.kms_request_rate)
     s3_table_buckets    = var.table_bucket_count * 0
     s3_buckets          = var.s3_bucket_count * 0
     athena_workgroups   = var.athena_workgroup_count * 0

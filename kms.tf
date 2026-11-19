@@ -2,7 +2,8 @@
 # KMS Key for encryption
 # ----
 
-# KMS Key for encrypting SNS topics and other resources
+# KMS Key for encrypting SNS topics and other resources. Encrypts table buckets and query results
+# only; catalog metadata uses the dedicated key in modules/account-settings (FR-009).
 resource "aws_kms_key" "main" {
   count = var.enabled && var.encryption_config.create_kms_key ? 1 : 0
 
@@ -15,6 +16,9 @@ resource "aws_kms_key" "main" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-cmk"
   })
+
+  # s3tablescatalog exists before anything else is created or changed (FR-029)
+  depends_on = [terraform_data.s3tables_catalog]
 }
 
 # KMS Key Alias for easier reference

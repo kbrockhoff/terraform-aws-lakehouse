@@ -55,8 +55,23 @@ func TestFullMatrixCoverage(t *testing.T) {
 			t.Errorf("rule boundary %s is not attempted", op)
 		}
 	}
+	// Spec 003: the direct-storage deny and the account settings checks (FR-020 cases 1 to 5)
+	for _, op := range append([]Op{StorageWrite}, CheckOps...) {
+		if !ops[op] {
+			t.Errorf("spec 003 op %s is not attempted", op)
+		}
+	}
+	// bypass holds direct storage permissions and no grant; it has only label-style denials
+	if !negative[key{"bypass", Label}] || !storage["bypass"] {
+		t.Error("bypass needs a label-style storage denial")
+	}
+	// consumer runs in the consumer account through a resource link (spec 003 FR-020 cases 6-10)
+	consumer := slices.IndexFunc(m.Personas, func(p Persona) bool { return p.Key == "consumer" })
+	if consumer < 0 || m.Personas[consumer].Requires != Consumer || !positive[key{"consumer", Label}] || !negative[key{"consumer", Label}] {
+		t.Error("consumer needs requires: consumer and label-style positive and negative cases")
+	}
 	for _, p := range m.Personas {
-		if !slices.Contains(personas, p.Key) {
+		if !slices.Contains(personas, p.Key) && p.Key != "bypass" && p.Key != "consumer" {
 			t.Errorf("unexpected persona %s; personas must exist in the fixture manifest", p.Key)
 		}
 	}

@@ -3,13 +3,18 @@
 # ----
 
 resource "aws_iam_role" "lf_s3tables_access" {
-  name               = "${var.name_prefix}-lf-s3tables-access"
-  description        = "Lake Formation data access to S3 table buckets in ${var.region}"
-  assume_role_policy = data.aws_iam_policy_document.lf_s3tables_trust.json
+  name                 = "${var.name_prefix}-lf-s3tables-access"
+  description          = "Lake Formation data access to S3 table buckets in ${var.region}"
+  assume_role_policy   = data.aws_iam_policy_document.lf_s3tables_trust.json
+  permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
 
   tags = var.tags
+
+  depends_on = [terraform_data.catalog_ready]
 }
 
+# aws:SourceAccount only: AWS documents no Region or source-ARN condition for Lake Formation
+# registration roles, and an undocumented one risks breaking credential vending (FR-018, D2)
 data "aws_iam_policy_document" "lf_s3tables_trust" {
   statement {
     sid    = "LakeFormationAssume"

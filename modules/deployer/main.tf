@@ -304,6 +304,42 @@ data "aws_iam_policy_document" "lakehouse" {
     resources = ["*"] # Lake Formation has no resource-level permissions; it authorizes by its own grants
   }
 
+  # Cross-account LF-tag grants (platform or tenant shares) make the caller the RAM grantor; Lake
+  # Formation names its shares LakeFormation-* (mirrors AWSLakeFormationCrossAccountManager)
+  statement {
+    sid    = "LakeFormationCrossAccount"
+    effect = "Allow"
+    actions = [
+      "ram:CreateResourceShare",
+      "ram:DeleteResourceShare",
+      "ram:UpdateResourceShare",
+      "ram:AssociateResourceShare",
+      "ram:DisassociateResourceShare",
+      "ram:AssociateResourceSharePermission",
+      "ram:DisassociateResourceSharePermission",
+    ]
+    resources = ["arn:${var.partition}:ram:${var.region}:${var.account_id}:resource-share/*"]
+    condition {
+      test     = "StringLike"
+      variable = "ram:ResourceShareName"
+      values   = ["LakeFormation*"]
+    }
+  }
+
+  statement {
+    sid       = "LakeFormationCrossAccountRead"
+    effect    = "Allow"
+    actions   = ["ram:GetResourceShares"]
+    resources = ["*"] # no resource-level permissions
+  }
+
+  statement {
+    sid       = "LakeFormationCrossAccountPermissions"
+    effect    = "Allow"
+    actions   = ["ram:ListResourceSharePermissions"]
+    resources = ["arn:${var.partition}:ram:${var.region}:${var.account_id}:resource-share/*"]
+  }
+
   # ----
   # Athena workgroups
   # ----
@@ -334,13 +370,12 @@ data "aws_iam_policy_document" "lakehouse" {
     content {
       sid    = "FederatedCatalog"
       effect = "Allow"
+      # The account-settings owner only creates s3tablescatalog when it is missing (with tags) and
+      # reads it; it never updates or deletes it (spec 003 FR-029, FR-030)
       actions = [
         "glue:CreateCatalog",
         "glue:GetCatalog",
-        "glue:UpdateCatalog",
-        "glue:DeleteCatalog",
         "glue:TagResource",
-        "glue:UntagResource",
         "glue:GetTags",
       ]
       resources = [
@@ -348,6 +383,18 @@ data "aws_iam_policy_document" "lakehouse" {
         "arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/s3tablescatalog",
         "arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/s3tablescatalog/*",
       ]
+    }
+  }
+
+  # Every deployment in the account shares s3tablescatalog, so the deployer can never delete it,
+  # even when another policy on the role would allow it (FR-030)
+  dynamic "statement" {
+    for_each = var.scope == "platform" ? [1] : []
+    content {
+      sid       = "ProtectFederatedCatalog"
+      effect    = "Deny"
+      actions   = ["glue:DeleteCatalog"]
+      resources = ["arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/s3tablescatalog"]
     }
   }
 
@@ -359,6 +406,23 @@ data "aws_iam_policy_document" "lakehouse" {
       effect    = "Allow"
       actions   = ["glue:PassConnection"]
       resources = ["arn:${var.partition}:glue:${var.region}:${var.account_id}:connection/aws:s3tables"]
+    }
+  }
+
+  # Account settings: catalog metadata encryption and the optional catalog resource policy
+  dynamic "statement" {
+    for_each = var.scope == "platform" ? [1] : []
+    content {
+      sid    = "GlueCatalogSettings"
+      effect = "Allow"
+      actions = [
+        "glue:GetDataCatalogEncryptionSettings",
+        "glue:PutDataCatalogEncryptionSettings",
+        "glue:GetResourcePolicy",
+        "glue:PutResourcePolicy",
+        "glue:DeleteResourcePolicy",
+      ]
+      resources = ["arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog"]
     }
   }
 
@@ -393,8 +457,14 @@ data "aws_iam_policy_document" "lakehouse" {
         "iam:ListInstanceProfilesForRole",
         "iam:TagRole",
         "iam:UntagRole",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary",
       ]
-      resources = ["arn:${var.partition}:iam::${var.account_id}:role/${var.name_prefix}-lf-s3tables-access"]
+      # The Lake Formation data-access role and the Glue catalog-encryption role
+      resources = [
+        "arn:${var.partition}:iam::${var.account_id}:role/${var.name_prefix}-lf-s3tables-access",
+        "arn:${var.partition}:iam::${var.account_id}:role/${var.name_prefix}-glue-catalog-encryption",
+      ]
     }
   }
 
@@ -409,6 +479,21 @@ data "aws_iam_policy_document" "lakehouse" {
         test     = "StringEquals"
         variable = "iam:PassedToService"
         values   = ["lakeformation.amazonaws.com"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.scope == "platform" ? [1] : []
+    content {
+      sid       = "PassCatalogEncryptionRole"
+      effect    = "Allow"
+      actions   = ["iam:PassRole"]
+      resources = ["arn:${var.partition}:iam::${var.account_id}:role/${var.name_prefix}-glue-catalog-encryption"]
+      condition {
+        test     = "StringEquals"
+        variable = "iam:PassedToService"
+        values   = ["glue.amazonaws.com"]
       }
     }
   }

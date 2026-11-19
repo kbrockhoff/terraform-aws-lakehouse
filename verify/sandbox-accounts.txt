@@ -6,3 +6,4 @@
 # LFVERIFY_SANDBOX_ACCOUNTS (same format, entries separated by commas) adds entries at run time.
 
 492637581429 us-east-1 # dev-green
+566376086856 us-east-1 # dev-blue, consumer for 003 sharing cases

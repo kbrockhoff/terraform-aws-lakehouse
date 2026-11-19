@@ -142,7 +142,7 @@ func TestTerraformCompleteExample(t *testing.T) {
 	rfTag := changes[tenantPrefix("sales")+`aws_lakeformation_lf_tag.row_filter["gdpranalyst"]`]
 	require.NotNil(t, rfTag)
 	assert.Equal(t, []string{"no", "yes"}, strs(after(rfTag)["values"]))
-	filtered := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.row_filtered_table["gdpranalyst/curated/orders"]`])
+	filtered := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tag.row_filtered_table["gdpranalyst/curated/orders"]`])
 	require.NotNil(t, filtered)
 	assert.Equal(t, "orders", block(filtered, "table")["name"])
 	assert.Equal(t, "yes", list(filtered["lf_tag"])[0].(map[string]interface{})["value"])
@@ -155,7 +155,7 @@ func TestTerraformCompleteExample(t *testing.T) {
 	assert.Equal(t, "no", dbLabels[rfKey], "databases default every table to unfiltered")
 
 	// Read-only admins are authoritative like admins, so applies no longer erase them
-	settings := after(changes[shared+`module.catalog_integration[0].aws_lakeformation_data_lake_settings.this`])
+	settings := after(changes[shared+`module.account_settings[0].aws_lakeformation_data_lake_settings.this`])
 	assert.Equal(t, []string{"arn:aws:iam::123456789012:role/lakehouse-auditor"}, strs(settings["read_only_admins"]))
 
 	// Databases carry their zone, which only platform admins can associate
@@ -262,7 +262,9 @@ func TestDataTagsOnlyOnDataAtRest(t *testing.T) {
 			assert.NotContains(t, tg, "DataAtRest", addr)
 		}
 	}
-	assert.GreaterOrEqual(t, kmsKeys, 2, "platform and designated tenant KMS keys")
+	assert.GreaterOrEqual(t, kmsKeys, 3, "platform, catalog metadata, and designated tenant KMS keys")
+	assert.Contains(t, changes, "module.main.module.account_settings[0].aws_kms_key.catalog[0]")
+	assert.Contains(t, changes, "module.main.module.account_settings[0].aws_iam_role.catalog_encryption[0]")
 }
 
 // TestDMLWorkgroupOptIn checks awslkhs-vpuy: with dml_workgroup_enabled, each tenant gets a DML
@@ -427,6 +429,23 @@ func TestCompleteExampleSecurityControls(t *testing.T) {
 			bucketPolicyDocs++
 			assert.True(t, hasTLSDeny, "%s must deny insecure transport", addr)
 		}
+		// Table buckets refuse direct data access except through Lake Formation (spec 003 FR-015)
+		if regexp.MustCompile(`\.(zone_bucket|dedicated_bucket)\b`).MatchString(addr) {
+			hasDirectDeny := false
+			for _, s := range statements {
+				sm := s.(map[string]interface{})
+				if sm["sid"] != "DenyDirectTableAccess" || sm["effect"] != "Deny" {
+					continue
+				}
+				vars := map[string]bool{}
+				for _, c := range list(sm["condition"]) {
+					vars[c.(map[string]interface{})["variable"].(string)] = true
+				}
+				hasDirectDeny = vars["aws:PrincipalArn"] && vars["aws:PrincipalIsAWSService"] &&
+					assert.Contains(t, strs(sm["actions"]), "s3tables:GetTableData", addr)
+			}
+			assert.True(t, hasDirectDeny, "%s must deny direct table access", addr)
+		}
 		// SSE-C uploads would skip the results key (awslkhs-pdpf)
 		if regexp.MustCompile(`\.(query_results|results)\b`).MatchString(addr) {
 			assert.True(t, hasSseCDeny, "%s must deny SSE-C uploads", addr)
@@ -440,6 +459,12 @@ func TestCompleteExampleSecurityControls(t *testing.T) {
 	allowed := map[string]bool{}
 	for _, arn := range regexp.MustCompile(`arn:aws:iam::[0-9]{12}:role/[a-z0-9-]+`).FindAllString(string(tfvars), -1) {
 		allowed[arn] = true
+	}
+	// Shares grant to approved consumer account IDs (spec 003 FR-022)
+	settings, err := os.ReadFile("../examples/complete/terraform.auto.tfvars")
+	require.NoError(t, err)
+	for _, m := range regexp.MustCompile(`"([0-9]{12})" = \{`).FindAllStringSubmatch(string(settings), -1) {
+		allowed[m[1]] = true
 	}
 	for addr, rc := range changes {
 		if rc.Type == "aws_lakeformation_permissions" {
@@ -585,7 +610,7 @@ func TestRowFilterExclusionFollowsPrincipal(t *testing.T) {
 	_, has := lfExpression(semantic)[rfKey]
 	assert.False(t, has, "other principals keep their grants")
 
-	filtered := changes[sales+`aws_lakeformation_resource_lf_tags.row_filtered_table["eu/analyst/curated/orders"]`]
+	filtered := changes[sales+`aws_lakeformation_resource_lf_tag.row_filtered_table["eu/analyst/curated/orders"]`]
 	require.NotNil(t, filtered, "the filtered table is labeled under the full reader key")
 	assert.Equal(t, "orders", block(after(filtered), "table")["name"])
 }

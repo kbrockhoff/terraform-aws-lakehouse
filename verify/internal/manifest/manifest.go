@@ -4,6 +4,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -64,6 +65,19 @@ type TagKeys struct {
 	MW          string            `json:"mw"`
 }
 
+// Share is one cross-account share: the consumer account and the table grant's LF-tag
+// expression.
+type Share struct {
+	AccountID  string    `json:"account_id"`
+	Expression []TagTerm `json:"expression"`
+}
+
+// TagTerm is one LF-tag expression term.
+type TagTerm struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
+}
+
 // Manifest is the fixture's identifiers.
 type Manifest struct {
 	RunID     string            `json:"run_id"`
@@ -80,6 +94,14 @@ type Manifest struct {
 	} `json:"styles"`
 	Tables    map[string]Table `json:"tables"`
 	KMSKeyARN string           `json:"kms_key_arn"`
+	// AccountSettings are the values the spec 003 check cases expect (absent in older fixtures)
+	AccountSettings map[string]string `json:"account_settings,omitempty"`
+	// Share is the producer grant to the consumer account, which the revoke_share setup revokes
+	// and restores (spec 003; absent without a consumer)
+	Share *Share `json:"share,omitempty"`
+	// Consumer is the consumer account's resource link to the shared alpha namespace. It is kept
+	// out of Styles, so seeding and cleanup never touch it; resource tenant "consumer" resolves here.
+	Consumer *Namespace `json:"consumer,omitempty"`
 }
 
 // Load reads a manifest written by `terraform output -json manifest`.
@@ -135,7 +157,9 @@ func (t Target) AthenaCatalog() string {
 	if i := strings.Index(t.CatalogID, ":"); i >= 0 {
 		return t.CatalogID[i+1:]
 	}
-	return t.CatalogID
+	// A bare account ID is that account's default catalog, such as the consumer's resource link
+	// database (spec 003)
+	return "AwsDataCatalog"
 }
 
 // Resolve maps a symbolic matrix resource to a target in one style.
@@ -143,6 +167,12 @@ func (m *Manifest) Resolve(style matrix.Style, r matrix.Resource) (Target, error
 	var key string
 	var ns Namespace
 	var ok bool
+	if r.Tenant == matrix.Consumer {
+		if m.Consumer == nil || style != matrix.Label {
+			return Target{}, errors.New("tenant consumer needs a fixture consumer account and style label")
+		}
+		return Target{Namespace: *m.Consumer, Key: "consumer", Table: r.Table, Columns: r.Columns, Exists: true}, nil
+	}
 	switch style {
 	case matrix.Label:
 		zone := r.Zone
@@ -202,4 +232,43 @@ func (m *Manifest) AllNamespaces() map[string]Namespace {
 		out["named:"+k] = v
 	}
 	return out
+}
+
+// FromManifest is the expect_values sentinel for a value taken from the fixture manifest.
+const FromManifest = "manifest"
+
+// settingKeys maps a check case's expect_values key to the manifest's account_settings key, for
+// values written as FromManifest.
+var settingKeys = map[string]string{
+	"cross_account_version":                 "cross_account_version",
+	"mode":                                  "catalog_encryption_mode",
+	"kms_key_arn":                           "catalog_kms_key_arn",
+	"federated_identifier":                  "s3tables_catalog_identifier",
+	"allow_full_table_external_data_access": "s3tables_catalog_allow_full",
+}
+
+// ExpectValues resolves a check case's expectations, replacing FromManifest with the fixture's
+// expected value. Probe matrices generated from the full matrix use it too, because probe runs
+// have no manifest.
+func (m *Manifest) ExpectValues(values map[string]string) (map[string]string, error) {
+	if values == nil {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for k, v := range values {
+		if v != FromManifest {
+			out[k] = v
+			continue
+		}
+		mk, ok := settingKeys[k]
+		if !ok {
+			return nil, fmt.Errorf("expect_values %s cannot come from the manifest", k)
+		}
+		mv, ok := m.AccountSettings[mk]
+		if !ok || mv == "" {
+			return nil, fmt.Errorf("manifest has no account_settings.%s; re-apply the fixture", mk)
+		}
+		out[k] = mv
+	}
+	return out, nil
 }

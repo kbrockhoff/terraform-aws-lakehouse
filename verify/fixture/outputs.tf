@@ -11,7 +11,7 @@ output "manifest" {
     inject     = var.inject
     runner     = local.runner_role_arn
 
-    personas = local.role_arn
+    personas = merge(local.role_arn, local.consumer_enabled ? { consumer = aws_iam_role.consumer[0].arn } : {})
 
     styles = {
       label = {
@@ -52,5 +52,30 @@ output "manifest" {
 
     tables      = local.tables
     kms_key_arn = module.lakehouse.kms_key_arn
+
+    # Spec 003 sharing cases: the consumer's resource link, and the share the revoke_share setup
+    # revokes and restores
+    consumer = local.consumer_enabled ? {
+      catalog_id       = local.consumer_account_id
+      database         = aws_glue_catalog_database.consumer_link[0].name
+      table_bucket_arn = module.lakehouse.tenants["alpha"].table_bucket_arns["curated"]
+      workgroup        = aws_athena_workgroup.consumer[0].name
+      dml_workgroup    = aws_athena_workgroup.consumer[0].name
+      results_location = "s3://${aws_s3_bucket.consumer_results[0].bucket}/"
+    } : null
+    share = local.consumer_enabled ? {
+      account_id = local.consumer_share.account_id
+      expression = local.consumer_share.expression
+    } : null
+
+    # Expected account settings for the spec 003 check cases
+    account_settings = {
+      cross_account_version   = "4"
+      catalog_encryption_mode = module.lakehouse.catalog_encryption_mode
+      catalog_kms_key_arn     = module.lakehouse.catalog_kms_key_arn
+      # Set when the module creates s3tablescatalog; an existing catalog is never changed (FR-029)
+      s3tables_catalog_identifier = "arn:${local.partition}:s3tables:${local.region}:${local.account_id}:bucket/*"
+      s3tables_catalog_allow_full = "false"
+    }
   }
 }
