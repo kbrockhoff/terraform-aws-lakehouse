@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.3.1...v0.4.0) (2026-11-19)
+
+
+### Features
+
+* **deployer:** never allow deleting s3tablescatalog; add catalog tests (T078, T079) ([a6f5c97](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/a6f5c9776d3d06bfa5e2822ef1894d1214f0c740))
+* harden catalog and Lake Formation account settings (spec 003) ([5326130](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/53261304683e934c663d5f0eddf848a4aa3a15fb))
+* **ops:** extend deployer, cost estimate, and outputs for account settings ([6d02765](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/6d0276572cab344bea58e03ee618a6d840d8288e))
+* **settings:** add 003 inputs and record sandbox confirmation results ([a801a06](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/a801a06725bf1d98b4bc4b778e451dd70a40e284))
+* **settings:** add account-settings submodule behind an owner flag ([6525d15](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/6525d153810e0617fbf929d36591ca0c8a4f5233))
+* **settings:** add s3tablescatalog check-and-create (T074, T075) ([6bfc989](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/6bfc989144727bc4090537cf326b8a7dd698ac3b))
+* **settings:** create s3tablescatalog before any other resource ([081dea6](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/081dea6883099718cceb60e95ac7ae60b48cacaa))
+* **settings:** move s3tablescatalog out of catalog-integration (T076, T077) ([31e4ab1](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/31e4ab1a5aab20984138132e230200ae0a6e37a0))
+* **storage:** deny direct table access and extend the platform contract ([9e625ed](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/9e625ed74c65ec6351471829f554433857b338a9))
+* **tenant:** add cross-account shares and dedicated bucket deny ([dd19145](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/dd19145379c690c70fae5be8b0885c6a96675aaa))
+* **verify:** add bypass persona and account settings checks to lfverify ([1154fad](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/1154fadebbec22e0a9c5e0a9f86d6e1d14368574))
+* **verify:** add consumer-account sharing cases to lfverify ([aec7cc2](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/aec7cc21043128b4d7c996850623e0911a8d25de))
+* **verify:** add consumer-admin command and fix resource link drift ([f13d37d](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/f13d37dc20a89b065f0956f6c0eb7c41498733f3))
+* **verify:** add upgrade test and bypass_exempt overlay, close Phase 7 ([6440f84](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/6440f8470dec56c0d6866314d873356369016cc6))
+* **verify:** check s3tablescatalog and prove it survives teardown (T080, T081) ([8f38fcf](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/8f38fcff9b832fa77d6f29014646346e799c7d03))
+
+
+### Bug Fixes
+
+* address PR [#9](https://github.com/kbrockhoff/terraform-aws-lakehouse/issues/9) review findings ([492e7c1](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/492e7c11ce80b8ac6ae714d7de98b0d837777bba))
+* **tenant:** manage row-filter exclusion labels with the singular LF-tag resource ([c7b0f1f](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/c7b0f1f54fac17637f934d67bdaa0971098af12c))
+* **verify:** stop fixture owner and consumer link grants churning on re-apply ([0f0d686](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/0f0d68661023db3bd929c23f3532b97a3a583c5f))
+
 ## [0.3.1](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.3.0...v0.3.1) (2026-11-17)
 
 
