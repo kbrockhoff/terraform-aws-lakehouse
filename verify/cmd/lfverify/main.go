@@ -359,6 +359,14 @@ func cmdPreflight(ctx context.Context, f *flags) error {
 	if err := preflight.RecordTarget(filepath.Join(dir, "target.json"), e.target()); err != nil {
 		return err
 	}
+	// Teardown proves the shared catalog survived (spec 003 FR-030)
+	catalogExists, err := preflight.S3TablesCatalogExists(ctx, glue.NewFromConfig(e.cfg))
+	if err != nil {
+		return err
+	}
+	if err := preflight.RecordS3TablesCatalog(filepath.Join(dir, preflight.S3TablesCatalogFile), catalogExists); err != nil {
+		return err
+	}
 	if _, err := os.Stat(saved); errors.Is(err, os.ErrNotExist) { // #nosec G703 -- operator-chosen output path (--out or out/<run-id>, run ID validated); the CLI runs with the operator's own rights
 		if err := preflight.SaveSettings(saved, settings); err != nil {
 			return err
@@ -852,6 +860,16 @@ func cmdCleanup(ctx context.Context, f *flags) error {
 		return errors.Join(sweepErr, err)
 	}
 	logf("data-lake settings restored from %s", saved)
+	exists, err := preflight.S3TablesCatalogExists(ctx, sw.Glue)
+	if err != nil {
+		return errors.Join(sweepErr, err)
+	}
+	if err := preflight.CheckS3TablesCatalogKept(exists, filepath.Join(dir, preflight.S3TablesCatalogFile), filepath.Join(dir, "manifest.json")); err != nil {
+		return errors.Join(sweepErr, err)
+	}
+	if exists {
+		logf("s3tablescatalog kept (spec 003 FR-030)")
+	}
 	return sweepErr
 }
 

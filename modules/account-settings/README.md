@@ -12,8 +12,13 @@ account and Region calls it (`account_settings_config.owner` in the root module)
   deletion and disabling except to break-glass principals.
 - **Catalog resource policy** (optional): the RAM `glue:ShareResource` statement plus caller-supplied Deny statements,
   with `EnableHybrid = TRUE`.
+- **Federated `s3tablescatalog`** (`catalog.tf`): an apply-time step runs `scripts/ensure-s3tables-catalog.sh`, which
+  creates the catalog only when it is missing, never updates or deletes it, and refuses to act in another account.
+  It needs AWS CLI v2 and bash where Terraform runs, and uses the environment's credentials (see the root README,
+  "S3 Tables Catalog").
 
-Destroying this submodule resets catalog encryption to `DISABLED` and empties the admins. To hand over ownership, use a
+Destroying this submodule resets catalog encryption to `DISABLED` and empties the admins, but never deletes
+`s3tablescatalog`. To hand over ownership, use a
 `removed` block with `destroy = false` (see the root README, "Handing over ownership").
 
 <!-- BEGIN_TF_DOCS -->

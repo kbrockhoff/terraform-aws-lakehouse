@@ -125,6 +125,18 @@ personas:
           kms_key_arn: manifest
           connection_passwords_encrypted: "true"
         rule: spec 003 FR-009 and FR-010 - catalog metadata uses the dedicated catalog key
+      - id: admin-s3tables-catalog
+        style: label
+        op: s3tables_catalog
+        expect: match
+        expect_values:
+          exists: "true"
+          federated_identifier: manifest
+          connection: aws:s3tables
+          create_database_default_permissions: none
+          create_table_default_permissions: none
+          allow_full_table_external_data_access: "true"
+        rule: spec 003 FR-029 - s3tablescatalog exists, federated over every table bucket, no identity-policy-only defaults
       - id: admin-catalog-resource-policy
         style: label
         op: catalog_resource_policy

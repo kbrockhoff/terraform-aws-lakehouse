@@ -4,6 +4,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	gluetypes "github.com/aws/aws-sdk-go-v2/service/glue/types"
 )
 
 func TestCompare(t *testing.T) {
@@ -53,5 +56,17 @@ func TestGlueParentCatalog(t *testing.T) {
 		if got := glueParentCatalog(in); got != want {
 			t.Errorf("glueParentCatalog(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestCatalogDefaultPermissions(t *testing.T) {
+	if got := catalogDefaultPermissions(nil); got != "none" {
+		t.Errorf("no default permissions = %q, want none", got)
+	}
+	perms := []gluetypes.PrincipalPermissions{
+		{Principal: &gluetypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String("IAM_ALLOWED_PRINCIPALS")}},
+	}
+	if got := catalogDefaultPermissions(perms); got != "IAM_ALLOWED_PRINCIPALS" {
+		t.Errorf("default permissions = %q, want IAM_ALLOWED_PRINCIPALS", got)
 	}
 }

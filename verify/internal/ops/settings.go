@@ -129,6 +129,53 @@ func (c *Clients) CatalogEncryption(ctx context.Context, catalogID string, want 
 	return checkResult(compare(actual, want))
 }
 
+// S3TablesCatalogName is the federated S3 Tables catalog that the module creates when missing and
+// never deletes (spec 003 FR-029, FR-030).
+const S3TablesCatalogName = "s3tablescatalog"
+
+// S3TablesCatalog compares the live federated S3 Tables catalog with want (FR-020 case 11). A
+// missing catalog reports exists = "false".
+func (c *Clients) S3TablesCatalog(ctx context.Context, want map[string]string) Result {
+	actual := map[string]string{
+		"exists": "false", "federated_identifier": "none", "connection": "none",
+		"create_database_default_permissions": "none", "create_table_default_permissions": "none",
+		"allow_full_table_external_data_access": "none",
+	}
+	out, err := c.Glue.GetCatalog(ctx, &glue.GetCatalogInput{CatalogId: aws.String(S3TablesCatalogName)})
+	var notFound *gluetypes.EntityNotFoundException
+	switch {
+	case errors.As(err, &notFound):
+		return checkResult(compare(actual, want))
+	case err != nil:
+		return fromErr(err, classify.Exists{Resource: true})
+	}
+	actual["exists"] = "true"
+	if cat := out.Catalog; cat != nil {
+		if f := cat.FederatedCatalog; f != nil {
+			actual["federated_identifier"] = aws.ToString(f.Identifier)
+			actual["connection"] = aws.ToString(f.ConnectionName)
+		}
+		actual["create_database_default_permissions"] = catalogDefaultPermissions(cat.CreateDatabaseDefaultPermissions)
+		actual["create_table_default_permissions"] = catalogDefaultPermissions(cat.CreateTableDefaultPermissions)
+		if v := string(cat.AllowFullTableExternalDataAccess); v != "" {
+			actual["allow_full_table_external_data_access"] = strings.ToLower(v)
+		}
+	}
+	return checkResult(compare(actual, want))
+}
+
+// catalogDefaultPermissions renders a Glue catalog's default permissions as sorted principals;
+// "none" when empty, which means no identity-policy-only access.
+func catalogDefaultPermissions(perms []gluetypes.PrincipalPermissions) string {
+	var principals []string
+	for _, p := range perms {
+		if p.Principal != nil {
+			principals = append(principals, aws.ToString(p.Principal.DataLakePrincipalIdentifier))
+		}
+	}
+	return joined(principals)
+}
+
 // CatalogResourcePolicy reports an account catalog resource policy that would break Lake
 // Formation's RAM shares: one that exists without glue:ShareResource for ram.amazonaws.com
 // (FR-006, D1). No policy is the expected default.

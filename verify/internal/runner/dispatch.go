@@ -241,6 +241,12 @@ func (r *Runner) dispatch(ctx context.Context, pc *ops.Clients, inst matrix.Inst
 		return pc.CatalogEncryption(ctx, catalogID, want), obs
 	case matrix.CatalogResourcePolicy:
 		return pc.CatalogResourcePolicy(ctx), obs
+	case matrix.S3TablesCatalog:
+		want, err := r.expectValues(c)
+		if err != nil {
+			return errResult(err), obs
+		}
+		return pc.S3TablesCatalog(ctx, want), obs
 	case matrix.NoIAMAllowedPrincipals:
 		// Full mode checks every label namespace of the fixture; probe mode the case's database
 		var dbs []ops.Database

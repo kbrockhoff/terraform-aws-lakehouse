@@ -856,15 +856,18 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   - no `aws_glue_catalog` resource appears in any example plan;
   - the old `catalog_integration_config.allow_full_table_external_data_access` attribute is
     rejected (`test/validation_test.go`).
-- [ ] T080 [P] `lfverify`:
+- [x] T080 [P] `lfverify`:
   - add check op `s3tables_catalog` (`verify/internal/ops/settings.go`, `matrix.go`, `dispatch.go`)
     for FR-020 case 11: `glue:GetCatalog` and compare the federated identifier, connection, empty
     default permissions, and `allow_full_table_external_data_access` with `expect_values`;
   - add case `admin-s3tables-catalog` to `verify/matrix/full.yaml` and
     `verify/matrix/probe.example.yaml`, and tests;
   - make `verify-down` fail unless `get-catalog` still finds `s3tablescatalog` after teardown
-    (FR-030).
-- [ ] T081 [P] Docs:
+    (FR-030). Implemented in `lfverify` itself: `preflight` records whether the catalog existed
+    (`s3tablescatalog.before`), and `cleanup` fails when the catalog is missing although it
+    existed before or the run deployed (its manifest exists). A run interrupted before deploying
+    may end without one.
+- [x] T081 [P] Docs:
   - **`README.md`**: an "S3 Tables catalog" section covering check-and-create, never deleted, the
     AWS CLI and ambient-credential requirement, the `AllowFullTableExternalDataAccess` default and
     its consequence, and the upgrade (removed, not destroyed).

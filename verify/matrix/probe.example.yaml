@@ -96,6 +96,17 @@ personas:
           kms_key_arn: arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000000
           connection_passwords_encrypted: "true"
         rule: spec 003 FR-009 and FR-010
+      - id: auditor-s3tables-catalog
+        op: s3tables_catalog
+        expect: match
+        expect_values:
+          exists: "true"
+          federated_identifier: arn:aws:s3tables:us-east-1:123456789012:bucket/*
+          connection: aws:s3tables
+          create_database_default_permissions: none
+          create_table_default_permissions: none
+          allow_full_table_external_data_access: "true"
+        rule: spec 003 FR-029
       - id: auditor-catalog-resource-policy
         op: catalog_resource_policy
         expect: match

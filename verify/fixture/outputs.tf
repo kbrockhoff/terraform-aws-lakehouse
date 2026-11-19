@@ -73,6 +73,8 @@ output "manifest" {
       cross_account_version   = "4"
       catalog_encryption_mode = module.lakehouse.catalog_encryption_mode
       catalog_kms_key_arn     = module.lakehouse.catalog_kms_key_arn
+      # Set when the module creates s3tablescatalog; an existing catalog is never changed (FR-029)
+      s3tables_catalog_identifier = "arn:${local.partition}:s3tables:${local.region}:${local.account_id}:bucket/*"
     }
   }
 }

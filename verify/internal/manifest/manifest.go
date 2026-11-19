@@ -243,6 +243,7 @@ var settingKeys = map[string]string{
 	"cross_account_version": "cross_account_version",
 	"mode":                  "catalog_encryption_mode",
 	"kms_key_arn":           "catalog_kms_key_arn",
+	"federated_identifier":  "s3tables_catalog_identifier",
 }
 
 // ExpectValues resolves a check case's expectations, replacing FromManifest with the fixture's

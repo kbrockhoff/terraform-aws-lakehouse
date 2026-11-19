@@ -247,7 +247,8 @@ Lake Formation does not enforce the roll-up, and the module does not detect drif
 ## Account-Level Integration Ownership
 
 The catalog integration (`modules/catalog-integration`) is an account and Region singleton: the Lake Formation
-data-access role, the `bucket/*` registration, and the federated `s3tablescatalog`.
+data-access role and the `bucket/*` registration. The federated `s3tablescatalog` belongs to the account settings
+(see [S3 Tables Catalog](#s3-tables-catalog)).
 
 - Exactly one deployment per account and Region keeps `catalog_integration_config.enabled = true`.
 - Secondary deployments set `enabled = false` and pass the owner's `data_access_role_arn` output (see
@@ -256,7 +257,8 @@ data-access role, the `bucket/*` registration, and the federated `s3tablescatalo
 ## Account Settings Ownership
 
 The account-wide Lake Formation and Glue Data Catalog settings live in `modules/account-settings`: the data-lake
-settings, catalog metadata encryption with its dedicated key, and the optional catalog resource policy.
+settings, catalog metadata encryption with its dedicated key, the optional catalog resource policy, and the
+federated `s3tablescatalog`.
 `account_settings_config.owner` says whether this deployment manages them. Exactly one deployment per account and
 Region sets it to `true`. When it is null, it follows `catalog_integration_config.enabled`.
 
@@ -274,10 +276,10 @@ every tenant pipeline role. Read-only admins are authoritative in the same way
 | `false` | `false` | A secondary deployment, with the same guard. |
 
 On a non-owner deployment, owner-only inputs (`cross_account_version`, `data_lake`, `catalog_encryption`,
-`catalog_resource_policy`, `permissions_boundary_arn`) must keep their defaults, and each guard failure names the
-owner deployment as the place to fix it. The guard checks that the deployer and the studio principals are already
-admins, that catalog encryption is on, and, when tenants declare `shares`, that the cross-account version is at
-least 4.
+`catalog_resource_policy`, `permissions_boundary_arn`, `s3tables_catalog`) must keep their defaults, and each guard
+failure names the owner deployment as the place to fix it. The guard checks that the deployer and the studio
+principals are already admins, that catalog encryption is on, and, when tenants declare `shares`, that the
+cross-account version is at least 4.
 
 ### Handing over ownership
 
@@ -303,7 +305,42 @@ without touching the live settings:
 
 The catalog key and the catalog-encryption role are removed from state the same way and stay in place. The new
 owner passes the key as `catalog_encryption.kms_key_arn` and adds its `required_catalog_kms_key_policy_json` output
-to the key policy before its first apply, so its own catalog-encryption role can use the key.
+to the key policy before its first apply, so its own catalog-encryption role can use the key. `s3tablescatalog` needs
+nothing: it is never in state, and the new owner finds it and leaves it unchanged.
+
+## S3 Tables Catalog
+
+Every deployment in an account and Region shares one federated catalog, `s3tablescatalog`, over all the account's
+table buckets. The account-settings owner makes sure it exists:
+
+- **Created only when missing.** At apply time, a step in `modules/account-settings` runs
+  `scripts/ensure-s3tables-catalog.sh`:
+  - when `aws glue get-catalog` finds the catalog, it leaves it exactly as it is;
+  - otherwise it runs `aws glue create-catalog`, federated over `bucket/*` with connection `aws:s3tables`, empty
+    default permissions for new databases and tables, the common tags, and
+    `account_settings_config.s3tables_catalog.allow_full_table_external_data_access`.
+
+  Terraform can't test for the catalog at plan time, so the check runs at apply time and the catalog is not in
+  Terraform state.
+- **Never deleted.** No destroy, owner hand-over, Ephemeral teardown, or upgrade deletes the catalog. Deleting it
+  would drop every grant on it and every bucket catalog under it, for all deployments in the account. The deployer
+  policy denies `glue:DeleteCatalog` on it.
+- **Not reconciled.** An existing catalog is never updated, so changing `allow_full_table_external_data_access`
+  later has no effect on it. Plans show no drift for the catalog. The `lfverify` check `admin-s3tables-catalog`
+  (`auditor-s3tables-catalog` in probe mode) reports its attributes.
+- **Full-table external access (default `true`).** Third-party engines get credentials without session tags when the
+  caller has full table access. Set it to `false` before the catalog is first created if no such engine (for
+  example an IAM-based SageMaker Unified Studio domain) needs it.
+
+**Requirements where the owner is applied**: AWS CLI v2 and bash. The script uses the environment's AWS
+credentials and the deployment's Region, not Terraform's provider configuration, so a provider `assume_role` does
+not carry over. The script refuses to act unless the credentials belong to the deployment's account.
+
+**Upgrading** from a version whose `modules/catalog-integration` created the catalog: a `removed` block forgets
+`aws_glue_catalog.s3tables` without deleting it. The plan reports it as "will no longer be managed by Terraform, but
+will not be destroyed", and the next step finds the catalog and leaves it unchanged. Move
+`catalog_integration_config.allow_full_table_external_data_access`, if set, to
+`account_settings_config.s3tables_catalog`; the old attribute is rejected.
 
 ## Catalog Metadata Encryption
 

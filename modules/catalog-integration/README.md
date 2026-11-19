@@ -3,11 +3,11 @@
 Integrates S3 Tables with AWS Lake Formation for one account and Region:
 
 - the Lake Formation data-access role (`<name_prefix>-lf-s3tables-access`);
-- the registration of every table bucket (`bucket/*`) with Lake Formation, with federation;
-- the federated `s3tablescatalog` Glue catalog.
+- the registration of every table bucket (`bucket/*`) with Lake Formation, with federation.
 
-The data-lake settings moved to [`modules/account-settings`](../account-settings) in spec 003. The root module
-passes `settings_ready` so the registration waits until the deployer's admin rights exist.
+The data-lake settings and the federated `s3tablescatalog` moved to [`modules/account-settings`](../account-settings)
+in spec 003. The root module passes `settings_ready` so the registration waits until the deployer's admin rights
+exist.
 
 ## One owner per account and Region
 
@@ -15,20 +15,23 @@ These resources are account-level singletons. Exactly one deployment per account
 this submodule (`catalog_integration_config.enabled = true` in the root module). Every other
 deployment sets `enabled = false` and passes this submodule's `data_access_role_arn`.
 
-## Importing an existing catalog
+## The catalog moved out
 
-If `s3tablescatalog` was created in the console, import it before the first apply, or the create
-fails because the catalog already exists. Use an `import` block with the ID format from the AWS
-provider's `aws_glue_catalog` import documentation:
+Versions before spec 003 created `aws_glue_catalog.s3tables` here. A `removed` block now forgets it without deleting
+it, so the upgrade leaves the catalog in place. `modules/account-settings` creates the catalog only when it is
+missing and never deletes it.
+
+## Importing an existing registration
+
+If the `bucket/*` registration already exists, import `aws_lakeformation_resource.s3tables` before the first apply,
+or the create fails:
 
 ```hcl
 import {
-  to = module.main.module.catalog_integration[0].aws_glue_catalog.s3tables
-  id = "<see aws_glue_catalog import docs>"
+  to = module.main.module.catalog_integration[0].aws_lakeformation_resource.s3tables
+  id = "arn:aws:s3tables:<region>:<account>:bucket/*"
 }
 ```
-
-Import an existing registration (`aws_lakeformation_resource.s3tables`) the same way.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
