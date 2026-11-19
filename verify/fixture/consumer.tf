@@ -255,6 +255,14 @@ resource "aws_lakeformation_permissions" "consumer_link" {
   database {
     name = aws_glue_catalog_database.consumer_link[0].name
   }
+
+  # The consumer account keeps its default IAM_ALLOWED_PRINCIPALS ALL on new databases (its settings
+  # are the consumer's, not this module's). ListPermissions filtered by principal folds that grant
+  # in, so DESCRIBE reads back as ALL and DESCRIBE, and the grant was replaced on every apply
+  # (awslkhs-c921). Shared table access is still decided by the producer's grants.
+  lifecycle {
+    ignore_changes = [permissions, permissions_with_grant_option]
+  }
 }
 
 # Narrower than the share: tenant and public or internal only, in the producer's tags

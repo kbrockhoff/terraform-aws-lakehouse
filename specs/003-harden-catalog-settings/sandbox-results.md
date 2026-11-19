@@ -406,3 +406,16 @@ All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `
   - The re-plan shows no label changes. Its remaining replacements are the fixture's own `owner_*` and
     `consumer_link` grants (`awslkhs-c921`).
   - `verify-run` with the consumer: **238 of 238 pass**. Teardown clean.
+
+### awslkhs-c921: fixture grant churn
+
+- **Cause**: the provider merges every grant entry the principal holds on the resource into
+  `permissions` and `permissions_with_grant_option`.
+  - `owner_database` and `owner_tables` picked up the runner's implicit creator grants.
+  - `consumer_link` picked up `IAM_ALLOWED_PRINCIPALS` `ALL`. The consumer account keeps default create-database
+    permissions, and `ListPermissions` filtered by principal folds that grant into each IAM principal: a probe role
+    listed as `DESCRIBE` alone was returned as `ALL, DESCRIBE` under the principal filter.
+- **Fix**: `ignore_changes` on both permission lists for the three fixture grants. A grant revoked entirely reads
+  back empty, leaves state, and is recreated.
+- **`b7a876`** (2026-11-19, consumer): after `verify-up verify-seed`, a stage 2 plan reported **no changes**
+  (`-detailed-exitcode` 0). Teardown clean.

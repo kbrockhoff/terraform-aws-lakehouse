@@ -26,6 +26,14 @@ resource "aws_lakeformation_permissions" "owner_database" {
   }
 
   depends_on = [module.lakehouse, aws_s3tables_namespace.named]
+
+  # Lake Formation reports every grant the runner holds here, including the implicit creator grants
+  # (ALTER, CREATE_TABLE, DESCRIBE, DROP with grant option), and the provider merges them into these
+  # lists, so they never match ["ALL"] and the grant was replaced on every apply (awslkhs-c921). A
+  # grant revoked entirely still reads back empty, leaves state, and is recreated.
+  lifecycle {
+    ignore_changes = [permissions, permissions_with_grant_option]
+  }
 }
 
 resource "aws_lakeformation_permissions" "owner_tables" {
@@ -42,4 +50,10 @@ resource "aws_lakeformation_permissions" "owner_tables" {
   }
 
   depends_on = [module.lakehouse, aws_s3tables_namespace.named]
+
+  # As owner_database: the creator grants on seeded tables (ALTER, DELETE, DESCRIBE, DROP, INSERT,
+  # SELECT with grant option) are merged into the read-back lists (awslkhs-c921)
+  lifecycle {
+    ignore_changes = [permissions, permissions_with_grant_option]
+  }
 }
