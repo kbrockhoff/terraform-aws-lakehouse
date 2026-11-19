@@ -4,28 +4,16 @@ Integrates S3 Tables with AWS Lake Formation for one account and Region:
 
 - the Lake Formation data-access role (`<name_prefix>-lf-s3tables-access`);
 - the registration of every table bucket (`bucket/*`) with Lake Formation, with federation;
-- the federated `s3tablescatalog` Glue catalog;
-- the data-lake settings: admins, read-only admins, and empty default permissions.
+- the federated `s3tablescatalog` Glue catalog.
+
+The data-lake settings moved to [`modules/account-settings`](../account-settings) in spec 003. The root module
+passes `settings_ready` so the registration waits until the deployer's admin rights exist.
 
 ## One owner per account and Region
 
 These resources are account-level singletons. Exactly one deployment per account and Region uses
 this submodule (`catalog_integration_config.enabled = true` in the root module). Every other
 deployment sets `enabled = false` and passes this submodule's `data_access_role_arn`.
-
-## Data-lake settings are authoritative
-
-`aws_lakeformation_data_lake_settings` replaces **all** data-lake settings in the account and
-Region. Any admin not in `admin_principal_arns` is removed on apply, including admins added in the
-console. List in `admin_principal_arns`:
-
-- the role that deploys this module (a plan-time precondition enforces this);
-- the deploying role of every secondary deployment;
-- every tenant provisioning pipeline role.
-
-Read-only admins are authoritative in the same way. List auditors and the access-verification
-probe runner in `read_only_admin_principal_arns`; anyone added in the console is removed on the
-next apply. A principal cannot be in both lists.
 
 ## Importing an existing catalog
 

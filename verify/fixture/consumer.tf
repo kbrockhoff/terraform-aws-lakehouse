@@ -94,6 +94,8 @@ resource "aws_iam_role" "consumer" {
 # API reachability only; Lake Formation in both accounts decides every outcome. The direct table
 # storage permission makes the storage bypass case meaningful: the producer's bucket must refuse it.
 data "aws_iam_policy_document" "consumer" {
+  #checkov:skip=CKV_AWS_111:Glue writes are open so the consumer write cases reach Lake Formation, which denies them
+  #checkov:skip=CKV_AWS_356:Glue and Lake Formation authorize by Lake Formation grants, not IAM resources
   count = local.consumer_enabled ? 1 : 0
 
   statement {
@@ -145,6 +147,10 @@ resource "aws_iam_role_policy" "consumer" {
 # ----
 
 resource "aws_s3_bucket" "consumer_results" {
+  #checkov:skip=CKV_AWS_18:Disposable fixture bucket; results expire after a day and access is audited by CloudTrail
+  #checkov:skip=CKV2_AWS_62:No consumer of event notifications for fixture results
+  #checkov:skip=CKV_AWS_21:Results are transient and expire after a day; versioning would only retain them
+  #checkov:skip=CKV_AWS_145:The consumer account has no fixture key; SSE-S3 is enough for disposable results
   count    = local.consumer_enabled ? 1 : 0
   provider = aws.consumer
 
@@ -173,6 +179,28 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "consumer_results"
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "consumer_results" {
+  count    = local.consumer_enabled ? 1 : 0
+  provider = aws.consumer
+
+  bucket = aws_s3_bucket.consumer_results[0].id
+
+  rule {
+    id     = "expire-results"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = 1
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
     }
   }
 }

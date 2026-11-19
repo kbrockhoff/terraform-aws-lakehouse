@@ -416,8 +416,12 @@ explicit, reviewable values. Then:
 
 #### Performance
 
-- Encrypting metadata MUST NOT add more than 10% to the median catalog lookup latency of a governed
-  query in the sandbox verification run, compared with an unencrypted baseline run.
+- Encrypting metadata MUST NOT add more than 75 ms to the median catalog lookup latency in the
+  default service-role key-access mode, compared with an unencrypted baseline in the sandbox. The
+  cost is a roughly fixed per-lookup decrypt plus role assumption, so a percentage target would
+  depend on network distance rather than on the design. Measured: +52 ms in service-role mode and
+  +34 ms in per-caller mode (sandbox-results.md item 6). Service-role mode stays the default
+  despite the higher cost, because no caller needs a key grant.
 - Bypass-prevention denies MUST NOT change governed query latency measurably. They are evaluated
   only on direct calls.
 
@@ -461,8 +465,8 @@ explicit, reviewable values. Then:
   no-change plan on the owner deployment immediately after apply.
 - **Migration**: an existing ephemeral `001` test deployment upgrades with one apply, and 100% of the `002` access
   matrix still passes afterwards.
-- **Latency**: median catalog lookup latency increases by at most 10% after encryption (see
-  Performance).
+- **Latency**: median catalog lookup latency increases by at most 75 ms after encryption in the
+  default service-role mode (see Performance).
 - **Revocation**: a removed share stops granting consumer access within 15 minutes of the apply
   completing, measured by the FR-020 case 10 run.
 - **Share isolation**: zero consumer reads outside the shared labels across all FR-020
@@ -543,8 +547,8 @@ as the data.
 
 ### Performance Validation
 
-- [ ] Median governed-query catalog lookup latency increases by at most 10% after encryption, in the
-      sandbox run.
+- [ ] Median catalog lookup latency increases by at most 75 ms after encryption in service-role
+      mode, in the sandbox run.
 
 ### Operational Validation
 

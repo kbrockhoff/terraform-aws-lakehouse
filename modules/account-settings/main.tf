@@ -72,6 +72,7 @@ data "aws_kms_key" "live_catalog" {
 # objects encrypted, which is why the catalog key is protected (FR-013). Destroying this resource
 # resets the catalog to DISABLED (sandbox-results.md item 2).
 resource "aws_glue_data_catalog_encryption_settings" "this" {
+  #checkov:skip=CKV_AWS_94:Encryption is always on; Checkov does not evaluate the conditional mode, which is SSE-KMS or SSE-KMS-WITH-SERVICE-ROLE
   catalog_id = var.account_id
 
   data_catalog_encryption_settings {

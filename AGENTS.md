@@ -21,8 +21,11 @@ precedence over this guide when the two conflict.
 - Shared Athena results bucket: public access blocked, SSE-KMS with bucket keys, expiring and unversioned, no per-tenant policy statements
 
 ### Account Integration
-- `modules/catalog-integration` (one owner per account and Region): the Lake Formation data-access role, the `bucket/*` registration with federation, the federated `s3tablescatalog`, and authoritative data-lake settings
-- Secondary deployments set `catalog_integration_config.enabled = false`, pass the owner's data-access role, and are guarded by `terraform_data.secondary_admin_guard`
+- `modules/catalog-integration` (one owner per account and Region, `catalog_integration_config.enabled`): the Lake Formation data-access role, the `bucket/*` registration with federation, and the federated `s3tablescatalog`
+- `modules/account-settings` (one owner per account and Region, `account_settings_config.owner`, null follows `catalog_integration_config.enabled`): authoritative data-lake settings (cross-account version 4, `SET_CONTEXT`, explicit external-engine opt-ins, studio admins), Glue catalog encryption with a dedicated catalog key in `service_role` (default) or `per_caller` key-access mode, and the optional catalog resource policy
+- Non-owner deployments keep owner-only inputs at their defaults and are guarded by `terraform_data.settings_guard` (deployer and studio admins, encryption on, cross-account version for shares); secondary deployments also set `catalog_integration_config.enabled = false` and pass the owner's data-access role
+- Ownership hand-over uses `removed { lifecycle { destroy = false } }`, because destroying the settings resets encryption to `DISABLED` and empties the admins
+- `studio_config` adds SageMaker Unified Studio roles as data-lake admins; the module creates no studio resources
 - One-time CLI grants the provider cannot express yet (README, "Required one-time grants"): bucket catalog `DESCRIBE`, and platform tag permissions for non-creator admins
 
 ### Governed Access
@@ -32,6 +35,8 @@ precedence over this guide when the two conflict.
 - Column-level control through those tags; domain is an optional reader filter; row filters (data cells filters) are the only named-resource grants
 - Only platform admins can ASSOCIATE the tenant and zone keys; stewards and writers label within `L(T)`; stewards grant within their tenant
 - Persona IAM policy documents are outputs; the module never attaches them
+- Every table bucket denies direct table data access (`DenyDirectTableAccess`) except to the Lake Formation data-access role, AWS service principals, and `governance_config.direct_access_exempt_principal_arns`
+- Cross-account sharing (`modules/tenant/sharing.tf`): same-Region, read-only LF-tag grants with grant option to accounts approved in `sharing_config`, plus tag `DESCRIBE` so consumers re-grant by tag; row-filtered tables and unlisted regulations are excluded, and designated tenants need `compliance_acknowledged`
 
 ### Query Engine Setup
 - One Athena workgroup per tenant with enforced configuration, encrypted tenant-prefixed results (or the designated tenant's results bucket), and a scan cutoff overridable per tenant
@@ -42,8 +47,8 @@ precedence over this guide when the two conflict.
 - `modules/deployer`: least-privilege `platform` or `tenant` scope policies (split into two managed policies) attached to an existing role; never called by the root
 
 ### Module Files
-- Root: `variables.tf`, `locals.tf` (environment defaults, effective config, `platform_contract`), `dependencies.tf`, `main.tf` (catalog integration, guards, `module.tenant`), `kms.tf`, `lf-tags.tf`, `table-buckets.tf`, `query.tf`, `alarms.tf`, `cost-estimation.tf`, `outputs.tf`
-- `modules/tenant`: `variables.tf` (all tenant validation), `locals.tf`, `kms.tf`, `storage.tf`, `lf-tags.tf`, `permissions.tf`, `query.tf`, `iam-documents.tf`, `alarms.tf`, `main.tf`, `outputs.tf`
+- Root: `variables.tf`, `locals.tf` (environment defaults, effective config, `platform_contract`), `dependencies.tf`, `main.tf` (account settings, catalog integration, guards, `module.tenant`), `kms.tf`, `lf-tags.tf`, `table-buckets.tf`, `query.tf`, `alarms.tf`, `cost-estimation.tf`, `outputs.tf`
+- `modules/tenant`: `variables.tf` (all tenant validation), `locals.tf`, `kms.tf`, `storage.tf`, `lf-tags.tf`, `permissions.tf`, `sharing.tf`, `query.tf`, `iam-documents.tf`, `alarms.tf`, `main.tf`, `outputs.tf`
 - Examples: `defaults`, `complete`, `secondary`, `standalone-tenant`, `deployer`; tests in `test/` are plan-only (`make test`)
 
 ### Access Verification Harness

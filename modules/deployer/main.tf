@@ -327,13 +327,17 @@ data "aws_iam_policy_document" "lakehouse" {
   }
 
   statement {
-    sid    = "LakeFormationCrossAccountRead"
-    effect = "Allow"
-    actions = [
-      "ram:GetResourceShares",
-      "ram:ListResourceSharePermissions",
-    ]
-    resources = ["*"] # neither action supports resource-level permissions
+    sid       = "LakeFormationCrossAccountRead"
+    effect    = "Allow"
+    actions   = ["ram:GetResourceShares"]
+    resources = ["*"] # no resource-level permissions
+  }
+
+  statement {
+    sid       = "LakeFormationCrossAccountPermissions"
+    effect    = "Allow"
+    actions   = ["ram:ListResourceSharePermissions"]
+    resources = ["arn:${var.partition}:ram:${var.region}:${var.account_id}:resource-share/*"]
   }
 
   # ----

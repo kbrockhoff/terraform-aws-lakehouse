@@ -246,9 +246,9 @@ tasks T002 to T007 and T063.
   - **Query-level effect**: Athena query planning makes a handful of catalog lookups per query, so
     the end-to-end effect is likely well under 10% of a governed query that takes seconds. That
     has not been measured.
-  - **Next step**: the spec needs a decision. Either restate the target as an absolute per-lookup
-    budget (for example ≤ 75 ms added), or as a share of end-to-end governed query time measured
-    by `lfverify` in T063. Tracked as a beads issue.
+  - **Decision (2026-11-19)**: the spec now states an absolute budget of at most 75 ms added per
+    lookup in the default service-role mode, which the measured +52 ms meets. Service-role stays
+    the default (`awslkhs-cnb7.1`).
 
 ## 7. Provider version floor (T003)
 

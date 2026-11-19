@@ -1,3 +1,21 @@
+# Account Settings Submodule
+
+Manages the account- and Region-wide Lake Formation and Glue Data Catalog settings. Exactly one deployment per
+account and Region calls it (`account_settings_config.owner` in the root module):
+
+- **Data-lake settings**: authoritative admins and read-only admins, no `IAM_ALLOWED_PRINCIPALS` defaults,
+  cross-account version (never lowered), `SET_CONTEXT`, and explicit external-engine settings. A precondition
+  keeps the deploying role an admin.
+- **Catalog encryption**: metadata and connection passwords encrypted with a dedicated catalog key (created here
+  unless `catalog_encryption.kms_key_arn` is set), in `service_role` mode (a Glue role with an
+  `aws:SourceAccount`-only trust, plus a 20-second propagation delay) or `per_caller` mode. The key policy denies
+  deletion and disabling except to break-glass principals.
+- **Catalog resource policy** (optional): the RAM `glue:ShareResource` statement plus caller-supplied Deny statements,
+  with `EnableHybrid = TRUE`.
+
+Destroying this submodule resets catalog encryption to `DISABLED` and empties the admins. To hand over ownership, use a
+`removed` block with `destroy = false` (see the root README, "Handing over ownership").
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
