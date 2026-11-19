@@ -739,7 +739,7 @@ once the consumer exists, sharing and revocation.
 
 ## Phase N: Polish and Cross-Cutting Concerns
 
-- [ ] T066 [P] Edit `README.md` (hand-written sections around the generated docs) to add:
+- [x] T066 [P] Edit `README.md` (hand-written sections around the generated docs) to add:
   - **Account settings ownership**: the owner flag, the four combinations, and the hand-over
     procedure using `removed { from = module.<name>.module.account_settings[0] lifecycle { destroy
     = false } }`. Include the behavior observed in T004.
@@ -756,21 +756,21 @@ once the consumer exists, sharing and revocation.
   - **Direct storage access**: the deny, the exemptions, and the recommended organization SCP
     (documented only).
   - **Catalog resource policy**: check for an existing policy before enabling sharing (D1).
-- [ ] T067 [P] Edit `AGENTS.md`:
+- [x] T067 [P] Edit `AGENTS.md`:
   - **Components**: add `modules/account-settings` and `modules/tenant/sharing.tf`, and replace
     "`catalog_integration_config.enabled` owns the data-lake settings" with the owner flag.
   - **Mirroring**: apply the same edits to `CLAUDE.md` where it repeats `AGENTS.md` content (the
     beads note says the two files are independent).
-- [ ] T068 [P] Edit `modules/account-settings/README.md` (terraform-docs markers plus a short
+- [x] T068 [P] Edit `modules/account-settings/README.md` (terraform-docs markers plus a short
   purpose section) and `modules/catalog-integration/README.md` (data-lake settings moved out).
-- [ ] T069 [P] Edit `specs/001-governed-lakehouse/spec.md`, *Out of Scope*: change the
+- [x] T069 [P] Edit `specs/001-governed-lakehouse/spec.md`, *Out of Scope*: change the
   cross-account bullet to read "Cross-region data sharing and replication (cross-account sharing
   within the Region is specified in 003-harden-catalog-settings)".
-- [ ] T070 Run `make security-scan`. Fix or suppress any new Checkov findings with a justification
+- [x] T070 Run `make security-scan`. Fix or suppress any new Checkov findings with a justification
   comment. The expected suppression is for `*` principals on Deny-only statements, which already
   follows the existing bucket-policy pattern.
-- [ ] T071 Run `make pre-commit` and then `make validate`. This is the final checkpoint.
-- [ ] T072 Walk through the spec's Success Criteria checklist against the test and sandbox
+- [x] T071 Run `make pre-commit` and then `make validate`. This is the final checkpoint.
+- [x] T072 Walk through the spec's Success Criteria checklist against the test and sandbox
   results, and record any criterion that is not met as a beads issue (`bd create`). Leave the
   checkbox unticked if any criterion is blocked by the missing consumer account.
 

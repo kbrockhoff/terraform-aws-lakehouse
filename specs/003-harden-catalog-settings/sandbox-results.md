@@ -350,3 +350,35 @@ Observations:
 
     The service principal exemption in the deny is sufficient for S3 Tables maintenance.
     Compaction last ran at 04:05Z, before the deny, and had no new data to compact afterwards.
+
+### Success-criteria gap checks (T072)
+
+All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `per_caller` mode, consumer
+`566376086856`. Teardown was clean, and the settings were restored (catalog `DISABLED`).
+
+1. **Sharing in `per_caller` mode**: `make verify-up verify-seed verify-run` with `RELEASE=true` passed
+   **238 of 238 cases**, including all 9 consumer cases. Sharing is now verified in both key-access modes
+   (service-role in `73a09e`).
+2. **Re-encryption procedure** (README, "Migrating catalog encryption"): role `t072-nokey` had Glue read
+   permissions and Lake Formation `DESCRIBE`, but no KMS permissions. In `per_caller` mode it can read only
+   unencrypted catalog objects.
+   - Table `t3` was created with encryption `DISABLED`. After the owner re-enabled encryption, `t072-nokey` still
+     read `t3` (17:11:53Z), so existing objects stayed unencrypted.
+   - After the README `update-table` rewrite, `t072-nokey` got `GlueEncryptionException` (`kms:Decrypt` denied
+     on the catalog key) for `t3` (17:12:05Z). The rewrite re-encrypted it. The admin still read it.
+   - Table `t2`, written under encryption, was denied throughout, which confirms that the probe distinguishes
+     the two.
+3. **Non-owner against a live owner**: a scratch copy of `examples/secondary` (`owner = false`) planned against
+   the run.
+   - With the run's data-access role: the plan **succeeded** (29 to add). `settings_guard` passed, and the plan
+     only read the data-lake and encryption settings; it managed none.
+   - With `studio_config` naming a role that is not an admin: **failed** at plan time with
+     "studio_config.integration_principal_arns must already be data-lake admins".
+4. **Out-of-band drift**: catalog encryption was set to `DISABLED` and `AllowFullTableExternalDataAccess` to
+   `true` with the CLI.
+   - The fixture plan reported "Objects have changed outside of Terraform" and planned in-place updates
+     restoring `SSE-KMS` and encrypted connection passwords, and `allow_full_table_external_data_access` to
+     `false`.
+   - `make verify-apply` restored both.
+   - An attempt to drift `AllowExternalDataFiltering` instead was rejected by the API ("Empty list is not
+     allowed") because the allow list was empty.

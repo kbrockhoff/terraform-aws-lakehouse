@@ -516,54 +516,54 @@ as the data.
 
 ### Code Validation
 
-- [ ] All new inputs are typed, grouped into `*_config` objects, defaulted securely, and validated.
-- [ ] Format, validate, lint, docs, and unit/contract tests pass through the `make` targets.
-- [ ] Non-owner deployments (account-settings owner flag false) plan successfully against a
+- [x] All new inputs are typed, grouped into `*_config` objects, defaulted securely, and validated.
+- [x] Format, validate, lint, docs, and unit/contract tests pass through the `make` targets.
+- [x] Non-owner deployments (account-settings owner flag false) plan successfully against a
       compliant owner, fail with a clear message against a non-compliant one, and change no account
       setting (FR-001).
-- [ ] All four combinations of the account-settings owner flag and the catalog-integration flag
+- [x] All four combinations of the account-settings owner flag and the catalog-integration flag
       plan successfully. Owner-only inputs are rejected on non-owner deployments.
-- [ ] With studio support off, a non-empty studio principal list is rejected. With it on, an empty
+- [x] With studio support off, a non-empty studio principal list is rejected. With it on, an empty
       list is rejected, and a non-owner fails when a listed principal is not a live administrator
       (FR-007).
-- [ ] New resources carry common tags only. No data tags are applied to keys or roles.
+- [x] New resources carry common tags only. No data tags are applied to keys or roles.
 
 ### Security Validation
 
-- [ ] Static analysis reports no new unsuppressed HIGH or CRITICAL findings.
-- [ ] Catalog metadata and connection credentials are encrypted with the dedicated catalog-metadata
+- [x] Static analysis reports no new unsuppressed HIGH or CRITICAL findings.
+- [x] Catalog metadata and connection credentials are encrypted with the dedicated catalog-metadata
       key in every environment type. That key differs from the platform and tenant keys, and the
       platform key policy contains no catalog or consumer statements.
-- [ ] A principal with full storage permissions in its identity policy and no permission-service
+- [x] A principal with full storage permissions in its identity policy and no permission-service
       grant cannot read or write table data directly (verified in the sandbox).
-- [ ] Every account-wide permission-service setting matches its declared value, and an out-of-band
+- [x] Every account-wide permission-service setting matches its declared value, and an out-of-band
       change appears as drift.
-- [ ] No wildcard principals in Allow statements, no wildcard allows, and confused-deputy
+- [x] No wildcard principals in Allow statements, no wildcard allows, and confused-deputy
       conditions on every new service trust.
-- [ ] Plan-time validation rejects shares that target unapproved accounts, the current account,
+- [x] Plan-time validation rejects shares that target unapproved accounts, the current account,
       write permissions, or another tenant's scope.
-- [ ] A consumer account can read only the shared labels, can't write, and loses access when the
+- [x] A consumer account can read only the shared labels, can't write, and loses access when the
       share is removed (verified in the sandbox, in both key-access modes).
 
 ### Performance Validation
 
-- [ ] Median catalog lookup latency increases by at most 75 ms after encryption in service-role
+- [x] Median catalog lookup latency increases by at most 75 ms after encryption in service-role
       mode, in the sandbox run.
 
 ### Operational Validation
 
-- [ ] An existing ephemeral `001` test deployment upgrades with one apply, and the full `002` access
+- [x] An existing ephemeral `001` test deployment upgrades with one apply, and the full `002` access
       matrix passes afterwards.
-- [ ] The re-encryption procedure for existing catalog objects is documented and was exercised once
+- [x] The re-encryption procedure for existing catalog objects is documented and was exercised once
       in the sandbox.
-- [ ] Destroying the owner deployment cannot leave catalog metadata encrypted with a key that is
+- [x] Destroying the owner deployment cannot leave catalog metadata encrypted with a key that is
       scheduled for deletion.
-- [ ] Documentation explains each account-wide setting, its default, the consequence of changing it,
+- [x] Documentation explains each account-wide setting, its default, the consequence of changing it,
       and how to register studio integration principals.
-- [ ] Consumer onboarding documentation covers accepting shares from outside the organization,
+- [x] Consumer onboarding documentation covers accepting shares from outside the organization,
       creating resource links, and granting access locally. It uses the per-consumer output
       (FR-027).
-- [ ] Switching between key-access modes takes one apply with no loss of catalog access for listed
+- [x] Switching between key-access modes takes one apply with no loss of catalog access for listed
       principals.
 
 ## Assumptions *(include if making assumptions)*
