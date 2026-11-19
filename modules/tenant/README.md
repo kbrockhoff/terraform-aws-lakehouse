@@ -158,8 +158,8 @@ Lake Formation does not enforce the roll-up, and the module does not detect drif
 | [aws_lakeformation_permissions.writer_database](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_permissions) | resource |
 | [aws_lakeformation_permissions.writer_label](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_permissions) | resource |
 | [aws_lakeformation_permissions.writer_table](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_permissions) | resource |
+| [aws_lakeformation_resource_lf_tag.row_filtered_table](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_resource_lf_tag) | resource |
 | [aws_lakeformation_resource_lf_tags.database](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_resource_lf_tags) | resource |
-| [aws_lakeformation_resource_lf_tags.row_filtered_table](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_resource_lf_tags) | resource |
 | [aws_s3_bucket.results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket_lifecycle_configuration.results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_lifecycle_configuration) | resource |
 | [aws_s3_bucket_ownership_controls.results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_ownership_controls) | resource |
