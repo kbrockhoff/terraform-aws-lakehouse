@@ -546,14 +546,14 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | Name | Version |
 | ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.11 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.59.0, < 7.0.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.59.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.12 |
 
 ## Providers
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0, < 7.0.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0 |
 | <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 
 ## Modules

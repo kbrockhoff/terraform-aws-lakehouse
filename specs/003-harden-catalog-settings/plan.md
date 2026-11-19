@@ -68,7 +68,7 @@ are in the same Region.
 **IaC Tool**: Terraform `>= 1.11`. The local tool is 1.16.5. The plan uses `moved` blocks, which
 work across module boundaries. Consumers handing over ownership use `removed` blocks with
 `lifecycle { destroy = false }`, which need Terraform 1.7 or later and are already within the floor.
-**Provider Versions**: `hashicorp/aws >= 6.59.0, < 7.0.0`. The floor is unchanged (T003 confirmed
+**Provider Versions**: `hashicorp/aws >= 6.59.0`, with no upper bound (awslkhs-jakp). The floor is unchanged (T003 confirmed
 6.59.0 has every attribute). `hashicorp/time >= 0.12` is new: the catalog-encryption role needs a
 propagation delay before Glue accepts it (sandbox result 2).
 The latest release, 6.73.0, was checked with `terraform providers schema` and exposes every
