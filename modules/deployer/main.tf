@@ -370,13 +370,12 @@ data "aws_iam_policy_document" "lakehouse" {
     content {
       sid    = "FederatedCatalog"
       effect = "Allow"
+      # The account-settings owner only creates s3tablescatalog when it is missing (with tags) and
+      # reads it; it never updates or deletes it (spec 003 FR-029, FR-030)
       actions = [
         "glue:CreateCatalog",
         "glue:GetCatalog",
-        "glue:UpdateCatalog",
-        "glue:DeleteCatalog",
         "glue:TagResource",
-        "glue:UntagResource",
         "glue:GetTags",
       ]
       resources = [
@@ -384,6 +383,18 @@ data "aws_iam_policy_document" "lakehouse" {
         "arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/s3tablescatalog",
         "arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/s3tablescatalog/*",
       ]
+    }
+  }
+
+  # Every deployment in the account shares s3tablescatalog, so the deployer can never delete it,
+  # even when another policy on the role would allow it (FR-030)
+  dynamic "statement" {
+    for_each = var.scope == "platform" ? [1] : []
+    content {
+      sid       = "ProtectFederatedCatalog"
+      effect    = "Deny"
+      actions   = ["glue:DeleteCatalog"]
+      resources = ["arn:${var.partition}:glue:${var.region}:${var.account_id}:catalog/s3tablescatalog"]
     }
   }
 

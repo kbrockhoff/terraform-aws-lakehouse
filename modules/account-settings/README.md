@@ -30,6 +30,7 @@ Destroying this submodule resets catalog encryption to `DISABLED` and empties th
 | Name | Version |
 | ---- | ------- |
 | <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.59.0 |
+| <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 | <a name="provider_time"></a> [time](#provider\_time) | >= 0.12 |
 
 ## Modules
@@ -47,6 +48,7 @@ No modules.
 | [aws_kms_alias.catalog](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_key.catalog](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_lakeformation_data_lake_settings.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_data_lake_settings) | resource |
+| [terraform_data.s3tables_catalog](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [time_sleep.catalog_encryption_role](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 
 ## Inputs
@@ -68,6 +70,7 @@ No modules.
 | <a name="input_key_user_arns"></a> [key\_user\_arns](#input\_key\_user\_arns) | Tenant persona ARNs granted catalog key use in per\_caller mode. | `list(string)` | `[]` | no |
 | <a name="input_permissions_boundary_arn"></a> [permissions\_boundary\_arn](#input\_permissions\_boundary\_arn) | Permissions boundary for the catalog-encryption role. Empty means none. | `string` | `""` | no |
 | <a name="input_read_only_admin_principal_arns"></a> [read\_only\_admin\_principal\_arns](#input\_read\_only\_admin\_principal\_arns) | Lake Formation read-only admins. Authoritative, like admin\_principal\_arns. | `list(string)` | `[]` | no |
+| <a name="input_s3tables_catalog"></a> [s3tables\_catalog](#input\_s3tables\_catalog) | Settings used only when s3tablescatalog is missing and gets created (FR-029); an existing catalog is never changed. allow\_full\_table\_external\_data\_access lets third-party engines get credentials without session tags when the caller has full table access. | <pre>object({<br/>    allow_full_table_external_data_access = bool<br/>  })</pre> | <pre>{<br/>  "allow_full_table_external_data_access": true<br/>}</pre> | no |
 | <a name="input_storage_key_arns"></a> [storage\_key\_arns](#input\_storage\_key\_arns) | Keys that encrypt table storage or query results. A supplied catalog key must not be one of them. | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources. Common tags only: nothing here holds data at rest. | `map(string)` | `{}` | no |
 
@@ -81,4 +84,5 @@ No modules.
 | <a name="output_cross_account_version"></a> [cross\_account\_version](#output\_cross\_account\_version) | Lake Formation cross-account version managed here. |
 | <a name="output_data_lake_settings_id"></a> [data\_lake\_settings\_id](#output\_data\_lake\_settings\_id) | ID of the data-lake settings. Registration and grants wait on it so the deployer's admin rights exist first. |
 | <a name="output_required_catalog_kms_key_policy_json"></a> [required\_catalog\_kms\_key\_policy\_json](#output\_required\_catalog\_kms\_key\_policy\_json) | Key policy statements a consumer-supplied catalog key needs. Account-root access is the key owner's own responsibility. |
+| <a name="output_s3tables_catalog_ready"></a> [s3tables\_catalog\_ready](#output\_s3tables\_catalog\_ready) | ID of the s3tablescatalog check-and-create step. Grants and LF-tags on the catalog wait on it. |
 <!-- END_TF_DOCS -->

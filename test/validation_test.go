@@ -132,6 +132,9 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"external filtering without allow list", map[string]interface{}{"account_settings_config": map[string]interface{}{
 			"data_lake": map[string]interface{}{"allow_external_data_filtering": true}}},
 			"requires a non-empty external_data_filtering_allow_list"},
+		{"catalog flag in its old place", map[string]interface{}{"catalog_integration_config": map[string]interface{}{
+			"enabled": true, "data_access_role_arn": "", "allow_full_table_external_data_access": true}},
+			"moved to account_settings_config.s3tables_catalog"},
 		{"invalid key access mode", map[string]interface{}{"account_settings_config": map[string]interface{}{
 			"catalog_encryption": map[string]interface{}{"key_access_mode": "shared"}}},
 			"must be service_role or per_caller"},

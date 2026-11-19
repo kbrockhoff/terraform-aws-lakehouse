@@ -816,7 +816,7 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   Add `s3tables_catalog` (`allow_full_table_external_data_access`, default true) to
   `modules/account-settings/variables.tf`, and an `s3tables_catalog_ready` output (the
   `terraform_data` ID) to `outputs.tf`.
-- [ ] T076 Edit `modules/catalog-integration/`:
+- [x] T076 Edit `modules/catalog-integration/`:
   - `main.tf`: remove `aws_glue_catalog.s3tables` and add `removed { from =
     aws_glue_catalog.s3tables lifecycle { destroy = false } }` (FR-031).
   - `variables.tf`: remove the `allow_full_table_external_data_access` variable.
@@ -824,7 +824,7 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   - Also (found while implementing): `verify/internal/preflight/cleanup.go` `accountIntegration`
     deleted `s3tablescatalog` on every `verify-down`. It now only deregisters the run's
     registration (FR-030).
-- [ ] T077 Root wiring:
+- [x] T077 Root wiring:
   - **`variables.tf`**:
     - add `account_settings_config.s3tables_catalog.allow_full_table_external_data_access`
       (default true), documenting the consequence;
@@ -839,14 +839,17 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   - **`outputs.tf`**: `catalog_name` becomes the constant `s3tablescatalog` whenever the module is
     enabled.
   - **Examples**: update `examples/complete`, `examples/secondary`, and the `verify/fixture` inputs.
-- [ ] T078 [P] Edit `modules/deployer/main.tf`:
-  - keep `glue:CreateCatalog`, `glue:GetCatalog`, and `glue:TagResource` on the catalog ARN;
-  - add `sts:GetCallerIdentity`;
+- [x] T078 [P] Edit `modules/deployer/main.tf`:
+  - keep `glue:CreateCatalog`, `glue:GetCatalog`, `glue:TagResource`, and `glue:GetTags` on the
+    catalog ARN;
+  - `sts:GetCallerIdentity` is already allowed (`BasicAWSAccess`);
+  - add a platform-scope `ProtectFederatedCatalog` Deny on `glue:DeleteCatalog` for
+    `s3tablescatalog`, which holds even if another policy on the role allows it;
   - **remove `glue:DeleteCatalog` and `glue:UpdateCatalog`** from the platform scope, so the
     deployer can't delete the catalog either (FR-030).
 
   Update `test/deployer_test.go`.
-- [ ] T079 [P] Plan-only tests in `test/account_settings_test.go`:
+- [x] T079 [P] Plan-only tests in `test/account_settings_test.go`:
   - an owner plans `terraform_data.s3tables_catalog` with the expected `input`, including
     `allow_full_table_external_data_access = true` by default and false when overridden;
   - a non-owner plans none;

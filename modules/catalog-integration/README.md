@@ -53,7 +53,6 @@ No modules.
 
 | Name | Type |
 | ---- | ---- |
-| [aws_glue_catalog.s3tables](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/glue_catalog) | resource |
 | [aws_iam_role.lf_s3tables_access](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.lf_s3tables_access](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_lakeformation_resource.s3tables](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_resource) | resource |
@@ -68,7 +67,6 @@ No modules.
 | <a name="input_partition"></a> [partition](#input\_partition) | AWS partition (aws, aws-us-gov, aws-cn). | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | AWS Region of the S3 Tables catalog integration. | `string` | n/a | yes |
 | <a name="input_settings_ready"></a> [settings\_ready](#input\_settings\_ready) | ID of the data-lake settings or of the settings guard. Orders registration after the deployer's admin rights exist. | `string` | n/a | yes |
-| <a name="input_allow_full_table_external_data_access"></a> [allow\_full\_table\_external\_data\_access](#input\_allow\_full\_table\_external\_data\_access) | Allow third-party engines to access full tables in the federated s3tablescatalog. | `bool` | `false` | no |
 | <a name="input_permissions_boundary_arn"></a> [permissions\_boundary\_arn](#input\_permissions\_boundary\_arn) | Permissions boundary for the Lake Formation data-access role. Empty means none. | `string` | `""` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
 
@@ -76,7 +74,5 @@ No modules.
 
 | Name | Description |
 | ---- | ----------- |
-| <a name="output_catalog_arn"></a> [catalog\_arn](#output\_catalog\_arn) | ARN of the federated S3 Tables Glue catalog. |
-| <a name="output_catalog_name"></a> [catalog\_name](#output\_catalog\_name) | Name of the federated S3 Tables Glue catalog. |
 | <a name="output_data_access_role_arn"></a> [data\_access\_role\_arn](#output\_data\_access\_role\_arn) | ARN of the Lake Formation data-access role. Table bucket KMS key policies must grant it use of the key. |
 <!-- END_TF_DOCS -->

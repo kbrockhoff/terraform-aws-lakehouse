@@ -10,19 +10,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// actions returns every action in a rendered policy document.
+// actions returns every action a rendered policy document allows.
 func actions(t *testing.T, plan *terraform.PlanStruct, output string) map[string]bool {
+	t.Helper()
+	return statementActions(t, plan, output, "Allow")
+}
+
+// statementActions returns every action in the rendered policy's statements with the given effect.
+func statementActions(t *testing.T, plan *terraform.PlanStruct, output, effect string) map[string]bool {
 	t.Helper()
 	doc, ok := outputAfter(plan, output).(string)
 	require.True(t, ok, "%s must be known at plan time", output)
 	var policy struct {
 		Statement []struct {
+			Effect string      `json:"Effect"`
 			Action interface{} `json:"Action"`
 		} `json:"Statement"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(doc), &policy))
 	out := map[string]bool{}
 	for _, s := range policy.Statement {
+		if s.Effect != effect {
+			continue
+		}
 		switch a := s.Action.(type) {
 		case string:
 			out[a] = true
@@ -60,7 +70,6 @@ var createActions = map[string]string{
 	"aws_sns_topic":                                      "sns:CreateTopic",
 	"aws_iam_role":                                       "iam:CreateRole",
 	"aws_iam_role_policy":                                "iam:PutRolePolicy",
-	"aws_glue_catalog":                                   "glue:CreateCatalog",
 	"aws_glue_data_catalog_encryption_settings":          "glue:PutDataCatalogEncryptionSettings",
 	"aws_glue_resource_policy":                           "glue:PutResourcePolicy",
 	"terraform_data":                                     "",
@@ -95,6 +104,15 @@ func TestDeployerPolicies(t *testing.T) {
 		if strings.HasPrefix(a, "iam:") {
 			assert.Equal(t, "iam:GetRole", a, "tenant scope must not manage IAM")
 		}
+	}
+
+	// The shared s3tablescatalog is created only when missing and never changed or deleted (FR-030)
+	for _, a := range []string{"glue:DeleteCatalog", "glue:UpdateCatalog"} {
+		assert.False(t, platform[a], "platform scope must not allow %s", a)
+	}
+	assert.True(t, statementActions(t, withPricing, "platform_policy_json", "Deny")["glue:DeleteCatalog"], "platform scope denies deleting s3tablescatalog")
+	for _, a := range []string{"glue:CreateCatalog", "glue:GetCatalog", "glue:TagResource", "sts:GetCallerIdentity"} {
+		assert.True(t, platform[a], "platform scope needs %s for the s3tablescatalog check-and-create", a)
 	}
 
 	for addr, rc := range managedChanges(complete) {

@@ -120,11 +120,64 @@ func TestOwnerFlagCombinations(t *testing.T) {
 			_, hasSettings := changes[settingsPrefix+"aws_lakeformation_data_lake_settings.this"]
 			_, hasIntegration := changes["module.main.module.catalog_integration[0].aws_lakeformation_resource.s3tables"]
 			_, hasGuard := changes["module.main.terraform_data.settings_guard[0]"]
+			_, hasCatalog := changes[settingsPrefix+"terraform_data.s3tables_catalog"]
 			assert.Equal(t, c.owner, hasSettings, "account settings follow the owner flag")
+			assert.Equal(t, c.owner, hasCatalog, "the s3tablescatalog check-and-create follows the owner flag (FR-029)")
 			assert.Equal(t, c.integration, hasIntegration, "registration follows the integration flag")
 			assert.Equal(t, !c.owner, hasGuard, "non-owners run the settings guard")
 		})
 	}
+}
+
+// catalogInput returns the planned s3tablescatalog check-and-create input, with its catalog input
+// JSON decoded.
+func catalogInput(t *testing.T, plan *terraform.PlanStruct) (map[string]interface{}, map[string]interface{}) {
+	t.Helper()
+	rc := managedChanges(plan)[settingsPrefix+"terraform_data.s3tables_catalog"]
+	require.NotNil(t, rc, "the owner plans the s3tablescatalog check-and-create")
+	in, ok := after(rc)["input"].(map[string]interface{})
+	require.True(t, ok, "input is known at plan time")
+	var catalog map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(in["catalog_input"].(string)), &catalog))
+	return in, catalog
+}
+
+// TestS3TablesCatalogCheckAndCreate checks FR-029 to FR-031: the owner plans the check-and-create
+// step with the catalog definition, and no example manages aws_glue_catalog any more.
+func TestS3TablesCatalogCheckAndCreate(t *testing.T) {
+	t.Parallel()
+	name := generateTestNamePrefix("s3c")
+	vars := completeVars(name)
+	vars["tags"] = map[string]interface{}{"Environment": "Production"}
+	vars["data_tags"] = map[string]interface{}{"DataAtRest": "true"}
+	plan := planExample(t, "complete", vars)
+	account, _ := dataValues(plan, "data.aws_caller_identity.current")["account_id"].(string)
+	require.Regexp(t, `^[0-9]{12}$`, account)
+
+	in, catalog := catalogInput(t, plan)
+	assert.Equal(t, "s3tablescatalog", in["name"])
+	assert.Equal(t, account, in["account_id"])
+	assert.Equal(t, map[string]interface{}{
+		"Identifier":     "arn:aws:s3tables:us-east-1:" + account + ":bucket/*",
+		"ConnectionName": "aws:s3tables",
+	}, catalog["FederatedCatalog"])
+	assert.Empty(t, catalog["CreateDatabaseDefaultPermissions"], "no identity-policy-only access")
+	assert.Empty(t, catalog["CreateTableDefaultPermissions"], "no identity-policy-only access")
+	assert.Equal(t, "True", catalog["AllowFullTableExternalDataAccess"], "default true, as a string (sandbox result 8)")
+	tg := in["tags"].(map[string]interface{})
+	assert.Equal(t, "Production", tg["Environment"], "common tags reach the catalog")
+	assert.NotContains(t, tg, "DataAtRest", "common tags only: the catalog holds no data at rest")
+
+	for addr, rc := range managedChanges(plan) {
+		assert.NotEqual(t, "aws_glue_catalog", rc.Type, "%s: the catalog is never a managed resource (FR-031)", addr)
+	}
+
+	vars = completeVars(generateTestNamePrefix("s3f"))
+	vars["account_settings_config"] = map[string]interface{}{
+		"s3tables_catalog": map[string]interface{}{"allow_full_table_external_data_access": false},
+	}
+	_, catalog = catalogInput(t, planExample(t, "complete", vars))
+	assert.Equal(t, "False", catalog["AllowFullTableExternalDataAccess"])
 }
 
 func TestOwnerOnlyInputsRejectedOnNonOwner(t *testing.T) {
