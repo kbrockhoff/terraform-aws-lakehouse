@@ -382,3 +382,10 @@ All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `
    - `make verify-apply` restored both.
    - An attempt to drift `AllowExternalDataFiltering` instead was rejected by the API ("Empty list is not
      allowed") because the allow list was empty.
+
+### PR #9 review fixes
+
+- **`70da1f`** (`make verify-full`, service_role, consumer, `RELEASE=true`, 2026-11-19): **238 of 238 cases
+  pass** after the review fixes, with the platform now owning the consumer's tag `DESCRIBE` grants (six
+  `consumer_tag_describe` grants) and tenants granting only their own keys. The consumer re-grant by tag
+  succeeds. Teardown clean, settings restored.
