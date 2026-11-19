@@ -581,7 +581,12 @@ func detectScenarios(personas []string) [][2]string {
 			out = append(out, [2]string{"extra_grant", p}, [2]string{"missing_grant", p})
 		}
 	}
-	return append(out, [2]string{"drop_column_restriction", "reader_cols"}, [2]string{"drop_row_filter", "reader_rows"}, [2]string{"open_default", ""})
+	out = append(out, [2]string{"drop_column_restriction", "reader_cols"}, [2]string{"drop_row_filter", "reader_rows"}, [2]string{"open_default", ""})
+	// Spec 003: exempting the bypass persona from the table-bucket deny must fail its cases
+	if slices.Contains(personas, "bypass") {
+		out = append(out, [2]string{"bypass_exempt", "bypass"})
+	}
+	return out
 }
 
 // detected reports whether an overlay made enough cases fail. missing_grant removes both the
@@ -606,6 +611,8 @@ func cmdDetect(ctx context.Context, f *flags) error {
 	if err != nil {
 		return err
 	}
+	// Consumer personas run only with a fixture consumer account, as in cmdRun
+	m, _ = m.WithoutUnmet(func(c string) bool { _, ok := man.Personas[c]; return ok })
 	dir, err := f.outDir()
 	if err != nil {
 		return err

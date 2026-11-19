@@ -82,8 +82,8 @@ variable "inject" {
   default     = ""
 
   validation {
-    condition     = contains(["", "extra_grant", "missing_grant", "drop_column_restriction", "drop_row_filter", "open_default"], var.inject)
-    error_message = "inject must be empty or one of extra_grant, missing_grant, drop_column_restriction, drop_row_filter, open_default."
+    condition     = contains(["", "extra_grant", "missing_grant", "drop_column_restriction", "drop_row_filter", "open_default", "bypass_exempt"], var.inject)
+    error_message = "inject must be empty or one of extra_grant, missing_grant, drop_column_restriction, drop_row_filter, open_default, bypass_exempt."
   }
 
   validation {

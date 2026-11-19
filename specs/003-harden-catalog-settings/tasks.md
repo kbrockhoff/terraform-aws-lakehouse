@@ -611,18 +611,18 @@ LF-tag-bounded shares.
 
 **Purpose**: Extend `lfverify` (spec 002) so sandbox runs prove the controls.
 
-- [ ] T053 [P] Edit `verify/fixture/personas.tf` to add persona `bypass`:
+- [x] T053 [P] Edit `verify/fixture/personas.tf` to add persona `bypass`:
   - an IAM role trusted like the others, with an inline policy allowing `s3tables:*` and
     `s3:GetObject`/`s3:PutObject` on the fixture zone buckets, plus Athena, Glue read, and
     `lakeformation:GetDataAccess`;
   - **no** Lake Formation grants.
 
   Add it to `verify/fixture/outputs.tf` and to the persona list in `verify/internal/manifest`.
-- [ ] T054 Edit `verify/internal/ops/storage.go` to add `StorageWrite` (an S3 `PutObject` of a
+- [x] T054 Edit `verify/internal/ops/storage.go` to add `StorageWrite` (an S3 `PutObject` of a
   small object under the table's warehouse location, cleaned up on success). Add the
   `matrix.StorageWrite` op in `verify/internal/matrix/matrix.go` and dispatch it in
   `verify/internal/runner/dispatch.go`. Add unit tests in `verify/internal/ops/storage_test.go`.
-- [ ] T055 Add ops `AccountSettings` and `CatalogEncryption` to `verify/internal/ops/catalog.go`,
+- [x] T055 Add ops `AccountSettings` and `CatalogEncryption` to `verify/internal/ops/catalog.go`,
   with new matrix ops `account_settings` and `catalog_encryption` and dispatch cases:
   - `AccountSettings` reads the data-lake settings and compares every FR-003 field and the
     `CROSS_ACCOUNT_VERSION` parameter against expectations in the case's `expect_values`
@@ -631,7 +631,7 @@ LF-tag-bounded shares.
   - Add `CatalogResourcePolicy`, which reads `glue:GetResourcePolicy` and fails when a policy
     exists without a `glue:ShareResource` statement for `ram.amazonaws.com` (D1).
   - Add unit tests with fake clients, following the existing pattern.
-- [ ] T056 Edit `verify/matrix/full.yaml` and `verify/matrix/probe.example.yaml` to add FR-020
+- [x] T056 Edit `verify/matrix/full.yaml` and `verify/matrix/probe.example.yaml` to add FR-020
   cases 1–5:
   - `bypass-storage-read` (denied), `bypass-storage-write` (denied), and `bypass-select` (denied)
     for persona `bypass`;
@@ -641,7 +641,7 @@ LF-tag-bounded shares.
     platform databases and the catalog).
 
   Cite FR-020 and the spec in `rule`. In the probe example, include only the non-destructive cases.
-- [ ] T057 Add the consumer account to the fixture:
+- [x] T057 Add the consumer account to the fixture:
   - **Provider**: add `provider "aws" { alias = "consumer" }` in `verify/fixture/providers.tf`,
     assuming `var.consumer_role_arn` (new variable in `verify/fixture/variables.tf`, default `""`
     meaning sharing cases are off).
@@ -651,7 +651,7 @@ LF-tag-bounded shares.
     - in the consumer account, create a resource-link database to each shared catalog database, a
       consumer persona role, and an LF grant on the link.
   - **Gating**: everything is gated on `var.consumer_role_arn != ""`.
-- [ ] T058 Wire the long-lived catalog key into the fixture (FR-013, U2):
+- [x] T058 Wire the long-lived catalog key into the fixture (FR-013, U2):
   - Add `variable "catalog_kms_key_arn"` (required, no default) to `verify/fixture/variables.tf`.
     Validate it as a KMS key or alias ARN.
   - Pass it as `account_settings_config.catalog_encryption.kms_key_arn` in
@@ -668,7 +668,7 @@ LF-tag-bounded shares.
   - In the `Makefile` `verify-up`, `verify-apply`, and `verify-down` targets, pass
     `LFVERIFY_CATALOG_KEY_ARN` and `CATALOG_KEY_ACCESS_MODE`. Fail early with a clear message when
     `LFVERIFY_CATALOG_KEY_ARN` is unset.
-- [ ] T059 Edit `verify/internal/preflight/preflight.go` to:
+- [x] T059 Edit `verify/internal/preflight/preflight.go` to:
   - check the consumer account against `verify/sandbox-accounts.txt` when sharing cases are on;
   - accept pending RAM invitations named `LakeFormation*` in the consumer account when the
     consumer is outside the organization;
@@ -676,7 +676,7 @@ LF-tag-bounded shares.
     is configured (used for release gating).
 
   Add tests in `verify/internal/preflight/preflight_test.go`.
-- [ ] T060 Edit `verify/matrix/full.yaml` to add persona `consumer` with FR-020 cases 6–10:
+- [x] T060 Edit `verify/matrix/full.yaml` to add persona `consumer` with FR-020 cases 6–10:
   - `consumer-select-shared` (allowed, columns and rows within the shared labels);
   - `consumer-select-unshared-sensitivity`, `consumer-select-regulated`, `consumer-other-zone`, and
     `consumer-other-tenant` (denied);
@@ -687,12 +687,12 @@ LF-tag-bounded shares.
 
   Mark the persona `requires: consumer` (add that matrix field) so it is skipped with a reported
   reason when no consumer is configured.
-- [ ] T061 Edit the `Makefile` `verify-full` and `verify-up` targets to pass
+- [x] T061 Edit the `Makefile` `verify-full` and `verify-up` targets to pass
   `CONSUMER_ROLE_ARN` through to the fixture and to set `LFVERIFY_REQUIRE_SHARING` when
   `RELEASE=true`. Document the variables in `verify/README.md`.
-- [ ] T062 Run `make test-verify` and `make test-verify-fixture`. This is the harness checkpoint
+- [x] T062 Run `make test-verify` and `make test-verify-fixture`. This is the harness checkpoint
   (offline and plan-only).
-- [ ] T063 Run `make verify-full` in the sandbox, once in each key-access mode
+- [x] T063 Run `make verify-full` in the sandbox, once in each key-access mode
   (`CATALOG_KEY_ACCESS_MODE`), with `LFVERIFY_CATALOG_KEY_ARN` set (T009). Then check the mode
   switch (FR-010, C2):
   - run `make verify-up verify-seed` with `CATALOG_KEY_ACCESS_MODE=service_role`;
@@ -710,7 +710,7 @@ LF-tag-bounded shares.
   `specs/003-harden-catalog-settings/sandbox-results.md`. Then run the T007 checks if they are
   still open, and update D3 in `plan.md` and FR-026 in `spec.md` if the service-role consumer grant
   turns out to be unnecessary.
-- [ ] T064 Add and run an ephemeral upgrade test (SLO Migration, C1):
+- [x] T064 Add and run an ephemeral upgrade test (SLO Migration, C1):
   - Add a `verify-upgrade` target to the `Makefile` that:
     1. creates a temporary git worktree of tag `v0.3.1` in the scratch directory;
     2. applies `verify/fixture` from that worktree (stage 1 and seed) with a new run ID;
@@ -727,7 +727,7 @@ LF-tag-bounded shares.
     `specs/003-harden-catalog-settings/sandbox-results.md`.
   - This is the only backward-compatibility guarantee. No production installations exist (spec,
     Assumptions).
-- [ ] T065 Run `make verify-detect` and confirm that the new cases fail under an injected
+- [x] T065 Run `make verify-detect` and confirm that the new cases fail under an injected
   misconfiguration. Add an `inject` value `bypass_exempt`, which adds the `bypass` persona to
   `direct_access_exempt_principal_arns`, in `verify/fixture/inject.tf` and
   `verify/fixture/variables.tf`.

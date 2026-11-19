@@ -16,9 +16,11 @@ locals {
 
   # Persona role ARNs are derived from the names this fixture assigns (personas.tf), so they are
   # known at plan time: the module keys steward resources by principal ARN, and for_each keys
-  # cannot be unknown. The module depends on the roles, so grants never precede their principals.
+  # cannot be unknown. Referencing the role's name (known at plan) orders grants after their
+  # principals without a module-level depends_on, which would defer every data source in the module
+  # whenever a persona changes and force replacements (sandbox-results.md, T064).
   role_name = { for k in keys(local.personas) : k => "${local.prefix}-${replace(k, "_", "-")}" }
-  role_arn  = { for k, n in local.role_name : k => "arn:${local.partition}:iam::${local.account_id}:role/${n}" }
+  role_arn  = { for k, r in aws_iam_role.persona : k => "arn:${local.partition}:iam::${local.account_id}:role/${r.name}" }
 
   all_sensitivity = ["public", "internal", "confidential", "restricted"]
 
@@ -160,7 +162,11 @@ module "lakehouse" {
   governance_config = {
     # lfverify setup and cleanup call s3tables:DeleteTable directly as the runner, which the
     # table-bucket deny otherwise blocks (sandbox-results.md item 4). Personas stay non-exempt.
-    direct_access_exempt_principal_arns = [local.runner_role_arn]
+    # bypass_exempt (inject.tf) exempts the bypass persona too, which its cases must catch
+    direct_access_exempt_principal_arns = concat(
+      [local.runner_role_arn],
+      local.inject_bypass_exempt ? [local.role_arn["bypass"]] : [],
+    )
 
     # missing_grant on admin or roadmin removes that persona from its list
     admin_principal_arns = concat(
@@ -181,6 +187,4 @@ module "lakehouse" {
   }
 
   tenants = local.tenants
-
-  depends_on = [aws_iam_role.persona]
 }

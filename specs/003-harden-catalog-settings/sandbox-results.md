@@ -264,3 +264,89 @@ tasks T002 to T007 and T063.
   - `enable_hybrid` on `aws_glue_resource_policy`.
 - **Date**: 2026-11-18
 - **Design impact**: no change. The constraint stays at `>= 6.59.0, < 7.0.0`.
+
+## Full-mode runs (T063)
+
+The fixture owns the account settings and supplies the long-lived catalog key
+(`LFVERIFY_CATALOG_KEY_ARN`, T009). Producer `492637581429`, consumer `566376086856` (`dev-blue`),
+us-east-1, 2026-11-18.
+
+- **`bca1ea`** (service_role, no consumer): stage 1 applied. This was the first real apply of
+  `modules/account-settings`, encryption and role delay included. The SSO session then expired,
+  and the run was torn down after re-login.
+- **`7d85f8`** (service_role, no consumer, 229 cases): 228 pass, 1 not run.
+  `admin-no-iam-allowed-principals` didn't run because `ListPermissions` needs a resource when it
+  filters by principal. Fixed to query each database and its tables.
+- **`9850da`** (per_caller, no consumer, 229 cases): **229 pass**, teardown clean.
+- **`dbc990`** (service_role, with consumer): the consumer admin was added, keeping the account's
+  two SageMaker Unified Studio admins (3 admins in total). Stage 2 then failed: the resource link
+  read back its target's `parameters` and `federated_database`, and updating them needs `ALTER` on
+  the producer database. Fixed with `ignore_changes`. Teardown clean.
+- **`73a09e`** (service_role, with consumer, `RELEASE=true`, 238 cases): **238 pass**, teardown
+  clean in both accounts.
+- **`4dd029`** (key-access mode switch, FR-010): deployed and seeded in service_role, then
+  switched with one `make verify-apply` each way.
+  - **service_role to per_caller**: 229 of 229 cases pass.
+  - **back to service_role**: 229 of 229 cases pass. Teardown clean.
+  - **What each switch changed in the module**: the encryption settings were updated in place, and
+    the catalog-encryption role, its policy, and the propagation delay were removed and recreated.
+    **No module grant (`aws_lakeformation_permissions`) was replaced or destroyed.**
+  - **Unrelated replacements**: the fixture's own `owner_*` grants and the module's
+    `resource_lf_tags.row_filtered_table` were replaced on every re-apply. That is a standing diff,
+    unrelated to the mode switch and unchanged since v0.3.1, filed as `awslkhs-8oof`.
+
+Observations:
+
+- **Bypass deny (FR-015)**: `bypass-storage-read` and `bypass-storage-write` pass in every run, so
+  a role with `s3tables:*` and S3 object access on table storage is refused, and `bypass-select`
+  is denied by Lake Formation.
+- **Account settings (FR-003, FR-005, FR-009)**: `admin-account-settings` and
+  `admin-catalog-encryption` match in both modes: version 4, `SET_CONTEXT` on, every external
+  engine setting off, no default permissions, the long-lived key, and encrypted connection
+  passwords. No catalog resource policy exists, and no `IAM_ALLOWED_PRINCIPALS` grants exist on
+  platform databases or tables.
+- **Sharing (FR-021 to FR-025)**: in the consumer account, the persona reads the shared `customers`
+  table (50 rows) through a resource link. The row-filtered `orders` table is not shared, the
+  other tenant and zone are denied, direct storage reads are refused, inserts and drops are
+  denied, and `consumer-revoked` is denied after `revoke_share`, within the 30-second scenario
+  settle (SLO: 15 minutes).
+- **Consumer re-grant by tag**: the fixture's consumer grants by LF-tag expression succeed, which
+  confirms `share_tag_describe` (sandbox result 5) end to end.
+- **Consumer cleanup**: after teardown, the consumer account has no `lfv_` databases or roles and
+  no active RAM shares. Its admins are the two studio roles plus the lfverify consumer admin, which
+  stays by design (`make verify-consumer-admin`).
+
+### Phase 7 close-out (T063 maintenance, T064 upgrade, T065 detect)
+
+- **`5a6451`** (`make verify-detect`, T065): all 20 overlays were detected, including the new
+  `bypass_exempt` (2 failing cases: `bypass-storage-read` and `bypass-storage-write` succeed once
+  the bypass persona is exempt from `DenyDirectTableAccess`). Teardown clean, settings restored.
+- **`4c8b49`** (`make verify-upgrade` from `v0.3.1`, first attempt): `verify-upgrade-check` failed
+  before the upgrade apply. The fixture's `module "lakehouse"` had `depends_on =
+  [aws_iam_role.persona]`, and the upgrade adds the `bypass` persona, so every data source in the
+  module was deferred. `account_id` became unknown and forced replacement of the s3tables catalog,
+  its Lake Formation registration, the query-results bucket, data cells filters, and database
+  labels. **This was a fixture defect, not a module upgrade defect.** Fix: the fixture builds
+  persona ARNs from `aws_iam_role.persona[k].name` (known at plan) and drops the module-level
+  `depends_on`. The check now scopes the grant rule to `module.lakehouse` (the fixture's own
+  `owner_*` grants are the standing diff in `awslkhs-8oof`) and lists any other module
+  replacement. Teardown clean.
+- **`998be6`** (`make verify-upgrade` from `v0.3.1`, T064): **229 of 229 cases pass** after the
+  upgrade, run against the current `full.yaml` (a superset of the 002 matrix). Teardown clean.
+  - **Upgrade plan**: 29 to add, 4 to change, 19 to destroy.
+    - The data-lake settings moved from `module.catalog_integration[0]` to
+      `module.account_settings[0]` and were updated in place.
+    - **No `module.lakehouse` `aws_lakeformation_permissions` resource was replaced or destroyed.**
+    - Module replacements: only `row_filtered_table["reader_cells/curated/orders"]` and
+      `["reader_rows/curated/orders"]` (the standing diff in `awslkhs-8oof`).
+    - Fixture replacements: the `owner_*` grants and three fixture table labels (standing diff).
+  - **Table maintenance behind the deny (T063)**: the upgrade apply added `DenyDirectTableAccess`
+    to the zone buckets at about 04:08Z (2026-11-19). Afterwards, maintenance jobs reported
+    `Successful` on the denied buckets (`get-table-maintenance-job-status`):
+    - `icebergSnapshotManagement` on `curated` `alpha.customers` (04:09:38Z), `alpha.scratch`
+      (04:10:02Z), `beta.scratch` (04:09:43Z), and `gamma.customers` (04:10:01Z);
+    - `icebergUnreferencedFileRemoval` on `curated` `beta.customers` (04:10:08Z) and `raw`
+      `alpha.orders` (04:09:42Z).
+
+    The service principal exemption in the deny is sufficient for S3 Tables maintenance.
+    Compaction last ran at 04:05Z, before the deny, and had no new data to compact afterwards.

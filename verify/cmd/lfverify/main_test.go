@@ -32,6 +32,17 @@ func TestDetectScenarios(t *testing.T) {
 	}
 }
 
+// TestDetectScenariosBypass checks the spec 003 overlay: it is added only with a bypass persona.
+func TestDetectScenariosBypass(t *testing.T) {
+	got := detectScenarios([]string{"admin", "bypass"})
+	if last := got[len(got)-1]; last != [2]string{"bypass_exempt", "bypass"} {
+		t.Errorf("last overlay %v, want bypass_exempt", last)
+	}
+	if slices.Contains(detectScenarios([]string{"admin"}), [2]string{"bypass_exempt", "bypass"}) {
+		t.Error("bypass_exempt without a bypass persona")
+	}
+}
+
 // missing_grant drops the persona's named and label grants, so a failure in one style is not enough
 func TestDetectedMissingGrantNeedsBothStyles(t *testing.T) {
 	named := report.Result{ID: "rs-count-alpha/named", Style: "named"}

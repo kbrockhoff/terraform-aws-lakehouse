@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-consumer-admin verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-consumer-admin verify-upgrade verify-upgrade-check verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -259,6 +259,33 @@ verify-full: check-aws ## Full mode: new run, deploy, seed, run, and always tear
 	  $(MAKE) verify-down RUN_ID=$$run; down=$$?; \
 	  [ $$status -eq 0 ] && status=$$down; \
 	  echo "$(CYAN)Run $$run finished in $$(( $$(date +%s) - start ))s with status $$status (teardown $$down)$(RESET)"; exit $$status
+
+# Spec 003 upgrade test: the only backward-compatibility guarantee is for ephemeral test
+# deployments. Deploys the fixture from a UPGRADE_FROM worktree, then upgrades it to this checkout
+# in one apply, which must replace or destroy no Lake Formation grant, and runs the matrix.
+UPGRADE_FROM ?= v0.3.1
+verify-upgrade: check-aws ## Full mode: deploy at UPGRADE_FROM, upgrade to this checkout in one apply, run, and tear down
+	@test -n "$(LFVERIFY_CATALOG_KEY_ARN)" || { echo "$(RED)✗ LFVERIFY_CATALOG_KEY_ARN is not set$(RESET)"; exit 1; }
+	@$(MAKE) -s verify-new-run
+	@run=$$(cat $(VERIFY_RUN_FILE)); wt=$(CURDIR)/verify/out/upgrade-$$run; \
+	  git worktree add --detach $$wt $(UPGRADE_FROM) >/dev/null && \
+	  $(MAKE) -C $$wt verify-up verify-seed RUN_ID=$$run && \
+	  mkdir -p $(CURDIR)/verify/out/$$run && cp -R $$wt/verify/out/$$run/. $(CURDIR)/verify/out/$$run/ && \
+	  $(MAKE) verify-upgrade-check RUN_ID=$$run && $(MAKE) verify-apply RUN_ID=$$run && $(MAKE) verify-run RUN_ID=$$run; status=$$?; \
+	  $(MAKE) verify-down RUN_ID=$$run; down=$$?; git worktree remove --force $$wt; \
+	  [ $$status -eq 0 ] && status=$$down; \
+	  echo "$(CYAN)Upgrade run $$run from $(UPGRADE_FROM) finished with status $$status (teardown $$down)$(RESET)"; exit $$status
+
+verify-upgrade-check: verify-init ## Plan the upgrade of an existing run; fail if a Lake Formation grant would be replaced or destroyed
+	@$(VERIFY_TF) plan -input=false -no-color $(VERIFY_VARS) -var stage=2 > $(VERIFY_OUT)/upgrade-plan.txt
+	@# Module grants only: the fixture's own owner_* grants are replaced on every re-apply (awslkhs-8oof)
+	@grep -E '^  # module\.lakehouse\..*aws_lakeformation_permissions\..* (must be replaced|will be destroyed)' $(VERIFY_OUT)/upgrade-plan.txt && \
+	  { echo "$(RED)✗ the upgrade replaces or destroys Lake Formation grants (see $(VERIFY_OUT)/upgrade-plan.txt)$(RESET)"; exit 1; } || true
+	@grep -qE 'aws_lakeformation_data_lake_settings\.this.* has moved to .*module\.account_settings\[0\]\.aws_lakeformation_data_lake_settings\.this' $(VERIFY_OUT)/upgrade-plan.txt || \
+	  { echo "$(RED)✗ the data-lake settings did not move into module.account_settings$(RESET)"; exit 1; }
+	@grep -E '^  # module\.lakehouse\..* must be replaced' $(VERIFY_OUT)/upgrade-plan.txt | sed 's/^  # /  replaced: /' || true
+	@grep -E '^Plan:' $(VERIFY_OUT)/upgrade-plan.txt
+	@echo "$(GREEN)✓ Upgrade plan keeps every Lake Formation grant$(RESET)"
 
 verify-detect: check-aws ## Full mode: apply each misconfiguration overlay and require a failing case
 	@$(MAKE) -s verify-new-run
