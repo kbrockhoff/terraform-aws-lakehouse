@@ -787,7 +787,7 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   first, and whether a CLI-created catalog matches the provider-created one (`get-catalog` output).
   Record the result as item 8 in `specs/003-harden-catalog-settings/sandbox-results.md`, and adjust
   T075 ordering if the registration is not needed.
-- [ ] T074 [P] Create `modules/account-settings/scripts/ensure-s3tables-catalog.sh` (bash,
+- [x] T074 [P] Create `modules/account-settings/scripts/ensure-s3tables-catalog.sh` (bash,
   `set -euo pipefail`). It reads only environment variables (`ACCOUNT_ID`, `REGION`, `PARTITION`,
   `ALLOW_FULL_TABLE_EXTERNAL_DATA_ACCESS`, `TAGS_JSON`) and never interpolates them into a shell
   command string. It:
@@ -804,11 +804,12 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   4. polls `get-catalog` until the catalog is visible (bounded retries).
 
   Never call `delete-catalog`. Add a `shellcheck` run to `make lint` if the repo has none.
-- [ ] T075 Create `modules/account-settings/catalog.tf` with `terraform_data.s3tables_catalog`
+- [x] T075 Create `modules/account-settings/catalog.tf` with `terraform_data.s3tables_catalog`
   (count = owner):
   - `input`: the catalog definition plus the account and Region;
   - a create-time `local-exec` running the T074 script with `environment` values only;
-  - no destroy-time provisioner, and `lifecycle { destroy = false }` (FR-030);
+  - no destroy-time provisioner (FR-030). `terraform_data` has no remote object, so destroy only
+    forgets it. No `lifecycle { destroy = false }`, which would need Terraform 1.16 (plan R13);
   - `depends_on`: the data-lake settings. It doesn't wait for the `bucket/*` registration (sandbox
     result 8).
 

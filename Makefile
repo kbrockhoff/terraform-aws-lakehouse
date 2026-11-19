@@ -67,7 +67,7 @@ format: ## Format all Terraform files
 	@terraform fmt -recursive
 	@echo "$(GREEN)✓ Formatting complete$(RESET)"
 
-lint: ## Run TFLint on all Terraform files and gosec on verify/
+lint: ## Run TFLint on all Terraform files, ShellCheck on module scripts, and gosec on verify/
 	@echo "$(CYAN)Running TFLint...$(RESET)"
 	@if command -v tflint >/dev/null 2>&1; then \
 		tflint --init >/dev/null || exit 1; \
@@ -75,6 +75,13 @@ lint: ## Run TFLint on all Terraform files and gosec on verify/
 		echo "$(GREEN)✓ TFLint passed$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ TFLint not installed, skipping$(RESET)"; \
+	fi
+	@echo "$(CYAN)Running ShellCheck...$(RESET)"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck modules/*/scripts/*.sh || { echo "$(RED)✗ ShellCheck found issues$(RESET)"; exit 1; }; \
+		echo "$(GREEN)✓ ShellCheck passed$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠ ShellCheck not installed, skipping...$(RESET)"; \
 	fi
 	@$(MAKE) -s lint-verify
 

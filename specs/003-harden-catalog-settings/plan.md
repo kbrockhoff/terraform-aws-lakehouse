@@ -205,8 +205,9 @@ documented and are confirmed by T-S1.
       missing; it was checked in consumer account `566376086856`, which has no catalog.
     - No provider data source lists Glue catalogs, and `import` blocks are allowed only in a root
       module, not in `modules/account-settings`.
-    - Terraform 1.16 supports `lifecycle { destroy = false }` on a resource: on destroy or removal
-      it is forgotten, not deleted.
+    - `lifecycle { destroy = false }` on a resource needs Terraform 1.16.0: 1.11.4, 1.12.2,
+      1.13.5, 1.14.0 and 1.15.0 reject it ("Unsupported argument"), and the module supports 1.11.
+      `removed` blocks have accepted it since 1.7.
   - *Design consequence*: the user chose an apply-time CLI check-and-create (`terraform_data` with
     `local-exec`) over an input flag. The catalog is therefore not in state. Its attributes are
     verified by `lfverify` (FR-020 case 11), not by plan drift. See Complexity Tracking.
@@ -234,8 +235,9 @@ Principles are configured (`.specify/memory/principles.md` v1.3.0).
   - *Gate*: Destructive changes reversible.
   - *How the plan satisfies it*: Key-policy deny on `ScheduleKeyDeletion` and `DisableKey` (FR-013).
     Hand-over keeps the live settings (`removed` with `destroy = false`). The federated table
-    storage catalog is never deleted: no destroy provisioner, `destroy = false`, and a `removed`
-    block in `catalog-integration` (FR-030, FR-031).
+    storage catalog is never deleted: `terraform_data` has no remote object and no destroy
+    provisioner, and a `removed` block with `destroy = false` covers `catalog-integration`
+    (FR-030, FR-031).
 - **Establish Resource Identity and Accountability**
   - *Gate*: Common tags; data tags only on data-at-rest.
   - *How the plan satisfies it*: The new role gets `common_tags` only, not data tags (bd memory
@@ -378,8 +380,10 @@ No changes. Network foundations remain out of scope in 001.
         --tags <json>`, the user's command plus tags, and treats `AlreadyExistsException` as
         success, in case of a concurrent creator;
      4. then polls `get-catalog` until the catalog is visible.
-   - **No destroy-time provisioner**, and `lifecycle { destroy = false }`, so neither destroy nor a
-     count change ever calls a delete (FR-030).
+   - **No destroy-time provisioner**. `terraform_data` has no remote object, so destroy, a count
+     change, or a replacement only forgets it and never calls a delete (FR-030). No
+     `lifecycle { destroy = false }`: it would need Terraform 1.16 (R13), and there is nothing to
+     protect.
    - **Ordering**: it depends on the data-lake settings, so the deployer is an admin. It doesn't
      wait for the `bucket/*` registration, which `create-catalog` doesn't need (sandbox result 8).
      The catalog integration's grants and the platform LF-tags depend on the submodule's
@@ -686,8 +690,9 @@ Run in `492637581429`, with the consumer account once one is provisioned. Record
     - its requirement (AWS CLI, ambient credentials) is documented in the README and the spec's
       Assumptions;
     - the catalog's attributes are checked by `lfverify` instead of plan drift.
-  - *Simpler Alternative Rejected Because*: An input flag with `lifecycle { destroy = false }`
+  - *Simpler Alternative Rejected Because*: A managed `aws_glue_catalog` behind an input flag
     needs the operator to know whether the catalog exists, and the user chose automatic detection.
+    It would also need `lifecycle { destroy = false }`, and so Terraform 1.16 (R13).
 
 - **Two independent singleton flags: catalog-integration and account-settings owner, giving four
   valid combinations**

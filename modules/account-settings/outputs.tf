@@ -27,3 +27,8 @@ output "required_catalog_kms_key_policy_json" {
   description = "Key policy statements a consumer-supplied catalog key needs. Account-root access is the key owner's own responsibility."
   value       = data.aws_iam_policy_document.required_catalog_key_statements.json
 }
+
+output "s3tables_catalog_ready" {
+  description = "ID of the s3tablescatalog check-and-create step. Grants and LF-tags on the catalog wait on it."
+  value       = terraform_data.s3tables_catalog.id
+}

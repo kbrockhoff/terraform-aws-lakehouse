@@ -166,6 +166,16 @@ variable "storage_key_arns" {
   default     = []
 }
 
+variable "s3tables_catalog" {
+  description = "Settings used only when s3tablescatalog is missing and gets created (FR-029); an existing catalog is never changed. allow_full_table_external_data_access lets third-party engines get credentials without session tags when the caller has full table access."
+  type = object({
+    allow_full_table_external_data_access = bool
+  })
+  default = {
+    allow_full_table_external_data_access = true
+  }
+}
+
 variable "catalog_resource_policy" {
   description = "Optional Glue Data Catalog resource policy: the RAM sharing statement plus caller-supplied Deny statements."
   type = object({
