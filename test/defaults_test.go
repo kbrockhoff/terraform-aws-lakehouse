@@ -32,7 +32,7 @@ func TestTerraformDefaultsExample(t *testing.T) {
 		tenant + `aws_s3tables_namespace.this["consumption"]`,
 		tenant + `aws_lakeformation_resource_lf_tags.database["raw"]`,
 		tenant + `aws_athena_workgroup.this`,
-		`module.main.module.account_settings[0].terraform_data.s3tables_catalog`,
+		`module.main.terraform_data.s3tables_catalog[0]`,
 	} {
 		assert.Contains(t, changes, addr)
 	}

@@ -62,3 +62,9 @@ variable "permissions_boundary_arn" {
     error_message = "permissions_boundary_arn must be empty or an IAM policy ARN."
   }
 }
+
+variable "catalog_ready" {
+  description = "ID of the root module's s3tablescatalog check-and-create step, or empty when another deployment owns the account settings. Every resource here waits on it (spec 003 FR-029)."
+  type        = string
+  default     = ""
+}

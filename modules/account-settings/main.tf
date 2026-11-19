@@ -1,3 +1,9 @@
+# Carries the root's s3tablescatalog step ID: the resources below that have no other upstream wait
+# on it, so the catalog exists before anything here is created or changed (FR-029)
+resource "terraform_data" "catalog_ready" {
+  input = var.catalog_ready
+}
+
 # ----
 # Lake Formation data-lake settings
 # ----
@@ -43,6 +49,8 @@ resource "aws_lakeformation_data_lake_settings" "this" {
       error_message = "The live Lake Formation cross-account version (${try(data.aws_lakeformation_data_lake_settings.current.parameters["CROSS_ACCOUNT_VERSION"], "unset")}) is above cross_account_version (${var.cross_account_version}). Versions are never lowered; set cross_account_version to the live value."
     }
   }
+
+  depends_on = [terraform_data.catalog_ready]
 }
 
 # ----
@@ -138,6 +146,8 @@ resource "aws_glue_resource_policy" "this" {
 
   # Required once RAM-based grants exist alongside the policy
   enable_hybrid = "TRUE"
+
+  depends_on = [terraform_data.catalog_ready]
 }
 
 # source_policy_documents rather than override: a caller statement cannot replace RamShareResource

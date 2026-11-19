@@ -363,13 +363,14 @@ No changes. Network foundations remain out of scope in 001.
    - Consumer-supplied `deny_policy_jsons` are merged through `override_policy_documents` and
      validated to contain only `Deny` effects.
    - `enable_hybrid = "TRUE"`.
-6. `terraform_data.s3tables_catalog` (FR-029, FR-030), in a new `catalog.tf`:
+6. `terraform_data.s3tables_catalog` (FR-029, FR-030). Moved on 2026-11-19 from the submodule to a
+   root `catalog.tf` (count = owner, `moved` block), so it can run before every other resource:
    - **`input`**: the catalog definition (name, federated identifier
      `arn:<partition>:s3tables:<region>:<account>:bucket/*`, connection `aws:s3tables`, empty
      database and table default permissions, `allow_full_table_external_data_access`, common tags)
      plus `account_id` and `region`. A changed definition re-runs the step, which still leaves an
      existing catalog unchanged.
-   - **`provisioner "local-exec"` (create time only)**: a script in the submodule,
+   - **`provisioner "local-exec"` (create time only)**: a root script,
      `scripts/ensure-s3tables-catalog.sh`, receives every value as an environment variable,
      never interpolated into the command line. It:
      1. fails unless `aws sts get-caller-identity` returns the expected account, and passes
@@ -384,10 +385,19 @@ No changes. Network foundations remain out of scope in 001.
      change, or a replacement only forgets it and never calls a delete (FR-030). No
      `lifecycle { destroy = false }`: it would need Terraform 1.16 (R13), and there is nothing to
      protect.
-   - **Ordering**: it depends on the data-lake settings, so the deployer is an admin. It doesn't
-     wait for the `bucket/*` registration, which `create-catalog` doesn't need (sandbox result 8).
-     The catalog integration's grants and the platform LF-tags depend on the submodule's
-     `s3tables_catalog_ready` output.
+   - **Ordering: first** (FR-029). The step depends on nothing. Glue IAM permissions are enough to
+     create the catalog, so the deployer need not be a data-lake admin yet, and the `bucket/*`
+     registration isn't needed (sandbox result 8). Every other resource waits on it:
+     - root resources with no other upstream, through `depends_on`: `aws_kms_key.main`,
+       `aws_sns_topic.alarms`, `aws_s3tables_table_bucket.zone`, `aws_s3_bucket.query_results`, and
+       the platform LF-tags;
+     - `modules/account-settings` and `modules/catalog-integration`, through a `catalog_ready`
+       input carried by a `terraform_data.catalog_ready` that their first resources depend on;
+     - tenants, through the platform contract, which references the LF-tags.
+
+     There is no module-level `depends_on`, which would defer the submodules' data sources (T064).
+     Only data sources and the plan-time guards, which create nothing, may run before the step.
+     `TestS3TablesCatalogCreatedFirst` checks every resource instance in the apply graph.
    - **Flag type**: `AllowFullTableExternalDataAccess` is passed as the string `"True"` or
      `"False"`; the CLI rejects a JSON boolean (sandbox result 8).
    - **Tags**: `common_tags` only. The catalog holds no data at rest itself (bd memory
@@ -593,8 +603,7 @@ specs/003-harden-catalog-settings/
 ├── table-buckets.tf            # + DenyDirectTableAccess
 ├── outputs.tf                  # + catalog_encryption_role_arn, account_settings_owner, shares in tenants output
 ├── modules/
-│   ├── account-settings/       # NEW: data-lake settings, catalog key, encryption role + settings, Glue policy,
-│   │   │                       #      s3tablescatalog check-and-create (catalog.tf, scripts/ensure-s3tables-catalog.sh)
+│   ├── account-settings/       # NEW: data-lake settings, catalog key, encryption role + settings, Glue policy
 │   │   ├── main.tf
 │   │   ├── kms.tf              # dedicated catalog-metadata key, alias, and policy
 │   │   ├── iam.tf

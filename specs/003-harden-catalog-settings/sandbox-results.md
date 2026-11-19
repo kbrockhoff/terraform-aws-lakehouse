@@ -284,6 +284,10 @@ tasks T002 to T007 and T063.
     missing catalog fails with `EntityNotFoundException`. Both exit with status 254.
   - **Creator grant**: the creating admin gets `ALL, ALTER, CREATE_CATALOG, CREATE_DATABASE,
     DESCRIBE, DROP` on the catalog. No `IAM_ALLOWED_PRINCIPALS` grant exists on it.
+  - **No admin rights needed** (2026-11-19): a role holding only Glue IAM permissions, and not a data-lake
+    admin, created the catalog. The catalog can therefore be created before the data-lake settings.
+  - **Creator holds the drop right**: an admin who didn't create the catalog gets `Insufficient Lake Formation
+    permission(s): Required Drop on Catalog` on `delete-catalog`. That is extra protection for FR-030.
   - **Same result either way**: the CLI-created and provider-created catalogs are identical in
     `get-catalog` apart from timestamps. Both have empty database and table default permissions.
 - **Date**: 2026-11-19
@@ -482,3 +486,16 @@ All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `
   configuration, which destroys it exactly like teardown does: it has no remote object and no destroy provisioner,
   so only state changes. Teardown in both runs proved the catalog survives that.
 - **The producer now keeps `s3tablescatalog` permanently**, as FR-030 intends.
+
+### Catalog first (T084, T085)
+
+- **Apply graph**: `TestS3TablesCatalogCreatedFirst` finds every one of the 143 resource instances in
+  `examples/complete` downstream of `terraform_data.s3tables_catalog`, except data sources and the
+  `*_guard` plan-time checks. Removing the dependency from `aws_s3_bucket.query_results` made the test fail on
+  that bucket and its three configuration resources, so the test is not vacuous.
+- **`make pre-commit` and `make validate`** pass.
+- **`c261a6`** (`make verify-upgrade UPGRADE_FROM=df571ee`, where the step was in the submodule, consumer,
+  `RELEASE=true`):
+  - The upgrade plan moved the step to `terraform_data.s3tables_catalog[0]` ("moved from ...") and updated it
+    in place; it neither destroyed nor re-ran it. It created the two `catalog_ready` markers.
+  - **239 of 239 cases pass**, and teardown logged "s3tablescatalog kept".

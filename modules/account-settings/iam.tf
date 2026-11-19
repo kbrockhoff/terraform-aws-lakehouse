@@ -16,6 +16,8 @@ resource "aws_iam_role" "catalog_encryption" {
   permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
 
   tags = var.tags
+
+  depends_on = [terraform_data.catalog_ready]
 }
 
 # aws:SourceAccount only (FR-011). Glue sends no source ARN matching the catalog when it assumes the

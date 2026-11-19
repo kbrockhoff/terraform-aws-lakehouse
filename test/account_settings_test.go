@@ -3,6 +3,7 @@ package test
 import (
 	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -120,7 +121,7 @@ func TestOwnerFlagCombinations(t *testing.T) {
 			_, hasSettings := changes[settingsPrefix+"aws_lakeformation_data_lake_settings.this"]
 			_, hasIntegration := changes["module.main.module.catalog_integration[0].aws_lakeformation_resource.s3tables"]
 			_, hasGuard := changes["module.main.terraform_data.settings_guard[0]"]
-			_, hasCatalog := changes[settingsPrefix+"terraform_data.s3tables_catalog"]
+			_, hasCatalog := changes[catalogStep]
 			assert.Equal(t, c.owner, hasSettings, "account settings follow the owner flag")
 			assert.Equal(t, c.owner, hasCatalog, "the s3tablescatalog check-and-create follows the owner flag (FR-029)")
 			assert.Equal(t, c.integration, hasIntegration, "registration follows the integration flag")
@@ -129,11 +130,14 @@ func TestOwnerFlagCombinations(t *testing.T) {
 	}
 }
 
+// catalogStep is the root module's s3tablescatalog check-and-create step (FR-029).
+const catalogStep = "module.main.terraform_data.s3tables_catalog[0]"
+
 // catalogInput returns the planned s3tablescatalog check-and-create input, with its catalog input
 // JSON decoded.
 func catalogInput(t *testing.T, plan *terraform.PlanStruct) (map[string]interface{}, map[string]interface{}) {
 	t.Helper()
-	rc := managedChanges(plan)[settingsPrefix+"terraform_data.s3tables_catalog"]
+	rc := managedChanges(plan)[catalogStep]
 	require.NotNil(t, rc, "the owner plans the s3tablescatalog check-and-create")
 	in, ok := after(rc)["input"].(map[string]interface{})
 	require.True(t, ok, "input is known at plan time")
@@ -178,6 +182,63 @@ func TestS3TablesCatalogCheckAndCreate(t *testing.T) {
 	}
 	_, catalog = catalogInput(t, planExample(t, "complete", vars))
 	assert.Equal(t, "False", catalog["AllowFullTableExternalDataAccess"])
+}
+
+// TestS3TablesCatalogCreatedFirst checks the FR-029 ordering: every resource the owner creates or
+// changes depends, directly or transitively, on the s3tablescatalog step, so the catalog exists
+// first. Only data sources and the plan-time guards (terraform_data with preconditions, which
+// create nothing) may run before it.
+func TestS3TablesCatalogCreatedFirst(t *testing.T) {
+	t.Parallel()
+	opts := exampleOptions(t, "complete", completeVars(generateTestNamePrefix("ord")))
+	terraform.InitAndPlan(t, opts)
+	graph := terraform.RunTerraformCommandAndGetStdout(t, opts, "graph", "-plan="+opts.PlanFilePath)
+
+	// Node names can hold escaped quotes (tenant[\"sales\"]). The apply graph orders resource
+	// instances; its "(expand)" nodes don't carry the instance edges, so instances are checked.
+	quoted := `"((?:[^"\\]|\\.)+)"`
+	edge := regexp.MustCompile(`^\s*` + quoted + ` -> ` + quoted)
+	node := regexp.MustCompile(`^\s*` + quoted + ` \[label`)
+	deps := map[string][]string{}
+	var nodes []string
+	for _, line := range strings.Split(graph, "\n") {
+		if m := edge.FindStringSubmatch(line); m != nil {
+			deps[m[1]] = append(deps[m[1]], m[2])
+		} else if m := node.FindStringSubmatch(line); m != nil {
+			nodes = append(nodes, m[1])
+		}
+	}
+	const step = `[root] module.main.terraform_data.s3tables_catalog[0]`
+	require.Contains(t, nodes, step)
+	reaches := func(from string) bool {
+		seen := map[string]bool{}
+		stack := []string{from}
+		for len(stack) > 0 {
+			n := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if n == step {
+				return true
+			}
+			for _, d := range deps[n] {
+				if !seen[d] {
+					seen[d] = true
+					stack = append(stack, d)
+				}
+			}
+		}
+		return false
+	}
+	instance := regexp.MustCompile(`\.(aws_[a-z0-9_]+|time_sleep|terraform_data)\.([a-z0-9_]+)(\[[^\]]*\])?$`)
+	checked := 0
+	for _, n := range nodes {
+		m := instance.FindStringSubmatch(n)
+		if m == nil || n == step || strings.Contains(n, ".data.") || (m[1] == "terraform_data" && strings.HasSuffix(m[2], "_guard")) {
+			continue
+		}
+		checked++
+		assert.True(t, reaches(n), "%s can be created before s3tablescatalog", n)
+	}
+	assert.Greater(t, checked, 100, "the graph covers the complete example's resource instances")
 }
 
 func TestOwnerOnlyInputsRejectedOnNonOwner(t *testing.T) {

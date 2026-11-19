@@ -886,7 +886,23 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
   Also confirm that the per-run `bucket/*` registration, made while the catalog already exists,
   still federates the run's buckets: the label-style cases pass (sandbox result 8, design impact).
 
-**Checkpoint**: The catalog is created only when missing, matches FR-029, and survives every
+- [x] T084 Make the catalog step run first (FR-029 ordering, amended 2026-11-19):
+  - move `terraform_data.s3tables_catalog` to a root `catalog.tf` (count = owner, `moved` block)
+    and the script to `scripts/ensure-s3tables-catalog.sh`; it depends on nothing;
+  - add `depends_on = [terraform_data.s3tables_catalog]` to `aws_kms_key.main`,
+    `aws_sns_topic.alarms`, `aws_s3tables_table_bucket.zone`, `aws_s3_bucket.query_results`, and
+    the platform LF-tags;
+  - replace the account-settings `s3tables_catalog` input and output with a `catalog_ready` input
+    (also on `catalog-integration`), carried by a `terraform_data.catalog_ready` that each
+    submodule's first resources depend on. No module-level `depends_on`;
+  - sandbox (consumer account): confirm that a role that isn't a data-lake admin can create the
+    catalog with Glue IAM permissions alone.
+- [x] T085 Add `TestS3TablesCatalogCreatedFirst`. It builds the apply graph (`terraform graph
+  -plan=<file>`) of `examples/complete`, and requires every resource instance to depend on the step,
+  except data sources and the `*_guard` plan-time checks. Confirm it fails when a dependency is
+  removed: removing it from `aws_s3_bucket.query_results` failed on four instances.
+
+**Checkpoint**: The catalog is created first, only when missing, matches FR-029, and survives every
 destroy and upgrade path.
 
 ---
@@ -909,7 +925,7 @@ destroy and upgrade path.
 - **Phase N** depends on all phases. T069 can be done at any time.
 - **Phase 8** (Federated Table Storage Catalog, added 2026-11-19) depends on Phases 2 and 7. T073
   comes first. T074 blocks T075. T076 and T077 follow T075. T078 to T081 can run in parallel.
-  T082 and T083 come last.
+  T082 and T083 come next. T084 and T085 (catalog first) follow.
 
 ### Resource Dependency Order (at apply time)
 

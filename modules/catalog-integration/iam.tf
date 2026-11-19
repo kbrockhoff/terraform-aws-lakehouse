@@ -9,6 +9,8 @@ resource "aws_iam_role" "lf_s3tables_access" {
   permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
 
   tags = var.tags
+
+  depends_on = [terraform_data.catalog_ready]
 }
 
 # aws:SourceAccount only: AWS documents no Region or source-ARN condition for Lake Formation

@@ -24,6 +24,8 @@ resource "aws_kms_key" "catalog" {
       error_message = "Per-caller catalog encryption names ${length(local.catalog_key_users)} principals in the key policy; at most 200 fit within the 32 KB key-policy limit. Use key_access_mode = \"service_role\"."
     }
   }
+
+  depends_on = [terraform_data.catalog_ready]
 }
 
 resource "aws_kms_alias" "catalog" {

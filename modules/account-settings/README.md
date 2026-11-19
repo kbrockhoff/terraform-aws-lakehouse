@@ -12,10 +12,9 @@ account and Region calls it (`account_settings_config.owner` in the root module)
   deletion and disabling except to break-glass principals.
 - **Catalog resource policy** (optional): the RAM `glue:ShareResource` statement plus caller-supplied Deny statements,
   with `EnableHybrid = TRUE`.
-- **Federated `s3tablescatalog`** (`catalog.tf`): an apply-time step runs `scripts/ensure-s3tables-catalog.sh`, which
-  creates the catalog only when it is missing, never updates or deletes it, and refuses to act in another account.
-  It needs AWS CLI v2 and bash where Terraform runs, and uses the environment's credentials (see the root README,
-  "S3 Tables Catalog").
+- **Federated `s3tablescatalog`**: created by the root module's `terraform_data.s3tables_catalog` before anything
+  else. Every resource here waits on it through the `catalog_ready` input (see the root README, "S3 Tables
+  Catalog").
 
 Destroying this submodule resets catalog encryption to `DISABLED` and empties the admins, but never deletes
 `s3tablescatalog`. To hand over ownership, use a
@@ -53,7 +52,7 @@ No modules.
 | [aws_kms_alias.catalog](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_key.catalog](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_lakeformation_data_lake_settings.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_data_lake_settings) | resource |
-| [terraform_data.s3tables_catalog](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.catalog_ready](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [time_sleep.catalog_encryption_role](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 
 ## Inputs
@@ -71,11 +70,11 @@ No modules.
 | <a name="input_name_prefix"></a> [name\_prefix](#input\_name\_prefix) | Organization unique prefix used for resource names. | `string` | n/a | yes |
 | <a name="input_partition"></a> [partition](#input\_partition) | AWS partition (aws, aws-us-gov, aws-cn). | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | AWS Region of the settings. | `string` | n/a | yes |
+| <a name="input_catalog_ready"></a> [catalog\_ready](#input\_catalog\_ready) | ID of the root module's s3tablescatalog check-and-create step. Every resource here waits on it, so the catalog exists before anything else is created or changed (spec 003 FR-029). | `string` | `""` | no |
 | <a name="input_cross_account_version"></a> [cross\_account\_version](#input\_cross\_account\_version) | Lake Formation cross-account version (4 or 5). Versions are never lowered; 5 is irreversible. | `number` | `4` | no |
 | <a name="input_key_user_arns"></a> [key\_user\_arns](#input\_key\_user\_arns) | Tenant persona ARNs granted catalog key use in per\_caller mode. | `list(string)` | `[]` | no |
 | <a name="input_permissions_boundary_arn"></a> [permissions\_boundary\_arn](#input\_permissions\_boundary\_arn) | Permissions boundary for the catalog-encryption role. Empty means none. | `string` | `""` | no |
 | <a name="input_read_only_admin_principal_arns"></a> [read\_only\_admin\_principal\_arns](#input\_read\_only\_admin\_principal\_arns) | Lake Formation read-only admins. Authoritative, like admin\_principal\_arns. | `list(string)` | `[]` | no |
-| <a name="input_s3tables_catalog"></a> [s3tables\_catalog](#input\_s3tables\_catalog) | Settings used only when s3tablescatalog is missing and gets created (FR-029); an existing catalog is never changed. allow\_full\_table\_external\_data\_access lets third-party engines get credentials without session tags when the caller has full table access. | <pre>object({<br/>    allow_full_table_external_data_access = bool<br/>  })</pre> | <pre>{<br/>  "allow_full_table_external_data_access": true<br/>}</pre> | no |
 | <a name="input_storage_key_arns"></a> [storage\_key\_arns](#input\_storage\_key\_arns) | Keys that encrypt table storage or query results. A supplied catalog key must not be one of them. | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources. Common tags only: nothing here holds data at rest. | `map(string)` | `{}` | no |
 
@@ -89,5 +88,4 @@ No modules.
 | <a name="output_cross_account_version"></a> [cross\_account\_version](#output\_cross\_account\_version) | Lake Formation cross-account version managed here. |
 | <a name="output_data_lake_settings_id"></a> [data\_lake\_settings\_id](#output\_data\_lake\_settings\_id) | ID of the data-lake settings. Registration and grants wait on it so the deployer's admin rights exist first. |
 | <a name="output_required_catalog_kms_key_policy_json"></a> [required\_catalog\_kms\_key\_policy\_json](#output\_required\_catalog\_kms\_key\_policy\_json) | Key policy statements a consumer-supplied catalog key needs. Account-root access is the key owner's own responsibility. |
-| <a name="output_s3tables_catalog_ready"></a> [s3tables\_catalog\_ready](#output\_s3tables\_catalog\_ready) | ID of the s3tablescatalog check-and-create step. Grants and LF-tags on the catalog wait on it. |
 <!-- END_TF_DOCS -->

@@ -27,7 +27,7 @@ module "account_settings" {
   catalog_encryption           = var.account_settings_config.catalog_encryption
   catalog_resource_policy      = var.account_settings_config.catalog_resource_policy
   permissions_boundary_arn     = var.account_settings_config.permissions_boundary_arn
-  s3tables_catalog             = var.account_settings_config.s3tables_catalog
+  catalog_ready                = local.s3tables_catalog_ready
   kms_key_deletion_window_days = local.effective_config.kms_key_deletion_window_days
 
   key_user_arns = local.tenant_persona_arns
@@ -51,6 +51,7 @@ module "catalog_integration" {
   region                   = local.region
   tags                     = local.common_tags
   settings_ready           = local.settings_ready
+  catalog_ready            = local.s3tables_catalog_ready
   permissions_boundary_arn = var.account_settings_config.permissions_boundary_arn
 }
 

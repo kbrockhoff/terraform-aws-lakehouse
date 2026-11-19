@@ -16,6 +16,9 @@ resource "aws_kms_key" "main" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-cmk"
   })
+
+  # s3tablescatalog exists before anything else is created or changed (FR-029)
+  depends_on = [terraform_data.s3tables_catalog]
 }
 
 # KMS Key Alias for easier reference

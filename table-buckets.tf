@@ -30,6 +30,9 @@ resource "aws_s3tables_table_bucket" "zone" {
   force_destroy = local.effective_config.force_destroy
 
   tags = local.common_data_tags
+
+  # s3tablescatalog exists before anything else is created or changed (FR-029)
+  depends_on = [terraform_data.s3tables_catalog]
 }
 
 resource "aws_s3tables_table_bucket_policy" "zone" {

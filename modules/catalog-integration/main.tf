@@ -2,6 +2,12 @@ locals {
   table_buckets_arn = "arn:${var.partition}:s3tables:${var.region}:${var.account_id}:bucket/*"
 }
 
+# Carries the root's s3tablescatalog step ID (empty when another deployment owns the account
+# settings), so the catalog exists before anything here is created or changed (spec 003 FR-029)
+resource "terraform_data" "catalog_ready" {
+  input = var.catalog_ready
+}
+
 # The data-lake settings live in modules/account-settings, which another deployment may own. This
 # carries their ID (or the settings guard's) so registration waits for the deployer's admin rights.
 resource "terraform_data" "settings_ready" {

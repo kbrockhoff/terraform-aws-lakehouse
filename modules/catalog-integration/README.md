@@ -59,6 +59,7 @@ No modules.
 | [aws_iam_role.lf_s3tables_access](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.lf_s3tables_access](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_lakeformation_resource.s3tables](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_resource) | resource |
+| [terraform_data.catalog_ready](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.settings_ready](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 
 ## Inputs
@@ -70,6 +71,7 @@ No modules.
 | <a name="input_partition"></a> [partition](#input\_partition) | AWS partition (aws, aws-us-gov, aws-cn). | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | AWS Region of the S3 Tables catalog integration. | `string` | n/a | yes |
 | <a name="input_settings_ready"></a> [settings\_ready](#input\_settings\_ready) | ID of the data-lake settings or of the settings guard. Orders registration after the deployer's admin rights exist. | `string` | n/a | yes |
+| <a name="input_catalog_ready"></a> [catalog\_ready](#input\_catalog\_ready) | ID of the root module's s3tablescatalog check-and-create step, or empty when another deployment owns the account settings. Every resource here waits on it (spec 003 FR-029). | `string` | `""` | no |
 | <a name="input_permissions_boundary_arn"></a> [permissions\_boundary\_arn](#input\_permissions\_boundary\_arn) | Permissions boundary for the Lake Formation data-access role. Empty means none. | `string` | `""` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
 

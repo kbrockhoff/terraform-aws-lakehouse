@@ -313,8 +313,8 @@ nothing: it is never in state, and the new owner finds it and leaves it unchange
 Every deployment in an account and Region shares one federated catalog, `s3tablescatalog`, over all the account's
 table buckets. The account-settings owner makes sure it exists:
 
-- **Created only when missing.** At apply time, a step in `modules/account-settings` runs
-  `scripts/ensure-s3tables-catalog.sh`:
+- **Created first, only when missing.** At apply time, before the deployment creates or changes any other
+  resource, `terraform_data.s3tables_catalog` (root `catalog.tf`) runs `scripts/ensure-s3tables-catalog.sh`:
   - when `aws glue get-catalog` finds the catalog, it leaves it exactly as it is;
   - otherwise it runs `aws glue create-catalog`, federated over `bucket/*` with connection `aws:s3tables`, empty
     default permissions for new databases and tables, the common tags, and
@@ -623,6 +623,7 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | [aws_s3tables_table_bucket_policy.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3tables_table_bucket_policy) | resource |
 | [aws_sns_topic.alarms](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic) | resource |
 | [terraform_data.catalog_key_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.s3tables_catalog](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.settings_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.sharing_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.studio_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
