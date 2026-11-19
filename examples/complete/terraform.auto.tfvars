@@ -14,12 +14,13 @@ alarms_config = {
   sns_topic_arn    = ""
 }
 # SageMaker Unified Studio in the same account: a deployed domain makes its blueprint provisioning
-# role and its manage-access role data-lake admins. Placeholder ARNs; replace before applying.
+# role and its manage-access role data-lake admins. Studio principals must be in this account, so
+# main.tf replaces ACCOUNT_ID with the deploying account. Placeholder domain; replace before applying.
 studio_config = {
   enabled = true
   integration_principal_arns = [
-    "arn:aws:iam::123456789012:role/service-role/AmazonSageMakerProvisioning-123456789012",
-    "arn:aws:iam::123456789012:role/service-role/AmazonSageMakerManageAccess-us-east-1-dzd_example",
+    "arn:aws:iam::ACCOUNT_ID:role/service-role/AmazonSageMakerProvisioning-ACCOUNT_ID",
+    "arn:aws:iam::ACCOUNT_ID:role/service-role/AmazonSageMakerManageAccess-us-east-1-dzd_example",
   ]
 }
 

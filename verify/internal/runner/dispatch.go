@@ -257,37 +257,18 @@ func (r *Runner) dispatch(ctx context.Context, pc *ops.Clients, inst matrix.Inst
 	return errResult(fmt.Errorf("operation %s is not implemented", c.Op)), obs
 }
 
-// manifestSettingKeys maps a check case's expect_values key to the fixture manifest's
-// account_settings key, for values written as "manifest"
-var manifestSettingKeys = map[string]string{
-	"cross_account_version": "cross_account_version",
-	"mode":                  "catalog_encryption_mode",
-	"kms_key_arn":           "catalog_kms_key_arn",
-}
-
 // expectValues resolves a check case's expectations, replacing "manifest" with the fixture's
 // expected value.
 func (r *Runner) expectValues(c matrix.Case) (map[string]string, error) {
-	out := map[string]string{}
-	for k, v := range c.ExpectValues {
-		if v != "manifest" {
-			out[k] = v
-			continue
+	if r.Manifest == nil {
+		for k, v := range c.ExpectValues {
+			if v == manifest.FromManifest {
+				return nil, fmt.Errorf("expect_values %s: \"manifest\" needs full mode; name the value in probe mode", k)
+			}
 		}
-		if r.Manifest == nil {
-			return nil, fmt.Errorf("expect_values %s: \"manifest\" needs full mode; name the value in probe mode", k)
-		}
-		mk, ok := manifestSettingKeys[k]
-		if !ok {
-			return nil, fmt.Errorf("expect_values %s cannot come from the manifest", k)
-		}
-		mv, ok := r.Manifest.AccountSettings[mk]
-		if !ok || mv == "" {
-			return nil, fmt.Errorf("manifest has no account_settings.%s; re-apply the fixture", mk)
-		}
-		out[k] = mv
+		return c.ExpectValues, nil
 	}
-	return out, nil
+	return r.Manifest.ExpectValues(c.ExpectValues)
 }
 
 // deleteTable removes a table through the storage API as the runner, which does not depend on

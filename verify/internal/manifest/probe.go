@@ -47,6 +47,9 @@ func ProbeFromFull(full *matrix.Matrix, m *Manifest) (*matrix.Matrix, error) {
 			Table: c.Resource.Table, Columns: c.Resource.Columns,
 			CatalogID: t.CatalogID, Database: t.Database, Workgroup: t.Workgroup,
 		}
+		if pc.ExpectValues, err = m.ExpectValues(c.ExpectValues); err != nil {
+			return nil, fmt.Errorf("%s: %w", inst.ID, err)
+		}
 		if c.ExpectRows != nil {
 			rows := *c.ExpectRows
 			rows.Keys, rows.KeyColumn = nil, ""

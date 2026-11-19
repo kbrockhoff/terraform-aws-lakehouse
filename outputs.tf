@@ -97,6 +97,9 @@ output "tenants" {
       shares                  = t.shares
     }
   }
+
+  # Consumers act on shares only once the platform tag grants exist too (FR-024)
+  depends_on = [aws_lakeformation_permissions.consumer_tag_describe]
 }
 
 # ----

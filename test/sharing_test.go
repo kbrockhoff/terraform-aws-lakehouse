@@ -2,6 +2,7 @@ package test
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
 
@@ -55,21 +56,35 @@ func TestShareGrantsReadOnlyWithGrantOption(t *testing.T) {
 func TestShareTagDescribe(t *testing.T) {
 	t.Parallel()
 	name := generateTestNamePrefix("shd")
-	grants := withPrefix(managedChanges(planExample(t, "complete", completeVars(name))), sharePrefix("sales")+"aws_lakeformation_permissions.share_tag_describe[")
-	keys := map[string][]string{}
-	for addr, rc := range grants {
-		a := after(rc)
-		assert.Equal(t, consumerAccount, a["principal"], addr)
-		assert.Equal(t, []string{"DESCRIBE"}, strs(a["permissions"]), addr)
-		assert.Equal(t, []string{"DESCRIBE"}, strs(a["permissions_with_grant_option"]), addr)
-		tag := block(a, "lf_tag")
-		require.NotNil(t, tag, addr)
-		keys[tag["key"].(string)] = strs(tag["values"])
+	changes := managedChanges(planExample(t, "complete", completeVars(name)))
+	tagGrants := func(prefix string) map[string][]string {
+		keys := map[string][]string{}
+		for addr, rc := range withPrefix(changes, prefix) {
+			a := after(rc)
+			assert.Equal(t, consumerAccount, a["principal"], addr)
+			assert.Equal(t, []string{"DESCRIBE"}, strs(a["permissions"]), addr)
+			assert.Equal(t, []string{"DESCRIBE"}, strs(a["permissions_with_grant_option"]), addr)
+			tag := block(a, "lf_tag")
+			require.NotNil(t, tag, addr)
+			keys[tag["key"].(string)] = strs(tag["values"])
+		}
+		return keys
 	}
-	// Tenant, zone, sensitivity, three regulations, and the row-filter exclusion key
-	assert.Len(t, keys, 7)
-	assert.Equal(t, []string{"internal", "public"}, keys[name+"-sensitivity"], "only the shared values")
-	assert.Equal(t, []string{"consumption"}, keys[name+"-zone"])
+
+	// The tenant grants only the keys it owns: its tenant key and its row-filter exclusion key
+	tenant := tagGrants(sharePrefix("sales") + "aws_lakeformation_permissions.share_tag_describe[")
+	assert.Len(t, tenant, 2)
+	assert.Equal(t, []string{"member"}, tenant[name+"-tenant-sales"])
+	assert.Equal(t, []string{"no"}, tenant[name+"-tenant-sales-rf-gdpranalyst"])
+
+	// The platform grants its keys once per approved account, with every value, so tenants sharing
+	// with the same account never revoke each other's tag visibility
+	platform := tagGrants("module.main.aws_lakeformation_permissions.consumer_tag_describe[")
+	assert.Len(t, platform, 6, "sensitivity, zone, domain, and three regulations")
+	sensitivity := append([]string(nil), platform[name+"-sensitivity"]...)
+	sort.Strings(sensitivity)
+	assert.Equal(t, []string{"confidential", "internal", "public", "restricted"}, sensitivity, "every value, not only the shared ones")
+	assert.Equal(t, []string{"no", "yes"}, platform[name+"-reg-gdpr"])
 }
 
 // TestNoConsumerInKeyPolicies checks FR-026: no key policy names a consumer account.
@@ -136,4 +151,35 @@ func TestRemovingApprovedAccountStillReferencedFails(t *testing.T) {
 	_, err := terraform.InitAndPlanE(t, exampleOptions(t, "complete", vars))
 	require.Error(t, err)
 	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "partner target accounts that are not approved")
+}
+
+// TestOneSharePerConsumerAccount: two shares to one account would hold the same grants, and removing
+// either would revoke them for both
+func TestOneSharePerConsumerAccount(t *testing.T) {
+	t.Parallel()
+	vars := completeVars(generateTestNamePrefix("sdu"))
+	for k, v := range override("sales", map[string]interface{}{"shares": map[string]interface{}{
+		"partner":  map[string]interface{}{"account_id": consumerAccount, "sensitivity_values": []string{"public"}},
+		"partner2": map[string]interface{}{"account_id": consumerAccount, "sensitivity_values": []string{"internal"}},
+	}}) {
+		vars[k] = v
+	}
+	_, err := terraform.InitAndPlanE(t, exampleOptions(t, "complete", vars))
+	require.Error(t, err)
+	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "at most one share per consumer account")
+}
+
+// TestStudioPrincipalsMustBeInThisAccount checks FR-007: cross-account studio principals are rejected
+func TestStudioPrincipalsMustBeInThisAccount(t *testing.T) {
+	t.Parallel()
+	vars := completeVars(generateTestNamePrefix("sxa"))
+	vars["studio_config"] = map[string]interface{}{"enabled": true, "integration_principal_arns": []string{
+		"arn:aws:iam::ACCOUNT_ID:role/service-role/AmazonSageMakerProvisioning-ACCOUNT_ID",
+		"arn:aws:iam::" + consumerAccount + ":role/studio",
+	}}
+	_, err := terraform.InitAndPlanE(t, exampleOptions(t, "complete", vars))
+	require.Error(t, err)
+	msg := spaces.ReplaceAllString(err.Error(), " ")
+	assert.Contains(t, msg, "must be roles in this account")
+	assert.Contains(t, msg, consumerAccount+":role/studio")
 }

@@ -13,12 +13,8 @@ import (
 
 // ListCatalogs lists the S3 Tables bucket catalogs under the federated catalog.
 func (c *Clients) ListCatalogs(ctx context.Context, t manifest.Target) Result {
-	parent := t.AthenaCatalog()
-	if i := strings.Index(parent, "/"); i >= 0 {
-		parent = parent[:i]
-	}
 	var names []string
-	in := &glue.GetCatalogsInput{ParentCatalogId: aws.String(parent)}
+	in := &glue.GetCatalogsInput{ParentCatalogId: aws.String(glueParentCatalog(t.CatalogID))}
 	for {
 		out, err := c.Glue.GetCatalogs(ctx, in)
 		if err != nil {
@@ -33,6 +29,21 @@ func (c *Clients) ListCatalogs(ctx context.Context, t manifest.Target) Result {
 		in.NextToken = out.NextToken
 	}
 	return Result{Outcome: classify.Allowed, Names: names}
+}
+
+// glueParentCatalog is the Glue parent catalog ID for a target catalog ID:
+// <account>:s3tablescatalog/<bucket> and <account>:s3tablescatalog become s3tablescatalog, and a
+// bare account ID stays the account ID (Glue's default catalog; only Athena calls it AwsDataCatalog).
+func glueParentCatalog(catalogID string) string {
+	i := strings.Index(catalogID, ":")
+	if i < 0 {
+		return catalogID
+	}
+	parent := catalogID[i+1:]
+	if j := strings.Index(parent, "/"); j >= 0 {
+		parent = parent[:j]
+	}
+	return parent
 }
 
 // ListDatabases lists the databases visible in the target's catalog.

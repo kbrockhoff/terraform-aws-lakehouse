@@ -68,4 +68,8 @@ output "shares" {
       expression  = local.share_expressions[k]
     }
   }
+
+  # Consumers create resource links and re-grant from this output, so it is ready only once the
+  # producer grants exist
+  depends_on = [aws_lakeformation_permissions.share_database, aws_lakeformation_permissions.share_table, aws_lakeformation_permissions.share_tag_describe]
 }

@@ -118,6 +118,22 @@ resource "terraform_data" "sharing_guard" {
   }
 }
 
+# Studio integration principals become authoritative data-lake admins on the owner, so they must be
+# roles in this account and partition (FR-007)
+resource "terraform_data" "studio_guard" {
+  count = var.enabled && var.studio_config.enabled ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition = alltrue([
+        for a in var.studio_config.integration_principal_arns :
+        startswith(a, "arn:${local.partition}:iam::${local.account_id}:role/")
+      ])
+      error_message = "studio_config.integration_principal_arns must be roles in this account (${local.account_id}) and partition: ${join(", ", [for a in var.studio_config.integration_principal_arns : a if !startswith(a, "arn:${local.partition}:iam::${local.account_id}:role/")])}."
+    }
+  }
+}
+
 # A supplied catalog key must not be a designated tenant's key (FR-009). The platform key is
 # checked inside modules/account-settings.
 resource "terraform_data" "catalog_key_guard" {

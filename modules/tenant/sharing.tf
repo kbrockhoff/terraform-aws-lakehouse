@@ -36,21 +36,20 @@ locals {
   }
 
   # Consumer administrators re-grant by tag only with DESCRIBE on the tag keys and values in the
-  # expression (sandbox-results.md item 5). Values are unioned per account and key, so two shares
-  # to one account never revoke each other's values.
-  share_tag_values = {
-    for pair, vals in {
-      for x in flatten([
-        for k, s in local.share_grants : [
-          for term in local.share_expressions[k] : { pair = "${s.account_id}/${term.key}", account_id = s.account_id, key = term.key, values = term.values }
-        ]
-      ]) : x.pair => x...
-      } : pair => {
-      account_id = vals[0].account_id
-      key        = vals[0].key
-      values     = sort(distinct(flatten([for v in vals : v.values])))
+  # expression (sandbox-results.md item 5). The platform grants its own keys (zone, sensitivity,
+  # regulations, domain) to every approved account, because several tenants would share those
+  # grants. The tenant grants only the keys it owns: its tenant key and its row-filter exclusions.
+  # One share per account (validated), so these grants are never shared between shares.
+  tenant_owned_keys = concat([local.tenant_term.key], values(local.row_filter_tag_key))
+  share_tag_values = merge([
+    for k, s in local.share_grants : {
+      for term in local.share_expressions[k] : "${s.account_id}/${term.key}" => {
+        account_id = s.account_id
+        key        = term.key
+        values     = term.values
+      } if contains(local.tenant_owned_keys, term.key)
     }
-  }
+  ]...)
 }
 
 resource "aws_lakeformation_permissions" "share_database" {
@@ -97,7 +96,9 @@ resource "aws_lakeformation_permissions" "share_table" {
     }
   }
 
-  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter, terraform_data.share_guard, terraform_data.admin_guard]
+  # The row-filtered table associations set their exclusion keys to "yes"; until they exist those
+  # tables inherit "no" from the database and would match. Ordering also revokes before they go.
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_resource_lf_tags.row_filtered_table, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter, terraform_data.share_guard, terraform_data.admin_guard]
 }
 
 # DESCRIBE only: GRANT_WITH_LF_TAG_EXPRESSION cannot be granted across accounts

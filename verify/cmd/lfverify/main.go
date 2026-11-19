@@ -1003,6 +1003,12 @@ func cmdProbeMatrix(f *flags) error {
 	if err != nil {
 		return err
 	}
+	// Optional personas (spec 003 consumer) are dropped when the fixture lacks their capability,
+	// as in run and detect
+	full, dropped := full.WithoutUnmet(func(c string) bool { _, ok := man.Personas[c]; return ok })
+	if len(dropped) > 0 {
+		logf("skipping personas %s: the fixture has no consumer account", strings.Join(dropped, ", "))
+	}
 	p, err := manifest.ProbeFromFull(full, man)
 	if err != nil {
 		return err

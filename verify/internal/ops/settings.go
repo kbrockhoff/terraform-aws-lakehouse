@@ -149,17 +149,27 @@ func (c *Clients) CatalogResourcePolicy(ctx context.Context) Result {
 
 // allowsRAMShare reports whether a policy allows glue:ShareResource to ram.amazonaws.com.
 func allowsRAMShare(policy string) bool {
+	type statement struct {
+		Effect    string          `json:"Effect"`
+		Action    json.RawMessage `json:"Action"`
+		Principal json.RawMessage `json:"Principal"`
+	}
 	var doc struct {
-		Statement []struct {
-			Effect    string          `json:"Effect"`
-			Action    json.RawMessage `json:"Action"`
-			Principal json.RawMessage `json:"Principal"`
-		} `json:"Statement"`
+		Statement json.RawMessage `json:"Statement"`
 	}
 	if json.Unmarshal([]byte(policy), &doc) != nil {
 		return false
 	}
-	for _, s := range doc.Statement {
+	// Statement may be a single object or an array of them
+	var stmts []statement
+	if json.Unmarshal(doc.Statement, &stmts) != nil {
+		var one statement
+		if json.Unmarshal(doc.Statement, &one) != nil {
+			return false
+		}
+		stmts = []statement{one}
+	}
+	for _, s := range stmts {
 		if s.Effect == "Allow" && strings.Contains(string(s.Action), "glue:ShareResource") && strings.Contains(string(s.Principal), "ram.amazonaws.com") {
 			return true
 		}

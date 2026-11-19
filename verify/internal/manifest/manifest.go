@@ -233,3 +233,40 @@ func (m *Manifest) AllNamespaces() map[string]Namespace {
 	}
 	return out
 }
+
+// FromManifest is the expect_values sentinel for a value taken from the fixture manifest.
+const FromManifest = "manifest"
+
+// settingKeys maps a check case's expect_values key to the manifest's account_settings key, for
+// values written as FromManifest.
+var settingKeys = map[string]string{
+	"cross_account_version": "cross_account_version",
+	"mode":                  "catalog_encryption_mode",
+	"kms_key_arn":           "catalog_kms_key_arn",
+}
+
+// ExpectValues resolves a check case's expectations, replacing FromManifest with the fixture's
+// expected value. Probe matrices generated from the full matrix use it too, because probe runs
+// have no manifest.
+func (m *Manifest) ExpectValues(values map[string]string) (map[string]string, error) {
+	if values == nil {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for k, v := range values {
+		if v != FromManifest {
+			out[k] = v
+			continue
+		}
+		mk, ok := settingKeys[k]
+		if !ok {
+			return nil, fmt.Errorf("expect_values %s cannot come from the manifest", k)
+		}
+		mv, ok := m.AccountSettings[mk]
+		if !ok || mv == "" {
+			return nil, fmt.Errorf("manifest has no account_settings.%s; re-apply the fixture", mk)
+		}
+		out[k] = mv
+	}
+	return out, nil
+}

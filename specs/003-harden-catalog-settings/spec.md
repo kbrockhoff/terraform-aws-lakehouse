@@ -367,10 +367,16 @@ explicit, reviewable values. Then:
   - Column-level restrictions apply in the consumer account through the shared labels.
   - Row-level restrictions are named-resource filters. They MUST NOT be shared cross-account in
     this release.
-  - **Label visibility**: so the consumer administrator can delegate by label expression, each share
-    MUST also grant the consumer account permission to describe (with grant option, and only
-    describe) the label keys and values used in its expression. Granting the right to use labels
-    in grant expressions is not supported across accounts (sandbox result 5).
+  - **Label visibility**: so the consumer administrator can delegate by label expression, the
+    consumer account MUST also be able to describe (with grant option, and only describe) the label
+    keys and values used in each share's expression. Granting the right to use labels in grant
+    expressions is not supported across accounts (sandbox result 5).
+    - The tenant grants the keys it owns: its tenant key and its row-filter exclusion keys.
+    - The platform grants its own keys (zone, sensitivity, regulations, domain), with every value,
+      once per approved consumer account. Several tenants sharing with one account would otherwise
+      hold the same per-value grants, and removing one share would revoke another's (PR #9
+      review). The platform keys' values are vocabulary, not data.
+    - A tenant has at most one share per consumer account, so no two shares hold the same grant.
 - **FR-025**: Removing a share from configuration, or removing an account from the approved list,
   MUST revoke the corresponding grants on the next apply. Removing an approved account that is
   still referenced by a tenant share MUST fail at plan time with a message naming the share.

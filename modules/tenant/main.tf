@@ -35,9 +35,11 @@ resource "terraform_data" "share_guard" {
       error_message = "Tenant ${var.name} is designated (${join(", ", sort(tolist(var.tenant.compliance_frameworks)))}). Set compliance_acknowledged = true on each share to confirm the consumer is in scope for those frameworks."
     }
 
-    # Read live, not from the contract: a copy taken at platform-apply time can be stale
+    # Standalone tenants read live, not from the contract: a copy taken at platform-apply time can
+    # be stale. Platform-applied tenants rely on the root (owner: validated version >= 4, applied
+    # before tenant grants; non-owner: settings_guard checks the live version).
     precondition {
-      condition     = try(tonumber(data.aws_lakeformation_data_lake_settings.current[0].parameters["CROSS_ACCOUNT_VERSION"]), 0) >= 4
+      condition     = !var.verify_deployer_admin || try(tonumber(data.aws_lakeformation_data_lake_settings.current[0].parameters["CROSS_ACCOUNT_VERSION"]), 0) >= 4
       error_message = "Tenant ${var.name}: sharing S3 Tables needs Lake Formation cross-account version 4 or later, but the live version is ${try(data.aws_lakeformation_data_lake_settings.current[0].parameters["CROSS_ACCOUNT_VERSION"], "unset")}. Apply the deployment that owns the account settings first."
     }
   }

@@ -383,7 +383,14 @@ on cross-account version 4 (`account_settings_config.cross_account_version`, the
   sensitivity values, regulations, and domains to share. Regulated data is excluded unless listed, and row-filtered
   tables are never shared. A compliance-designated tenant must set `compliance_acknowledged = true`.
 - **What the consumer gets**: `DESCRIBE` on the database and `DESCRIBE`/`SELECT` on matching tables, each with grant
-  option, plus `DESCRIBE` on the shared tag values so the consumer can re-grant by tag. No key grant is needed.
+  option. So the consumer can re-grant by tag, it also gets `DESCRIBE` (with grant option) on the tag keys in the
+  expression:
+  - the tenant grants its own keys (its tenant key and row-filter exclusion keys);
+  - the platform grants its keys (zone, sensitivity, regulations, domain) with every value, once per approved
+    account, so tenants sharing with the same account never revoke each other's tag visibility.
+
+  No key grant is needed. A tenant has at most one share per consumer account; widen that share instead of adding
+  a second.
 - **Consumer onboarding**, using the `tenants[<name>].shares` output (consumer account, catalog IDs, databases, and
   label expression):
   1. Accounts outside the organization (`outside_organization = true`) accept the AWS RAM invitation.
@@ -568,6 +575,7 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | [aws_lakeformation_lf_tag.regulation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_lakeformation_lf_tag.sensitivity](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
 | [aws_lakeformation_lf_tag.zone](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_lf_tag) | resource |
+| [aws_lakeformation_permissions.consumer_tag_describe](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_permissions) | resource |
 | [aws_s3_bucket.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket_lifecycle_configuration.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_lifecycle_configuration) | resource |
 | [aws_s3_bucket_ownership_controls.query_results](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_ownership_controls) | resource |
@@ -580,6 +588,7 @@ Live `verify-*` targets never run from `make validate` or `make test`. Sandbox r
 | [terraform_data.catalog_key_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.settings_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.sharing_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.studio_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 
 ## Inputs
 

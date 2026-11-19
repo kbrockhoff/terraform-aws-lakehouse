@@ -279,6 +279,13 @@ variable "tenant" {
     error_message = "Tenant ${var.name}: share zones must be among the tenant's zones (shares default to the consumption zone)."
   }
 
+  # Grants are keyed by expression in Lake Formation, so two shares to one account could hold the
+  # same grant, and removing either would revoke it for both. Widen the one share instead.
+  validation {
+    condition     = length(distinct([for sh in values(var.tenant.shares) : sh.account_id])) == length(var.tenant.shares)
+    error_message = "Tenant ${var.name}: at most one share per consumer account; combine shares to the same account into one."
+  }
+
   validation {
     condition     = length(setsubtract(var.tenant.compliance_frameworks, ["SOC2", "HIPAA", "PCI_DSS"])) == 0
     error_message = "Tenant ${var.name}: compliance_frameworks may contain only SOC2, HIPAA, and PCI_DSS."

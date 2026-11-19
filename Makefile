@@ -267,12 +267,20 @@ UPGRADE_FROM ?= v0.3.1
 verify-upgrade: check-aws ## Full mode: deploy at UPGRADE_FROM, upgrade to this checkout in one apply, run, and tear down
 	@test -n "$(LFVERIFY_CATALOG_KEY_ARN)" || { echo "$(RED)✗ LFVERIFY_CATALOG_KEY_ARN is not set$(RESET)"; exit 1; }
 	@$(MAKE) -s verify-new-run
+	@# The legacy worktree holds the run's state and settings snapshot until they are copied here.
+	@# Until then teardown runs from the worktree, and the worktree is kept whenever teardown fails.
 	@run=$$(cat $(VERIFY_RUN_FILE)); wt=$(CURDIR)/verify/out/upgrade-$$run; \
-	  git worktree add --detach $$wt $(UPGRADE_FROM) >/dev/null && \
-	  $(MAKE) -C $$wt verify-up verify-seed RUN_ID=$$run && \
-	  mkdir -p $(CURDIR)/verify/out/$$run && cp -R $$wt/verify/out/$$run/. $(CURDIR)/verify/out/$$run/ && \
-	  $(MAKE) verify-upgrade-check RUN_ID=$$run && $(MAKE) verify-apply RUN_ID=$$run && $(MAKE) verify-run RUN_ID=$$run; status=$$?; \
-	  $(MAKE) verify-down RUN_ID=$$run; down=$$?; git worktree remove --force $$wt; \
+	  git worktree add --detach $$wt $(UPGRADE_FROM) >/dev/null || exit 1; \
+	  if $(MAKE) -C $$wt verify-up verify-seed RUN_ID=$$run && \
+	    mkdir -p $(CURDIR)/verify/out/$$run && cp -R $$wt/verify/out/$$run/. $(CURDIR)/verify/out/$$run/; then \
+	    $(MAKE) verify-upgrade-check RUN_ID=$$run && $(MAKE) verify-apply RUN_ID=$$run && $(MAKE) verify-run RUN_ID=$$run; status=$$?; \
+	    $(MAKE) verify-down RUN_ID=$$run; down=$$?; \
+	  else \
+	    status=1; echo "$(RED)✗ the $(UPGRADE_FROM) deployment failed; tearing down from $$wt$(RESET)"; \
+	    $(MAKE) -C $$wt verify-down RUN_ID=$$run; down=$$?; \
+	  fi; \
+	  if [ $$down -eq 0 ]; then git worktree remove --force $$wt; \
+	  else echo "$(YELLOW)⚠ teardown failed; keeping $$wt for make -C $$wt verify-cleanup RUN_ID=$$run$(RESET)"; fi; \
 	  [ $$status -eq 0 ] && status=$$down; \
 	  echo "$(CYAN)Upgrade run $$run from $(UPGRADE_FROM) finished with status $$status (teardown $$down)$(RESET)"; exit $$status
 

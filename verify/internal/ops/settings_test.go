@@ -31,7 +31,8 @@ func TestAllowsRAMShare(t *testing.T) {
 	ok := `{"Statement":[{"Effect":"Allow","Action":"glue:ShareResource","Principal":{"Service":"ram.amazonaws.com"},"Resource":"*"}]}`
 	list := `{"Statement":[{"Effect":"Allow","Action":["glue:ShareResource"],"Principal":{"Service":["ram.amazonaws.com"]},"Resource":"*"}]}`
 	deny := `{"Statement":[{"Effect":"Deny","Action":"glue:*","Principal":"*","Resource":"*"}]}`
-	for _, p := range []string{ok, list} {
+	single := `{"Statement":{"Effect":"Allow","Action":"glue:ShareResource","Principal":{"Service":"ram.amazonaws.com"},"Resource":"*"}}`
+	for _, p := range []string{ok, list, single} {
 		if !allowsRAMShare(p) {
 			t.Errorf("RAM share statement not found in %s", p)
 		}
@@ -39,6 +40,18 @@ func TestAllowsRAMShare(t *testing.T) {
 	for _, p := range []string{deny, "not json"} {
 		if allowsRAMShare(p) {
 			t.Errorf("no RAM share statement in %s", p)
+		}
+	}
+}
+
+func TestGlueParentCatalog(t *testing.T) {
+	for in, want := range map[string]string{
+		"111122223333:s3tablescatalog/lfv-raw": "s3tablescatalog",
+		"111122223333:s3tablescatalog":         "s3tablescatalog",
+		"111122223333":                         "111122223333",
+	} {
+		if got := glueParentCatalog(in); got != want {
+			t.Errorf("glueParentCatalog(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
