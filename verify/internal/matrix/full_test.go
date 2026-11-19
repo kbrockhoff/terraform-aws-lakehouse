@@ -65,8 +65,13 @@ func TestFullMatrixCoverage(t *testing.T) {
 	if !negative[key{"bypass", Label}] || !storage["bypass"] {
 		t.Error("bypass needs a label-style storage denial")
 	}
+	// consumer runs in the consumer account through a resource link (spec 003 FR-020 cases 6-10)
+	consumer := slices.IndexFunc(m.Personas, func(p Persona) bool { return p.Key == "consumer" })
+	if consumer < 0 || m.Personas[consumer].Requires != Consumer || !positive[key{"consumer", Label}] || !negative[key{"consumer", Label}] {
+		t.Error("consumer needs requires: consumer and label-style positive and negative cases")
+	}
 	for _, p := range m.Personas {
-		if !slices.Contains(personas, p.Key) && p.Key != "bypass" {
+		if !slices.Contains(personas, p.Key) && p.Key != "bypass" && p.Key != "consumer" {
 			t.Errorf("unexpected persona %s; personas must exist in the fixture manifest", p.Key)
 		}
 	}

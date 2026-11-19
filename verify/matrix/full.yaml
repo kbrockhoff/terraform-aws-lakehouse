@@ -839,3 +839,71 @@ personas:
         denied_by: lake_formation
         rule: spec 003 FR-020 case 2 - no Lake Formation grant, no governed access
 
+  # ---------------------------------------------- spec 003 FR-020 cases 6 to 10
+  # A persona in the consumer account (make ... CONSUMER_PROFILE=...). The producer shares tenant
+  # alpha's curated namespace, public and internal labels, read-only; the consumer's admin grants
+  # this persona by LF-tag expression through a resource link (tenant: consumer). Row-filtered
+  # tables (orders at stage 2) are never shared. Skipped without a consumer account.
+  - key: consumer
+    requires: consumer
+    cases:
+      - id: consumer-count-shared
+        style: label
+        op: count
+        resource: { tenant: consumer, table: customers }
+        expect: allowed
+        expect_rows: { count: 50 }
+        rule: spec 003 FR-021 - shared, label-matching tables are readable in the consumer
+      - id: consumer-orders-not-shared
+        style: label
+        op: get_table
+        resource: { tenant: consumer, table: orders }
+        expect: denied
+        rule: spec 003 FR-024 - row-filtered tables are excluded from shares
+      - id: consumer-select-orders
+        style: label
+        op: select
+        resource: { tenant: consumer, table: orders }
+        expect: denied
+        rule: spec 003 FR-024 - row filters are not shared, so the table is not either
+      - id: consumer-other-tenant
+        style: label
+        op: get_database
+        resource: { tenant: beta }
+        expect: denied
+        rule: spec 003 FR-023 - every share is bounded by the tenant tag
+      - id: consumer-other-zone
+        style: label
+        op: get_database
+        resource: { tenant: alpha, zone: raw }
+        expect: denied
+        rule: spec 003 FR-023 - only the shared zones are visible
+      - id: consumer-storage-bypass
+        style: label
+        op: storage_read
+        resource: { tenant: alpha, table: customers }
+        expect: denied
+        rule: spec 003 FR-015 - consumers read only through credentials the producer vends
+      - id: consumer-insert
+        style: label
+        phase: scenario
+        op: insert
+        resource: { tenant: consumer, table: customers }
+        expect: denied
+        rule: spec 003 FR-024 - shares are read-only
+      - id: consumer-drop
+        style: label
+        phase: scenario
+        op: drop_table
+        resource: { tenant: consumer, table: scratch }
+        expect: denied
+        rule: spec 003 FR-024 - shares are read-only
+      - id: consumer-revoked
+        style: label
+        phase: scenario
+        setup: revoke_share
+        op: count
+        resource: { tenant: consumer, table: customers }
+        expect: denied
+        rule: spec 003 FR-025 - removing a share revokes consumer access
+

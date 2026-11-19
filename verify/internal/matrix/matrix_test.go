@@ -72,6 +72,8 @@ func TestInvalid(t *testing.T) {
 		{"check op on both styles", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: catalog_encryption, expect: match}\n", "use style: label"},
 		{"denied_by on storage_write", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: storage_write, resource: {tenant: alpha, table: t}, expect: denied, denied_by: lake_formation}\n", "does not apply to storage_write"},
 		{"probe IAM_ALLOWED_PRINCIPALS check without a database", "mode: probe\npersonas:\n  - key: a\n    role_arn: arn:aws:iam::1:role/a\n    cases:\n      - {id: x, op: no_iam_allowed_principals, expect: match}\n", "probe resources need catalog_id and database"},
+		{"unknown requirement", "mode: full\npersonas:\n  - key: a\n    requires: partner\n    cases: []\n", "requires must be \"consumer\""},
+		{"requires in probe mode", "mode: probe\npersonas:\n  - key: a\n    role_arn: arn:aws:iam::1:role/a\n    requires: consumer\n    cases: []\n", "requires must be \"consumer\""},
 		{"probe storage_write", "mode: probe\npersonas:\n  - key: a\n    role_arn: arn:aws:iam::1:role/a\n    cases:\n      - {id: x, op: storage_write, resource: {catalog_id: c, database: d, table: t}, expect: denied}\n", "probe mode never attempts storage_write"},
 	}
 	for _, c := range cases {
@@ -109,5 +111,23 @@ func TestCheckOpsValid(t *testing.T) {
 		if _, err := Parse([]byte(y)); err != nil {
 			t.Errorf("valid check ops rejected: %v", err)
 		}
+	}
+}
+
+// TestWithoutUnmet checks that consumer personas drop out when the fixture has no consumer.
+func TestWithoutUnmet(t *testing.T) {
+	m, err := Parse([]byte("mode: full\npersonas:\n  - key: admin\n    cases: []\n  - key: consumer\n    requires: consumer\n    cases: []\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, dropped := m.WithoutUnmet(func(string) bool { return false })
+	if len(kept.Personas) != 1 || kept.Personas[0].Key != "admin" || len(dropped) != 1 || dropped[0] != "consumer" {
+		t.Errorf("without consumer: kept %v, dropped %v", kept.Personas, dropped)
+	}
+	if kept, dropped := m.WithoutUnmet(func(c string) bool { return c == Consumer }); len(kept.Personas) != 2 || len(dropped) != 0 {
+		t.Errorf("with consumer: kept %d, dropped %v", len(kept.Personas), dropped)
+	}
+	if len(m.Personas) != 2 {
+		t.Error("the original matrix must not change")
 	}
 }

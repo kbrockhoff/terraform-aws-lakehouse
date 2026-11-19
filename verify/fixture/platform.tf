@@ -89,6 +89,14 @@ locals {
         meta_writer = { principal_arn = local.role_arn["meta_writer"], zones = ["curated"] }
       }
       row_filters = local.alpha_row_filters
+      # Spec 003 sharing cases: curated, public and internal, with the consumer account
+      shares = local.consumer_enabled ? {
+        consumer = {
+          account_id         = local.consumer_account_id
+          zones              = ["curated"]
+          sensitivity_values = ["public", "internal"]
+        }
+      } : {}
     }
     beta = {
       owner       = "lfverify@example.com"
@@ -164,6 +172,12 @@ module "lakehouse" {
       var.read_only_runner_arns,
     )
     domain_values = ["general"]
+  }
+
+  sharing_config = {
+    consumer_accounts = local.consumer_enabled ? {
+      (local.consumer_account_id) = { purpose = "lfverify consumer for run ${var.run_id}" }
+    } : {}
   }
 
   tenants = local.tenants

@@ -528,6 +528,16 @@ func cmdRun(ctx context.Context, f *flags) error {
 		if man, err = f.loadManifest(); err != nil {
 			return err
 		}
+		// Spec 003: consumer personas need a fixture consumer account. Release runs set
+		// LFVERIFY_REQUIRE_SHARING=true so the sharing cases cannot be skipped.
+		var dropped []string
+		m, dropped = m.WithoutUnmet(func(c string) bool { _, ok := man.Personas[c]; return ok })
+		if len(dropped) > 0 {
+			if os.Getenv("LFVERIFY_REQUIRE_SHARING") == "true" {
+				return fmt.Errorf("sharing cases not run: personas %s need a consumer account (set CONSUMER_PROFILE)", strings.Join(dropped, ", "))
+			}
+			logf("skipping personas %s: the fixture has no consumer account", strings.Join(dropped, ", "))
+		}
 	} else if f.runID == "" {
 		f.runID = fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff)
 	}

@@ -171,7 +171,9 @@ VERIFY_TF = cd verify/fixture && TF_DATA_DIR=$(VERIFY_OUT)/.terraform terraform
 # Spec 003: the fixture owns the account settings and supplies a long-lived catalog key
 # (LFVERIFY_CATALOG_KEY_ARN, verify/README.md); CATALOG_KEY_ACCESS_MODE picks the mode under test
 CATALOG_KEY_ACCESS_MODE ?= service_role
-VERIFY_VARS = -var run_id=$(RUN_ID) -var catalog_kms_key_arn=$(LFVERIFY_CATALOG_KEY_ARN) -var catalog_key_access_mode=$(CATALOG_KEY_ACCESS_MODE) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
+# CONSUMER_PROFILE (an AWS profile for the consumer sandbox account) turns on the sharing cases;
+# RELEASE=true makes lfverify fail instead of skipping them
+VERIFY_VARS = -var run_id=$(RUN_ID) -var catalog_kms_key_arn=$(LFVERIFY_CATALOG_KEY_ARN) -var catalog_key_access_mode=$(CATALOG_KEY_ACCESS_MODE) $(if $(CONSUMER_PROFILE),-var consumer_profile=$(CONSUMER_PROFILE),) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
 VERIFY_MANIFEST = $(VERIFY_OUT)/manifest.json
 INJECT ?=
 INJECT_PERSONA ?=
@@ -226,7 +228,7 @@ verify-seed: check-aws verify-build verify-init ## Seed fixture tables, then app
 	@echo "$(GREEN)✓ Fixture seeded and stage 2 applied (run $(RUN_ID))$(RESET)"
 
 verify-run: check-aws verify-build ## Run the full-mode matrix against the applied fixture
-	@$(LFVERIFY) run --mode full --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(VERIFY_MANIFEST) --out $(VERIFY_OUT)
+	@LFVERIFY_REQUIRE_SHARING=$(if $(filter true,$(RELEASE)),true,) $(LFVERIFY) run --mode full --matrix $(CURDIR)/verify/matrix/full.yaml --manifest $(VERIFY_MANIFEST) --out $(VERIFY_OUT)
 
 verify-apply: verify-init ## Re-apply stage 2 with an overlay (INJECT, INJECT_PERSONA); used by detect
 	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=2 -var inject=$(INJECT) -var inject_persona=$(INJECT_PERSONA)

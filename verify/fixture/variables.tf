@@ -33,6 +33,12 @@ variable "catalog_kms_key_arn" {
   }
 }
 
+variable "consumer_profile" {
+  description = "AWS profile for the consumer sandbox account of the spec 003 sharing cases. Empty skips them. Its role must already be a Lake Formation data-lake admin there, and the account must be in verify/sandbox-accounts.txt."
+  type        = string
+  default     = ""
+}
+
 variable "catalog_key_access_mode" {
   description = "Catalog encryption key-access mode under test: service_role or per_caller."
   type        = string

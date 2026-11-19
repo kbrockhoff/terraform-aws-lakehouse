@@ -363,6 +363,33 @@ func (r *Runner) setup(ctx context.Context, s matrix.Setup, style matrix.Style, 
 			Principal: principal, Resource: grant, Permissions: []lftypes.Permission{lftypes.PermissionSelect},
 		})
 		return undo, err
+
+	case matrix.RevokeShare:
+		// Revoke the producer's table grant to the consumer account, then restore exactly the grant
+		// Terraform made, so state stays consistent (spec 003 FR-025)
+		sh := r.Manifest.Share
+		if sh == nil {
+			return nil, errors.New("revoke_share needs a fixture consumer account")
+		}
+		var expr []lftypes.LFTag
+		for _, term := range sh.Expression {
+			expr = append(expr, lftypes.LFTag{TagKey: aws.String(term.Key), TagValues: term.Values})
+		}
+		grant := &lftypes.Resource{LFTagPolicy: &lftypes.LFTagPolicyResource{
+			CatalogId: aws.String(r.Manifest.AccountID), ResourceType: lftypes.ResourceTypeTable, Expression: expr,
+		}}
+		principal := &lftypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String(sh.AccountID)}
+		perms := []lftypes.Permission{lftypes.PermissionSelect, lftypes.PermissionDescribe}
+		undo := func(ctx context.Context) error {
+			_, err := r.Runner.LF.GrantPermissions(ctx, &lakeformation.GrantPermissionsInput{
+				Principal: principal, Resource: grant, Permissions: perms, PermissionsWithGrantOption: perms,
+			})
+			return err
+		}
+		_, err := r.Runner.LF.RevokePermissions(ctx, &lakeformation.RevokePermissionsInput{
+			Principal: principal, Resource: grant, Permissions: perms, PermissionsWithGrantOption: perms,
+		})
+		return undo, err
 	}
 	return nil, fmt.Errorf("unknown setup %q", s)
 }

@@ -22,3 +22,18 @@ provider "aws" {
     }
   }
 }
+
+# Consumer account for the spec 003 sharing cases. Without consumer_profile it uses the default
+# credentials, and every consumer resource has count 0.
+provider "aws" {
+  alias   = "consumer"
+  profile = var.consumer_profile != "" ? var.consumer_profile : null
+
+  default_tags {
+    tags = {
+      LfverifyRun = var.run_id
+      Purpose     = "access-verification"
+    }
+  }
+}
+

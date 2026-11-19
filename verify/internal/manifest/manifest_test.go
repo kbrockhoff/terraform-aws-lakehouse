@@ -123,3 +123,12 @@ personas:
 		t.Error("inspection cases are added")
 	}
 }
+
+func TestAthenaCatalog(t *testing.T) {
+	if got := (Target{Namespace: Namespace{CatalogID: "1:s3tablescatalog/b"}}).AthenaCatalog(); got != "s3tablescatalog/b" {
+		t.Errorf("federated: %s", got)
+	}
+	if got := (Target{Namespace: Namespace{CatalogID: "123456789012"}}).AthenaCatalog(); got != "AwsDataCatalog" {
+		t.Errorf("default catalog: %s", got)
+	}
+}

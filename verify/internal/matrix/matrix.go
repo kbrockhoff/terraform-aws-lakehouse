@@ -135,10 +135,15 @@ const (
 	LateTable Setup = "late_table"
 	// AllRowsFilter grants reader_rows an all-rows filter on orders (FR-018)
 	AllRowsFilter Setup = "all_rows_filter"
+	// RevokeShare revokes the cross-account share's table grant and restores it (spec 003 FR-025)
+	RevokeShare Setup = "revoke_share"
 )
 
 // Setups lists the known setup mutations.
-var Setups = []Setup{RelabelColumnRestricted, RelabelTableRestricted, LateTable, AllRowsFilter}
+var Setups = []Setup{RelabelColumnRestricted, RelabelTableRestricted, LateTable, AllRowsFilter, RevokeShare}
+
+// Consumer is the only fixture capability a persona can require.
+const Consumer = "consumer"
 
 // Defaults are run-wide settings; zero values in the file take these defaults.
 type Defaults struct {
@@ -218,6 +223,9 @@ type Case struct {
 // Persona is one identity under test.
 type Persona struct {
 	Key string `yaml:"key"`
+	// Requires names a fixture capability the persona needs. "consumer" personas run only when
+	// the fixture has a consumer account (spec 003); otherwise they are skipped.
+	Requires string `yaml:"requires,omitempty"`
 	// RoleARN is required in probe mode; full mode resolves it from the manifest
 	RoleARN string `yaml:"role_arn,omitempty"`
 	Cases   []Case `yaml:"cases"`
@@ -319,6 +327,9 @@ func (m *Matrix) Validate() error {
 		if m.Mode == Full && p.RoleARN != "" {
 			errs = append(errs, fmt.Errorf("persona %s: role_arn comes from the manifest in full mode", p.Key))
 		}
+		if p.Requires != "" && (p.Requires != Consumer || m.Mode != Full) {
+			errs = append(errs, fmt.Errorf("persona %s: requires must be %q, in full mode", p.Key, Consumer))
+		}
 		for _, c := range p.Cases {
 			if ids[c.ID] {
 				errs = append(errs, fmt.Errorf("duplicate case id %q", c.ID))
@@ -413,6 +424,9 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Resource.CatalogID != "" || c.Resource.Database != "" || c.Resource.Workgroup != "" {
 			add("full mode resources use symbolic tenant names, not catalog_id, database, or workgroup")
 		}
+		if c.Resource.Tenant == Consumer && c.Style != Label {
+			add("tenant consumer is the consumer's resource link; use style: label")
+		}
 		if c.Style == Named && c.Resource.Zone != "" && c.Resource.Zone != "curated" {
 			add("the named baseline mirrors curated namespaces only")
 		}
@@ -456,4 +470,20 @@ func (m *Matrix) Expand() []Instance {
 		}
 	}
 	return out
+}
+
+// WithoutUnmet returns the matrix without personas whose required capability the fixture lacks,
+// and the keys it dropped. have reports whether a capability is available.
+func (m *Matrix) WithoutUnmet(have func(string) bool) (*Matrix, []string) {
+	out := *m
+	out.Personas = nil
+	var dropped []string
+	for _, p := range m.Personas {
+		if p.Requires != "" && !have(p.Requires) {
+			dropped = append(dropped, p.Key)
+			continue
+		}
+		out.Personas = append(out.Personas, p)
+	}
+	return &out, dropped
 }
