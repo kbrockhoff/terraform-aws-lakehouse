@@ -10,7 +10,8 @@ FR-018, FR-026; amended 2026-11-18 from analysis: FR-001 default, FR-002 groupin
 protection, wildcard-principal scope, migration limited to ephemeral test deployments; amended
 2026-11-18: dedicated catalog-metadata key in FR-009, FR-012, FR-013, FR-026; amended 2026-11-18
 from sandbox results T004 and T007: FR-009 scope, FR-011 condition, FR-024 label visibility,
-FR-026 no consumer key grant)
+FR-026 no consumer key grant; amended 2026-11-19: federated table storage catalog ownership in
+FR-029 to FR-031, created only when missing and never deleted)
 **Input**: User description: "Upgrade and improve security on the metadata catalog and central data
 permission service account settings. The input is a set of design considerations for running managed
 table storage protected by tag-based permissions alongside a unified analytics studio in the same
@@ -154,7 +155,9 @@ explicit, reviewable values. Then:
       lists and the studio governance integration principals (FR-007);
     - the catalog resource policy (FR-006);
     - catalog metadata encryption and its key-access mode, role, and key protections (FR-009 to
-      FR-014).
+      FR-014);
+    - the federated table storage catalog, created only when missing and never deleted (FR-029
+      to FR-031).
   - **The flag is independent of the catalog-integration flag.**
     - A deployment that owns the catalog integration but not the account settings MUST run the
       same plan-time administrator guard that secondary deployments run today.
@@ -307,6 +310,33 @@ explicit, reviewable values. Then:
   objects written or updated after encryption is enabled are encrypted. The documentation MUST
   include a procedure to re-encrypt existing platform databases and tables.
 
+#### Federated Table Storage Catalog
+
+- **FR-029**: The account-settings owner MUST ensure that the account's federated table storage
+  catalog (`s3tablescatalog`) exists in its Region. At apply time it MUST check whether the catalog
+  exists and create it only when it does not.
+  - **Created with**: a federated catalog over every table storage bucket in the account and
+    Region (`arn:<partition>:s3tables:<region>:<account>:bucket/*`, connection `aws:s3tables`),
+    empty default permissions for new databases and tables (no identity-policy-only access), the
+    common tags, and full-table access by external engines set from a new input that defaults to
+    **true**. The documentation MUST state the consequence: third-party engines get credentials
+    without session tags when the caller has full table access.
+  - **An existing catalog** MUST be left exactly as it is: no update, no overwrite, and no plan
+    failure. Its attributes are reported by the verification harness instead (FR-020).
+  - **Safety**: the check-and-create step MUST confirm that the credentials it runs with belong to
+    the deployment's account and Region, and fail otherwise.
+  - **Ordering**: creation MUST follow the registration of the table storage with the permission
+    service when the same deployment owns the catalog integration, and MUST precede the catalog
+    integration's grants on the catalog.
+- **FR-030**: The federated table storage catalog MUST never be deleted by this module: not on
+  destroy, not when the owner flag or the catalog-integration flag is turned off, not on teardown
+  of an Ephemeral environment, and not during an upgrade from an earlier version. Deleting it would
+  drop every catalog grant and every bucket catalog under it for all deployments in the account.
+- **FR-031**: The catalog-integration unit MUST no longer create or delete the catalog. An existing
+  deployment whose state holds the catalog MUST stop managing it without deleting it, in the same
+  apply that upgrades it. The catalog-integration unit keeps the storage registration and the
+  data-access role.
+
 #### Direct Storage Bypass Prevention
 
 - **FR-015**: Every table storage bucket the platform creates (shared zone buckets and designated
@@ -407,6 +437,11 @@ explicit, reviewable values. Then:
   4. the sharing protocol version and every FR-003 setting match the declared values, and any
      catalog resource policy includes the resource-sharing statement (FR-006);
   5. no implicit identity-policy-only grants exist on platform databases or on the catalog.
+
+  Case 11, in both modes: the federated table storage catalog exists with the FR-029 attributes
+  (federated over every table storage bucket, connection `aws:s3tables`, empty default
+  permissions, and the expected full-table external access). Full mode teardown MUST confirm that
+  the catalog still exists after the fixture is destroyed (FR-030).
 
   Full mode MUST also run these cases, in both key-access modes, with a second sandbox account as
   the consumer:
@@ -571,6 +606,11 @@ as the data.
       (FR-027).
 - [x] Switching between key-access modes takes one apply with no loss of catalog access for listed
       principals.
+- [ ] In an account without the federated table storage catalog, the owner's first apply creates it
+      with the FR-029 attributes. In an account that has it, the apply leaves it unchanged.
+- [ ] The catalog still exists after the owner deployment is destroyed, after the owner flag is
+      turned off, and after an upgrade from a version that managed it in the catalog-integration
+      unit (FR-030, FR-031).
 
 ## Assumptions *(include if making assumptions)*
 
@@ -600,6 +640,10 @@ as the data.
   and local grants, and their engines query through credentials vended by this account.
 - The account's resource-sharing service has sharing within the organization enabled, so
   same-organization shares are accepted automatically.
+
+- Wherever the account-settings owner is applied, the AWS command-line tool is installed and the
+  environment's credentials resolve to the deployment's account and Region (FR-029). Terraform's own
+  provider credentials are not visible to it.
 
 ## Out of Scope *(include if explicitly excluding items)*
 

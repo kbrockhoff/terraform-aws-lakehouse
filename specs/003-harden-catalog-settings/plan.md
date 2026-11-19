@@ -28,6 +28,10 @@ integration. The submodule owns:
   - `SSE-KMS` (per-caller) mode is selectable.
 - **Optional Glue resource policy**: off by default. When enabled, it is limited to
   `glue:ShareResource` for `ram.amazonaws.com` plus deny statements the consumer supplies.
+- **Federated table storage catalog** (`s3tablescatalog`, FR-029 to FR-031, amended 2026-11-19):
+  created by an apply-time AWS CLI check-and-create step only when it is missing, and never
+  deleted. It moves out of `modules/catalog-integration`, whose state forgets it without deleting
+  it.
 
 Other changes:
 
@@ -195,6 +199,17 @@ documented and are confirmed by T-S1.
     including `ram:AssociateResourceSharePermission` and `ram:ListResourceSharePermissions`.
   - *Design consequence*: `modules/deployer` gains a `LakeFormationCrossAccount` statement scoped to
     `ram:ResourceShareName = LakeFormation*`.
+- **R13** (2026-11-19)
+  - *Finding*: Terraform cannot test at plan time whether `s3tablescatalog` exists.
+    - The `aws_glue_catalog` data source fails the plan ("reading Glue Catalog") when the catalog is
+      missing; it was checked in consumer account `566376086856`, which has no catalog.
+    - No provider data source lists Glue catalogs, and `import` blocks are allowed only in a root
+      module, not in `modules/account-settings`.
+    - Terraform 1.16 supports `lifecycle { destroy = false }` on a resource: on destroy or removal
+      it is forgotten, not deleted.
+  - *Design consequence*: the user chose an apply-time CLI check-and-create (`terraform_data` with
+    `local-exec`) over an input flag. The catalog is therefore not in state. Its attributes are
+    verified by `lfverify` (FR-020 case 11), not by plan drift. See Complexity Tracking.
 
 ## Principles Check
 
@@ -218,7 +233,9 @@ Principles are configured (`.specify/memory/principles.md` v1.3.0).
 - **Protect Data Durability and Recoverability**
   - *Gate*: Destructive changes reversible.
   - *How the plan satisfies it*: Key-policy deny on `ScheduleKeyDeletion` and `DisableKey` (FR-013).
-    Hand-over keeps the live settings (`removed` with `destroy = false`).
+    Hand-over keeps the live settings (`removed` with `destroy = false`). The federated table
+    storage catalog is never deleted: no destroy provisioner, `destroy = false`, and a `removed`
+    block in `catalog-integration` (FR-030, FR-031).
 - **Establish Resource Identity and Accountability**
   - *Gate*: Common tags; data tags only on data-at-rest.
   - *How the plan satisfies it*: The new role gets `common_tags` only, not data tags (bd memory
@@ -243,7 +260,13 @@ Principles are configured (`.specify/memory/principles.md` v1.3.0).
   - *How the plan satisfies it*: The module never creates SageMaker Unified Studio or DataZone
     resources, or anything in consumer accounts.
 
-**Gate result**: PASS. One justified complexity item is recorded below.
+- **Make Dependencies Explicit**
+  - *Gate*: External lookups centralized in `dependencies.tf`; no discovery by convention.
+  - *How the plan satisfies it*: All plan-time lookups stay in `dependencies.tf`. The one exception
+    is the apply-time `s3tablescatalog` existence check (FR-029). It can't be a data source (R13),
+    and it is recorded under Complexity Tracking.
+
+**Gate result**: PASS. Two justified complexity items are recorded below.
 
 ## Infrastructure Architecture
 
@@ -338,6 +361,31 @@ No changes. Network foundations remain out of scope in 001.
    - Consumer-supplied `deny_policy_jsons` are merged through `override_policy_documents` and
      validated to contain only `Deny` effects.
    - `enable_hybrid = "TRUE"`.
+6. `terraform_data.s3tables_catalog` (FR-029, FR-030), in a new `catalog.tf`:
+   - **`input`**: the catalog definition (name, federated identifier
+     `arn:<partition>:s3tables:<region>:<account>:bucket/*`, connection `aws:s3tables`, empty
+     database and table default permissions, `allow_full_table_external_data_access`, common tags)
+     plus `account_id` and `region`. A changed definition re-runs the step, which still leaves an
+     existing catalog unchanged.
+   - **`provisioner "local-exec"` (create time only)**: a script in the submodule,
+     `scripts/ensure-s3tables-catalog.sh`, receives every value as an environment variable,
+     never interpolated into the command line. It:
+     1. fails unless `aws sts get-caller-identity` returns the expected account, and passes
+        `--region` explicitly;
+     2. runs `aws glue get-catalog --catalog-id s3tablescatalog`, and exits 0 when the catalog
+        exists, logging that it was left unchanged;
+     3. otherwise runs `aws glue create-catalog --name s3tablescatalog --catalog-input <json>
+        --tags <json>`, the user's command plus tags, and treats `AlreadyExistsException` as
+        success, in case of a concurrent creator;
+     4. then polls `get-catalog` until the catalog is visible.
+   - **No destroy-time provisioner**, and `lifecycle { destroy = false }`, so neither destroy nor a
+     count change ever calls a delete (FR-030).
+   - **Ordering**: it depends on the data-lake settings, so the deployer is an admin. The root
+     passes the catalog integration's registration ID as `catalog_registration_ready` when this
+     deployment owns the integration. The catalog integration's grants and the platform LF-tags
+     depend on the submodule's `s3tables_catalog_ready` output.
+   - **Tags**: `common_tags` only. The catalog holds no data at rest itself (bd memory
+     `data-tags-data-at-rest-only`).
 
 **Catalog key in `modules/account-settings/kms.tf`**:
 
@@ -389,6 +437,12 @@ key-protection statements (FR-009, FR-026).
   settings.
 - Gains an optional `permissions_boundary_arn` for the data-access role.
 - The trust policy is unchanged (D2).
+- Loses `aws_glue_catalog.s3tables` (FR-031). A `removed { from = aws_glue_catalog.s3tables
+  lifecycle { destroy = false } }` block in the submodule forgets it without deleting it, in the same
+  apply that upgrades an existing deployment. Its `allow_full_table_external_data_access` input
+  moves to `account_settings_config.s3tables_catalog`.
+- Exposes the registration ID (`registration_id`) so the account-settings submodule can order the
+  catalog creation after it.
 
 **Root guards** (`main.tf`): when this deployment doesn't own the account settings, it checks:
 
@@ -463,7 +517,10 @@ The existing `secondary_admin_guard` becomes `settings_guard`, with a `moved` bl
     - `catalog_encryption`: `key_access_mode` (`service_role` | `per_caller`), `kms_key_arn`,
       `additional_key_user_arns`, `key_deletion_principal_arns`;
     - `catalog_resource_policy`: `enabled`, `deny_policy_jsons`;
-    - `permissions_boundary_arn`.
+    - `permissions_boundary_arn`;
+    - `s3tables_catalog`: `allow_full_table_external_data_access` (bool, default **true**, per the
+      user's create command). It replaces `catalog_integration_config.allow_full_table_external_data_access`,
+      and a validation rejects the old attribute with a message naming the new one.
   - `studio_config`: `enabled` (default false) and `integration_principal_arns`.
   - `sharing_config`: `consumer_accounts`.
   - `governance_config.direct_access_exempt_principal_arns` (new optional attribute).
@@ -530,7 +587,8 @@ specs/003-harden-catalog-settings/
 ├── table-buckets.tf            # + DenyDirectTableAccess
 ├── outputs.tf                  # + catalog_encryption_role_arn, account_settings_owner, shares in tenants output
 ├── modules/
-│   ├── account-settings/       # NEW: data-lake settings, catalog key, encryption role + settings, Glue policy
+│   ├── account-settings/       # NEW: data-lake settings, catalog key, encryption role + settings, Glue policy,
+│   │   │                       #      s3tablescatalog check-and-create (catalog.tf, scripts/ensure-s3tables-catalog.sh)
 │   │   ├── main.tf
 │   │   ├── kms.tf              # dedicated catalog-metadata key, alias, and policy
 │   │   ├── iam.tf
@@ -538,7 +596,8 @@ specs/003-harden-catalog-settings/
 │   │   ├── outputs.tf
 │   │   ├── versions.tf
 │   │   └── README.md
-│   ├── catalog-integration/    # − data-lake settings; + settings_ready, permissions_boundary_arn
+│   ├── catalog-integration/    # − data-lake settings, − aws_glue_catalog (removed, not destroyed);
+│   │                           #   + settings_ready, permissions_boundary_arn, registration_id
 │   ├── tenant/
 │   │   ├── sharing.tf          # NEW: cross-account LF-tag grants, share outputs
 │   │   ├── storage.tf          # + DenyDirectTableAccess on dedicated buckets
@@ -605,8 +664,28 @@ Run in `492637581429`, with the consumer account once one is provisioned. Record
 6. Catalog lookup latency before and after encryption (Performance NFR).
 7. The oldest provider version exposing `catalog_encryption_service_role` and data-lake
    `parameters` (version floor).
+8. (FR-029 to FR-031, 2026-11-19)
+   - Whether `create-catalog` for `aws:s3tables` needs the `bucket/*` registration with federation
+     first. This decides whether a non-integration owner must wait for, or check, the registration.
+   - Whether a catalog created by the CLI behaves like the provider-created one for
+     `lfverify`.
+   - That `verify-down` and the removal from `catalog-integration` leave the catalog in place.
 
 ## Complexity Tracking
+
+- **Apply-time AWS CLI step for `s3tablescatalog` (FR-029)**
+  - *Why Needed*: The user requires the module to create the catalog only when it is missing and
+    never delete it. Terraform can't test for the catalog at plan time (R13), and a managed
+    `aws_glue_catalog` fails with `AlreadyExists` in accounts that have one.
+  - *Principle tension*: "Make Dependencies Explicit" (an external lookup outside
+    `dependencies.tf`) and the module's no-external-scripts practice (D1). Mitigations:
+    - the step is isolated in one script with no shell interpolation of inputs;
+    - it verifies the account before acting and never deletes anything;
+    - its requirement (AWS CLI, ambient credentials) is documented in the README and the spec's
+      Assumptions;
+    - the catalog's attributes are checked by `lfverify` instead of plan drift.
+  - *Simpler Alternative Rejected Because*: An input flag with `lifecycle { destroy = false }`
+    needs the operator to know whether the catalog exists, and the user chose automatic detection.
 
 - **Two independent singleton flags: catalog-integration and account-settings owner, giving four
   valid combinations**

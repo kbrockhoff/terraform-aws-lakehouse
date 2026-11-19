@@ -776,6 +776,106 @@ once the consumer exists, sharing and revocation.
 
 ---
 
+## Phase 8: Federated Table Storage Catalog (FR-029 to FR-031)
+
+**Purpose**: The account-settings owner creates `s3tablescatalog` only when it is missing, with an
+apply-time AWS CLI check-and-create (plan R13, Complexity Tracking), and nothing ever deletes it.
+The catalog moves out of `modules/catalog-integration`, which forgets it without deleting it.
+
+- [ ] T073 Sandbox confirmation (plan item 8) in `492637581429` and `566376086856`: whether
+  `aws glue create-catalog` for `aws:s3tables` needs the `bucket/*` registration with federation
+  first, and whether a CLI-created catalog matches the provider-created one (`get-catalog` output).
+  Record the result as item 8 in `specs/003-harden-catalog-settings/sandbox-results.md`, and adjust
+  T075 ordering if the registration is not needed.
+- [ ] T074 [P] Create `modules/account-settings/scripts/ensure-s3tables-catalog.sh` (bash,
+  `set -euo pipefail`). It reads only environment variables (`ACCOUNT_ID`, `REGION`, `PARTITION`,
+  `ALLOW_FULL_TABLE_EXTERNAL_DATA_ACCESS`, `TAGS_JSON`) and never interpolates them into a shell
+  command string. It:
+  1. fails unless `aws sts get-caller-identity` returns `ACCOUNT_ID`;
+  2. exits 0, with a log line, when `aws glue get-catalog --region "$REGION" --catalog-id
+     s3tablescatalog` succeeds, and fails on any error other than `EntityNotFoundException`;
+  3. otherwise runs `aws glue create-catalog --region "$REGION" --name s3tablescatalog
+     --catalog-input <json>`. The JSON holds `FederatedCatalog` {`Identifier`
+     `arn:$PARTITION:s3tables:$REGION:$ACCOUNT_ID:bucket/*`, `ConnectionName` `aws:s3tables`},
+     empty `CreateDatabaseDefaultPermissions` and `CreateTableDefaultPermissions`, and
+     `AllowFullTableExternalDataAccess`. It also passes `--tags "$TAGS_JSON"` and treats
+     `AlreadyExistsException` as success;
+  4. polls `get-catalog` until the catalog is visible (bounded retries).
+
+  Never call `delete-catalog`. Add a `shellcheck` run to `make lint` if the repo has none.
+- [ ] T075 Create `modules/account-settings/catalog.tf` with `terraform_data.s3tables_catalog`
+  (count = owner):
+  - `input`: the catalog definition plus the account and Region;
+  - a create-time `local-exec` running the T074 script with `environment` values only;
+  - no destroy-time provisioner, and `lifecycle { destroy = false }` (FR-030);
+  - `depends_on`: the data-lake settings and the new `catalog_registration_ready` input.
+
+  Add `s3tables_catalog` (`allow_full_table_external_data_access`, default true) and
+  `catalog_registration_ready` to `modules/account-settings/variables.tf`, and an
+  `s3tables_catalog_ready` output (the `terraform_data` ID) to `outputs.tf`.
+- [ ] T076 Edit `modules/catalog-integration/`:
+  - `main.tf`: remove `aws_glue_catalog.s3tables` and add `removed { from =
+    aws_glue_catalog.s3tables lifecycle { destroy = false } }` (FR-031).
+  - `variables.tf`: remove the `allow_full_table_external_data_access` variable.
+  - `outputs.tf`: replace `catalog_name` and `catalog_arn` with a `registration_id` output.
+- [ ] T077 Root wiring:
+  - **`variables.tf`**:
+    - add `account_settings_config.s3tables_catalog.allow_full_table_external_data_access`
+      (default true), documenting the consequence;
+    - remove `allow_full_table_external_data_access` from `catalog_integration_config`, keeping
+      it optional for one release, with a validation that rejects it and names the new
+      attribute;
+    - add it to the owner-only defaults check (`locals.tf` `owner_only_inputs_default`).
+  - **`main.tf`**: pass `catalog_registration_ready` (the integration's `registration_id`, or "" when
+    another deployment owns the integration) into `module.account_settings`. Make
+    `module.catalog_integration` grants and the platform LF-tags depend on
+    `s3tables_catalog_ready`.
+  - **`outputs.tf`**: `catalog_name` becomes the constant `s3tablescatalog` whenever the module is
+    enabled.
+  - **Examples**: update `examples/complete`, `examples/secondary`, and the `verify/fixture` inputs.
+- [ ] T078 [P] Edit `modules/deployer/main.tf`:
+  - keep `glue:CreateCatalog`, `glue:GetCatalog`, and `glue:TagResource` on the catalog ARN;
+  - add `sts:GetCallerIdentity`;
+  - **remove `glue:DeleteCatalog` and `glue:UpdateCatalog`** from the platform scope, so the
+    deployer can't delete the catalog either (FR-030).
+
+  Update `test/deployer_test.go`.
+- [ ] T079 [P] Plan-only tests in `test/account_settings_test.go`:
+  - an owner plans `terraform_data.s3tables_catalog` with the expected `input`, including
+    `allow_full_table_external_data_access = true` by default and false when overridden;
+  - a non-owner plans none;
+  - no `aws_glue_catalog` resource appears in any example plan;
+  - the old `catalog_integration_config.allow_full_table_external_data_access` attribute is
+    rejected (`test/validation_test.go`).
+- [ ] T080 [P] `lfverify`:
+  - add check op `s3tables_catalog` (`verify/internal/ops/settings.go`, `matrix.go`, `dispatch.go`)
+    for FR-020 case 11: `glue:GetCatalog` and compare the federated identifier, connection, empty
+    default permissions, and `allow_full_table_external_data_access` with `expect_values`;
+  - add case `admin-s3tables-catalog` to `verify/matrix/full.yaml` and
+    `verify/matrix/probe.example.yaml`, and tests;
+  - make `verify-down` fail unless `get-catalog` still finds `s3tablescatalog` after teardown
+    (FR-030).
+- [ ] T081 [P] Docs:
+  - **`README.md`**: an "S3 Tables catalog" section covering check-and-create, never deleted, the
+    AWS CLI and ambient-credential requirement, the `AllowFullTableExternalDataAccess` default and
+    its consequence, and the upgrade (removed, not destroyed).
+  - **Module READMEs**: `modules/account-settings/README.md` and
+    `modules/catalog-integration/README.md` (replace "Importing an existing catalog").
+  - **`AGENTS.md`**: the components list.
+- [ ] T082 Run `make pre-commit` and `make validate`, then `make security-scan`. Suppress any
+  Checkov finding on the provisioner with a justification.
+- [ ] T083 Sandbox runs, recorded in `sandbox-results.md`:
+  1. `make verify-full` with the consumer in `492637581429`: the first apply creates the catalog
+     when missing (or leaves it), case 11 passes, and the catalog survives `verify-down`;
+  2. a second `make verify-full`: the catalog is left unchanged;
+  3. `make verify-upgrade UPGRADE_FROM=<last commit that managed aws_glue_catalog>`: the plan shows
+     the catalog "will no longer be managed" (not destroyed), and it survives teardown.
+
+**Checkpoint**: The catalog is created only when missing, matches FR-029, and survives every
+destroy and upgrade path.
+
+---
+
 ## Dependencies and Execution Order
 
 ### Phase Dependencies
@@ -792,6 +892,9 @@ once the consumer exists, sharing and revocation.
 - **Phase 6** (Examples and Tests) depends on Phase 5.
 - **Phase 7** (Harness) depends on Phase 6. The fixture applies the module.
 - **Phase N** depends on all phases. T069 can be done at any time.
+- **Phase 8** (Federated Table Storage Catalog, added 2026-11-19) depends on Phases 2 and 7. T073
+  comes first. T074 blocks T075. T076 and T077 follow T075. T078 to T081 can run in parallel.
+  T082 and T083 come last.
 
 ### Resource Dependency Order (at apply time)
 
@@ -856,6 +959,8 @@ once the consumer exists, sharing and revocation.
 - T062, T063, and T064, after the Harness: `make test-verify`, `make test-verify-fixture`,
   `make verify-full` in both modes plus the mode switch, and `make verify-upgrade`.
 - T070 and T071, after Polish: `make security-scan`, `make pre-commit`, `make validate`.
+- T082 and T083, after the federated catalog: `make validate`, `make security-scan`, and the
+  sandbox create, leave-unchanged, and upgrade runs.
 
 ### Environment Order
 
