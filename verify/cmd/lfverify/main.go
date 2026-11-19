@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lakeformation"
+	lftypes "github.com/aws/aws-sdk-go-v2/service/lakeformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3tables"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -65,6 +66,8 @@ full mode (sandbox accounts, from a repository checkout through make verify-*):
   detect         apply each misconfiguration overlay and require a failing case
   cleanup        sweep a run's resources by prefix and restore the data-lake settings
   check-target   refuse unless the credentials point at the run's checked account and Region
+  consumer-admin with consumer-account credentials, add LFVERIFY_CONSUMER_ADMIN_ARN as a
+                 data-lake admin there, keeping every other setting
   probe-matrix   derive a probe matrix from --matrix (full) and --manifest, written to --out
 
 other:
@@ -89,6 +92,7 @@ var commandFlags = map[string][]string{
 	"detect":         {"matrix", "manifest", "run-id", "out", "apply-cmd", "workers"},
 	"cleanup":        {"run-id", "out", "tables-only"},
 	"check-target":   {"run-id", "out"},
+	"consumer-admin": {"allow-list"},
 	"probe-matrix":   {"matrix", "manifest", "run-id", "out"},
 	"version":        {},
 }
@@ -295,6 +299,8 @@ func dispatch(ctx context.Context, cmd string, args []string) error {
 		return cmdCleanup(ctx, f)
 	case "check-target":
 		return cmdCheckTarget(ctx, f)
+	case "consumer-admin":
+		return cmdConsumerAdmin(ctx, f)
 	case "probe-matrix":
 		return cmdProbeMatrix(f)
 	}
@@ -855,6 +861,51 @@ func cmdCheckTarget(ctx context.Context, f *flags) error {
 		return err
 	}
 	return preflight.CheckTarget(filepath.Join(dir, "target.json"), e.target())
+}
+
+// cmdConsumerAdmin makes LFVERIFY_CONSUMER_ADMIN_ARN a data-lake admin in the consumer sandbox
+// account of the spec 003 sharing cases, so the fixture's consumer grants can be made. It runs
+// with the consumer account's credentials, only in an allow-listed account, and writes back the
+// settings it read with that one admin added: PutDataLakeSettings replaces the whole object, and
+// the account's other admins (for example SageMaker Unified Studio roles) must survive. The admin
+// stays after the run.
+func cmdConsumerAdmin(ctx context.Context, f *flags) error {
+	admin := os.Getenv("LFVERIFY_CONSUMER_ADMIN_ARN")
+	if !regexp.MustCompile(`^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$`).MatchString(admin) {
+		return fmt.Errorf("%w: LFVERIFY_CONSUMER_ADMIN_ARN must be an IAM role ARN, got %q", errUsage, admin)
+	}
+	allow, err := preflight.LoadAllowList(f.allow)
+	if err != nil {
+		return err
+	}
+	e, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	if !allow[e.account+" "+e.cfg.Region] {
+		return fmt.Errorf("%w: consumer account %s %s is not in the allow-list", preflight.ErrRefused, e.account, e.cfg.Region)
+	}
+	if !strings.Contains(admin, ":"+e.account+":") {
+		return fmt.Errorf("%w: %s is not in the consumer account %s", errUsage, admin, e.account)
+	}
+	lf := lakeformation.NewFromConfig(e.cfg)
+	out, err := lf.GetDataLakeSettings(ctx, &lakeformation.GetDataLakeSettingsInput{})
+	if err != nil {
+		return err
+	}
+	s := out.DataLakeSettings
+	for _, a := range s.DataLakeAdmins {
+		if aws.ToString(a.DataLakePrincipalIdentifier) == admin {
+			logf("consumer-admin: %s is already a data-lake admin in %s", admin, e.account)
+			return nil
+		}
+	}
+	s.DataLakeAdmins = append(s.DataLakeAdmins, lftypes.DataLakePrincipal{DataLakePrincipalIdentifier: aws.String(admin)})
+	if _, err := lf.PutDataLakeSettings(ctx, &lakeformation.PutDataLakeSettingsInput{DataLakeSettings: s}); err != nil {
+		return err
+	}
+	logf("consumer-admin: added %s as a data-lake admin in %s (%d admins)", admin, e.account, len(s.DataLakeAdmins))
+	return nil
 }
 
 func versionString() string {

@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-consumer-admin verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -214,8 +214,13 @@ verify-init:
 	@mkdir -p $(VERIFY_OUT)
 	@$(VERIFY_TF) init -input=false -reconfigure -backend-config=path=$(VERIFY_OUT)/terraform.tfstate >/dev/null
 
+verify-consumer-admin: verify-build ## Make LFVERIFY_CONSUMER_ADMIN_ARN a data-lake admin in the CONSUMER_PROFILE account (kept; other settings untouched)
+	@test -n "$(CONSUMER_PROFILE)" -a -n "$(LFVERIFY_CONSUMER_ADMIN_ARN)" || { echo "$(RED)✗ set CONSUMER_PROFILE and LFVERIFY_CONSUMER_ADMIN_ARN$(RESET)"; exit 1; }
+	@AWS_PROFILE=$(CONSUMER_PROFILE) LFVERIFY_CONSUMER_ADMIN_ARN=$(LFVERIFY_CONSUMER_ADMIN_ARN) $(LFVERIFY) consumer-admin --allow-list $(CURDIR)/verify/sandbox-accounts.txt
+
 verify-up: check-aws verify-build verify-init ## Preflight, then apply fixture stage 1
 	@$(LFVERIFY) preflight --mode full --run-id $(RUN_ID) --out $(VERIFY_OUT) --allow-list $(CURDIR)/verify/sandbox-accounts.txt
+	@if [ -n "$(CONSUMER_PROFILE)" ] && [ -n "$(LFVERIFY_CONSUMER_ADMIN_ARN)" ]; then $(MAKE) -s verify-consumer-admin; fi
 	@$(VERIFY_TF) apply -input=false -auto-approve $(VERIFY_VARS) -var stage=1
 	@$(VERIFY_TF) output -json manifest > $(VERIFY_MANIFEST)
 	@echo "$(GREEN)✓ Fixture stage 1 applied (run $(RUN_ID))$(RESET)"

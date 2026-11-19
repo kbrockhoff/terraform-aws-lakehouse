@@ -111,6 +111,10 @@ It covers these personas:
     `sandbox-accounts.txt`;
   - the profile's role is already a Lake Formation data-lake admin there.
 
+  Set `LFVERIFY_CONSUMER_ADMIN_ARN` to that role's ARN, and `make verify-up` (or
+  `make verify-consumer-admin`) adds it as a data-lake admin in the consumer account. It keeps
+  every other admin and setting, and the admin stays after the run.
+
   The fixture shares tenant alpha with that account, then creates a resource link, an Athena
   workgroup, and LF-tag grants there. It never edits the consumer's data-lake settings, which
   would remove that account's other admins. Without the profile, the consumer persona is skipped.

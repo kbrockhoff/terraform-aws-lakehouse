@@ -209,6 +209,12 @@ resource "aws_glue_catalog_database" "consumer_link" {
     database_name = local.consumer_share.databases["curated"]
   }
 
+  # A resource link reads back its target's parameters and federation, which are not the link's
+  # own. Updating them needs ALTER on the producer's database, so they are ignored.
+  lifecycle {
+    ignore_changes = [parameters, federated_database]
+  }
+
   depends_on = [terraform_data.consumer_guard]
 }
 
