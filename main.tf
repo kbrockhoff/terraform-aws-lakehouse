@@ -27,6 +27,7 @@ module "account_settings" {
   catalog_encryption           = var.account_settings_config.catalog_encryption
   catalog_resource_policy      = var.account_settings_config.catalog_resource_policy
   permissions_boundary_arn     = var.account_settings_config.permissions_boundary_arn
+  s3tables_catalog             = var.account_settings_config.s3tables_catalog
   kms_key_deletion_window_days = local.effective_config.kms_key_deletion_window_days
 
   key_user_arns = local.tenant_persona_arns
@@ -44,14 +45,13 @@ module "catalog_integration" {
   source = "./modules/catalog-integration"
   count  = var.enabled && var.catalog_integration_config.enabled ? 1 : 0
 
-  name_prefix                           = local.name_prefix
-  account_id                            = local.account_id
-  partition                             = local.partition
-  region                                = local.region
-  tags                                  = local.common_tags
-  settings_ready                        = local.settings_ready
-  permissions_boundary_arn              = var.account_settings_config.permissions_boundary_arn
-  allow_full_table_external_data_access = var.catalog_integration_config.allow_full_table_external_data_access
+  name_prefix              = local.name_prefix
+  account_id               = local.account_id
+  partition                = local.partition
+  region                   = local.region
+  tags                     = local.common_tags
+  settings_ready           = local.settings_ready
+  permissions_boundary_arn = var.account_settings_config.permissions_boundary_arn
 }
 
 moved {
@@ -81,7 +81,7 @@ resource "terraform_data" "settings_guard" {
 
     precondition {
       condition     = local.owner_only_inputs_default
-      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, and permissions_boundary_arn must keep their defaults. Set them in the owner deployment."
+      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, permissions_boundary_arn, and s3tables_catalog must keep their defaults. Set them in the owner deployment."
     }
 
     precondition {

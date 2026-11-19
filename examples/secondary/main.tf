@@ -23,9 +23,8 @@ module "main" {
   }
 
   catalog_integration_config = {
-    enabled                               = false
-    data_access_role_arn                  = var.data_access_role_arn
-    allow_full_table_external_data_access = false
+    enabled              = false
+    data_access_role_arn = var.data_access_role_arn
   }
 
   # Another deployment owns the account-wide Lake Formation and Glue settings. This deployment

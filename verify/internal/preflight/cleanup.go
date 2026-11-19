@@ -396,9 +396,10 @@ func notFound(err error) bool {
 	return strings.Contains(s, "NotFound") || strings.Contains(s, "NoSuchEntity") || strings.Contains(s, "NoSuchBucket") || strings.Contains(s, "does not exist")
 }
 
-// accountIntegration removes the federated catalog and the bucket registration, but only when
-// the registration's role carries the run prefix: that proves this run's fixture created them,
-// so another deployment's integration is never touched.
+// accountIntegration removes the bucket registration, but only when the registration's role carries
+// the run prefix: that proves this run's fixture created it, so another deployment's integration is
+// never touched. The federated s3tablescatalog is never deleted: every deployment in the account
+// shares it, and the module only creates it when missing (spec 003 FR-030).
 func (s *Sweeper) accountIntegration(ctx context.Context) error {
 	out, err := s.LF.ListResources(ctx, &lakeformation.ListResourcesInput{})
 	if err != nil {
@@ -410,13 +411,6 @@ func (s *Sweeper) accountIntegration(ctx context.Context) error {
 		}
 		s.logf("deregister %s (role %s)", aws.ToString(r.ResourceArn), aws.ToString(r.RoleArn))
 		if _, err := s.LF.DeregisterResource(ctx, &lakeformation.DeregisterResourceInput{ResourceArn: r.ResourceArn}); err != nil && !notFound(err) {
-			return err
-		}
-		if s.Glue == nil {
-			continue
-		}
-		s.logf("delete federated catalog s3tablescatalog")
-		if _, err := s.Glue.DeleteCatalog(ctx, &glue.DeleteCatalogInput{CatalogId: aws.String("s3tablescatalog")}); err != nil && !notFound(err) {
 			return err
 		}
 	}

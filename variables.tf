@@ -73,16 +73,21 @@ variable "zones_config" {
 # ----
 
 variable "catalog_integration_config" {
-  description = "Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN."
+  description = "Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN. allow_full_table_external_data_access moved to account_settings_config.s3tables_catalog."
   type = object({
     enabled                               = bool
     data_access_role_arn                  = string
-    allow_full_table_external_data_access = bool
+    allow_full_table_external_data_access = optional(bool)
   })
   default = {
-    enabled                               = true
-    data_access_role_arn                  = ""
-    allow_full_table_external_data_access = false
+    enabled              = true
+    data_access_role_arn = ""
+  }
+
+  # The catalog moved to modules/account-settings (spec 003 FR-029 to FR-031)
+  validation {
+    condition     = var.catalog_integration_config.allow_full_table_external_data_access == null
+    error_message = "catalog_integration_config.allow_full_table_external_data_access moved to account_settings_config.s3tables_catalog.allow_full_table_external_data_access."
   }
 
   validation {
@@ -118,6 +123,10 @@ variable "account_settings_config" {
       deletion of, or disable, the catalog key. Empty makes the protection absolute.
     - catalog_resource_policy: optional Glue resource policy; only RAM sharing plus Deny statements.
     - permissions_boundary_arn: boundary for the module-created Lake Formation and Glue roles.
+    - s3tables_catalog.allow_full_table_external_data_access (default true): set on s3tablescatalog
+      when the owner creates it, which happens only when it is missing; an existing catalog is never
+      changed or deleted. True lets third-party engines get credentials without session tags when
+      the caller has full table access.
   EOT
   type = object({
     owner                 = optional(bool)
@@ -140,6 +149,9 @@ variable "account_settings_config" {
       deny_policy_jsons = optional(list(string), [])
     }), {})
     permissions_boundary_arn = optional(string, "")
+    s3tables_catalog = optional(object({
+      allow_full_table_external_data_access = optional(bool, true)
+    }), {})
   })
   default = {}
 

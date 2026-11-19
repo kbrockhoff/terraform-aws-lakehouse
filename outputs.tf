@@ -8,8 +8,8 @@ output "zone_table_bucket_arns" {
 }
 
 output "catalog_name" {
-  description = "Name of the federated S3 Tables Glue catalog. Empty when this deployment does not own the catalog integration or enabled = false."
-  value       = var.enabled && var.catalog_integration_config.enabled ? module.catalog_integration[0].catalog_name : ""
+  description = "Name of the federated S3 Tables Glue catalog, which every deployment in the account and Region shares. The account-settings owner creates it when missing and never deletes it. Empty when enabled = false."
+  value       = var.enabled ? "s3tablescatalog" : ""
 }
 
 output "data_access_role_arn" {

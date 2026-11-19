@@ -821,6 +821,9 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
     aws_glue_catalog.s3tables lifecycle { destroy = false } }` (FR-031).
   - `variables.tf`: remove the `allow_full_table_external_data_access` variable.
   - `outputs.tf`: remove `catalog_name` and `catalog_arn`.
+  - Also (found while implementing): `verify/internal/preflight/cleanup.go` `accountIntegration`
+    deleted `s3tablescatalog` on every `verify-down`. It now only deregisters the run's
+    registration (FR-030).
 - [ ] T077 Root wiring:
   - **`variables.tf`**:
     - add `account_settings_config.s3tables_catalog.allow_full_table_external_data_access`
@@ -829,8 +832,10 @@ The catalog moves out of `modules/catalog-integration`, which forgets it without
       it optional for one release, with a validation that rejects it and names the new
       attribute;
     - add it to the owner-only defaults check (`locals.tf` `owner_only_inputs_default`).
-  - **`main.tf`**: make `module.catalog_integration` grants and the platform LF-tags depend on
-    `s3tables_catalog_ready`.
+  - **`main.tf`**: pass `s3tables_catalog` into `module.account_settings`, and drop the old input
+    from `module.catalog_integration`. The platform LF-tags already depend on the whole
+    `module.account_settings`, which includes the catalog step, and `module.catalog_integration`
+    has no grants on the catalog, so no new ordering is needed.
   - **`outputs.tf`**: `catalog_name` becomes the constant `s3tablescatalog` whenever the module is
     enabled.
   - **Examples**: update `examples/complete`, `examples/secondary`, and the `verify/fixture` inputs.

@@ -106,9 +106,8 @@ func TestOwnerFlagCombinations(t *testing.T) {
 			vars["account_settings_config"] = map[string]interface{}{"owner": c.owner}
 			if !c.integration {
 				vars["catalog_integration_config"] = map[string]interface{}{
-					"enabled":                               false,
-					"data_access_role_arn":                  "arn:aws:iam::123456789012:role/owner-lf-s3tables-access",
-					"allow_full_table_external_data_access": false,
+					"enabled":              false,
+					"data_access_role_arn": "arn:aws:iam::123456789012:role/owner-lf-s3tables-access",
 				}
 			}
 			plan, err := terraform.InitAndPlanAndShowWithStructE(t, exampleOptions(t, "complete", vars))

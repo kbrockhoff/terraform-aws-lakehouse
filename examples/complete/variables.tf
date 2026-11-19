@@ -120,9 +120,8 @@ variable "catalog_integration_config" {
   description = "Account-level catalog integration"
   type        = any
   default = {
-    enabled                               = true
-    data_access_role_arn                  = ""
-    allow_full_table_external_data_access = false
+    enabled              = true
+    data_access_role_arn = ""
   }
 }
 

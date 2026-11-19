@@ -19,22 +19,17 @@ resource "aws_lakeformation_resource" "s3tables" {
   with_federation       = true
   hybrid_access_enabled = false
 
-  # Registration and the catalog need the deploying role to be a data-lake admin first
+  # Registration needs the deploying role to be a data-lake admin first
   depends_on = [aws_iam_role_policy.lf_s3tables_access, terraform_data.settings_ready]
 }
 
-# Federated catalog exposing S3 table buckets to Glue, Athena, and Lake Formation
-resource "aws_glue_catalog" "s3tables" {
-  name = "s3tablescatalog"
+# The federated s3tablescatalog moved to modules/account-settings, which creates it only when it
+# is missing and never deletes it (spec 003 FR-029 to FR-031). Forget the catalog without deleting
+# it: a delete would drop every catalog grant and bucket catalog for all deployments in the account.
+removed {
+  from = aws_glue_catalog.s3tables
 
-  federated_catalog {
-    identifier      = local.table_buckets_arn
-    connection_name = "aws:s3tables"
+  lifecycle {
+    destroy = false
   }
-
-  allow_full_table_external_data_access = var.allow_full_table_external_data_access ? "True" : "False"
-
-  tags = var.tags
-
-  depends_on = [aws_lakeformation_resource.s3tables, terraform_data.settings_ready]
 }

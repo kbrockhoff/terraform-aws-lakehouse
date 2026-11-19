@@ -97,7 +97,7 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"unknown compliance framework", map[string]interface{}{"claims_compliance_frameworks": []string{"HIPAA", "ISO27001"}},
 			"compliance_frameworks may contain only"},
 		{"integration disabled without role", map[string]interface{}{"catalog_integration_config": map[string]interface{}{
-			"enabled": false, "data_access_role_arn": "", "allow_full_table_external_data_access": false}},
+			"enabled": false, "data_access_role_arn": ""}},
 			"valid IAM role ARN when enabled is false"},
 		{"zone with underscore", map[string]interface{}{"zones_config": map[string]interface{}{"zones": []string{"raw", "raw_v2"}}},
 			"no underscores"},

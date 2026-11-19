@@ -62,9 +62,3 @@ variable "permissions_boundary_arn" {
     error_message = "permissions_boundary_arn must be empty or an IAM policy ARN."
   }
 }
-
-variable "allow_full_table_external_data_access" {
-  description = "Allow third-party engines to access full tables in the federated s3tablescatalog."
-  type        = bool
-  default     = false
-}
