@@ -141,7 +141,19 @@ module "lakehouse" {
     dml_workgroup_enabled = true
   }
 
+  # The fixture owns the account settings (Ephemeral) and supplies the long-lived catalog key
+  account_settings_config = {
+    catalog_encryption = {
+      key_access_mode = var.catalog_key_access_mode
+      kms_key_arn     = var.catalog_kms_key_arn
+    }
+  }
+
   governance_config = {
+    # lfverify setup and cleanup call s3tables:DeleteTable directly as the runner, which the
+    # table-bucket deny otherwise blocks (sandbox-results.md item 4). Personas stay non-exempt.
+    direct_access_exempt_principal_arns = [local.runner_role_arn]
+
     # missing_grant on admin or roadmin removes that persona from its list
     admin_principal_arns = concat(
       [local.runner_role_arn],

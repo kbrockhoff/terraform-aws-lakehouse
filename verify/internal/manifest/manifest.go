@@ -80,6 +80,8 @@ type Manifest struct {
 	} `json:"styles"`
 	Tables    map[string]Table `json:"tables"`
 	KMSKeyARN string           `json:"kms_key_arn"`
+	// AccountSettings are the values the spec 003 check cases expect (absent in older fixtures)
+	AccountSettings map[string]string `json:"account_settings,omitempty"`
 }
 
 // Load reads a manifest written by `terraform output -json manifest`.

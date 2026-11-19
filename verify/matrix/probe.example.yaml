@@ -71,3 +71,38 @@ personas:
         expect: inspect
         expect_permissions: [ALTER, DELETE, DESCRIBE, INSERT, SELECT]
         rule: Writers hold SELECT, INSERT, DELETE, ALTER, and DESCRIBE, and no DROP in Enhanced
+
+  # Spec 003 account settings checks (FR-020 cases 3 to 5). They only read settings, so they are
+  # safe in production. A read-only Lake Formation admin role can run them; it also needs
+  # glue:GetDataCatalogEncryptionSettings and glue:GetResourcePolicy.
+  - key: platform_auditor
+    role_arn: arn:aws:iam::123456789012:role/lakehouse-auditor
+    cases:
+      - id: auditor-account-settings
+        op: account_settings
+        expect: match
+        expect_values:
+          cross_account_version: "4"
+          allow_external_data_filtering: "false"
+          allow_full_table_external_data_access: "false"
+          create_database_default_permissions: none
+          create_table_default_permissions: none
+        rule: spec 003 FR-003 and FR-005
+      - id: auditor-catalog-encryption
+        op: catalog_encryption
+        expect: match
+        expect_values:
+          mode: SSE-KMS-WITH-SERVICE-ROLE
+          kms_key_arn: arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000000
+          connection_passwords_encrypted: "true"
+        rule: spec 003 FR-009 and FR-010
+      - id: auditor-catalog-resource-policy
+        op: catalog_resource_policy
+        expect: match
+        rule: spec 003 FR-006 - no policy, or one that allows RAM sharing
+      - id: auditor-no-iam-allowed-principals
+        op: no_iam_allowed_principals
+        resource: { catalog_id: "123456789012:s3tablescatalog/prod-curated", database: sales }
+        expect: match
+        rule: spec 003 FR-020 case 5 - checks the database and its tables
+

@@ -52,6 +52,8 @@ const (
 	// Inspect compares the persona's effective permissions instead of attempting the operation
 	// (probe mode, FR-029)
 	Inspect Expect = "inspect"
+	// Match runs a check op and passes when the live settings match expect_values (spec 003)
+	Match Expect = "match"
 )
 
 // Op is an operation a persona attempts.
@@ -81,6 +83,15 @@ const (
 	GetSettings     Op = "get_settings"
 	PutSettings     Op = "put_settings"
 	StorageRead     Op = "storage_read"
+	// StorageWrite writes an object to table storage with the persona's own credentials, bypassing
+	// Lake Formation (spec 003 FR-015)
+	StorageWrite Op = "storage_write"
+
+	// Check ops read account-wide settings and compare them with expect_values (spec 003 FR-020)
+	AccountSettings        Op = "account_settings"
+	CatalogEncryption      Op = "catalog_encryption"
+	CatalogResourcePolicy  Op = "catalog_resource_policy"
+	NoIAMAllowedPrincipals Op = "no_iam_allowed_principals"
 
 	// Rule-boundary operations (FR-021): each attempts a grant the permission service must reject
 	GrantColumnsWithWrite Op = "grant_columns_with_write"
@@ -93,10 +104,13 @@ var readOps = []Op{
 	ListPermissions, GetSettings,
 }
 
+// CheckOps compare live settings with expectations instead of testing a persona's access.
+var CheckOps = []Op{AccountSettings, CatalogEncryption, CatalogResourcePolicy, NoIAMAllowedPrincipals}
+
 var writeOps = []Op{
 	Insert, Update, Delete, CreateTable, AlterTable, DropTable, Grant, Revoke, AddLFTags,
 	CreateLFTag, CreateFilter, PutSettings, GrantColumnsWithWrite, GrantExcludePartition,
-	CreateFilterMapColumn,
+	CreateFilterMapColumn, StorageWrite,
 }
 
 // QueryOps run through the query engine and need a workgroup.
@@ -106,7 +120,7 @@ var QueryOps = []Op{Select, SelectColumns, Count, Insert, Update, Delete}
 func (o Op) IsWrite() bool { return slices.Contains(writeOps, o) }
 
 func (o Op) known() bool {
-	return slices.Contains(readOps, o) || slices.Contains(writeOps, o) || o == StorageRead
+	return slices.Contains(readOps, o) || slices.Contains(writeOps, o) || slices.Contains(CheckOps, o) || o == StorageRead
 }
 
 // Setup is a mutation the runner applies before one scenario case.
@@ -178,12 +192,15 @@ type Case struct {
 	Resource Resource `yaml:"resource"`
 	Expect   Expect   `yaml:"expect"`
 
-	ExpectColumns     []string             `yaml:"expect_columns,omitempty"`
-	AbsentColumns     []string             `yaml:"absent_columns,omitempty"`
-	ExpectPermissions []string             `yaml:"expect_permissions,omitempty"`
-	ExpectRows        *Rows                `yaml:"expect_rows,omitempty"`
-	RowPredicate      *predicate.Predicate `yaml:"row_predicate,omitempty"`
-	MaxRows           *int                 `yaml:"max_rows,omitempty"`
+	ExpectColumns     []string `yaml:"expect_columns,omitempty"`
+	AbsentColumns     []string `yaml:"absent_columns,omitempty"`
+	ExpectPermissions []string `yaml:"expect_permissions,omitempty"`
+	// ExpectValues are the settings a check op compares (expect: match). In full mode a value of
+	// "manifest" takes the fixture's expected value instead.
+	ExpectValues map[string]string    `yaml:"expect_values,omitempty"`
+	ExpectRows   *Rows                `yaml:"expect_rows,omitempty"`
+	RowPredicate *predicate.Predicate `yaml:"row_predicate,omitempty"`
+	MaxRows      *int                 `yaml:"max_rows,omitempty"`
 
 	// Setup names a mutation the runner applies before the case and reverts after it (full
 	// mode, phase scenario only)
@@ -330,8 +347,17 @@ func (m *Matrix) validateCase(c Case) []error {
 	if !slices.Contains([]Phase{Static, Scenario, Boundary}, c.Phase) {
 		add("unknown phase %q", c.Phase)
 	}
-	if !slices.Contains([]Expect{Allowed, Denied, Rejected, Absent, Inspect}, c.Expect) {
+	if !slices.Contains([]Expect{Allowed, Denied, Rejected, Absent, Inspect, Match}, c.Expect) {
 		add("unknown expect %q", c.Expect)
+	}
+	if slices.Contains(CheckOps, c.Op) != (c.Expect == Match) {
+		add("expect match is for check ops (%v), and check ops need expect: match", CheckOps)
+	}
+	if len(c.ExpectValues) > 0 && c.Expect != Match {
+		add("expect_values needs expect: match")
+	}
+	if slices.Contains(CheckOps, c.Op) && m.Mode == Full && c.Style != Label {
+		add("check ops read account-wide settings once; use style: label")
 	}
 	if c.Expect == Absent && len(c.AbsentColumns) == 0 && !slices.Contains([]Op{ListCatalogs, ListDatabases, ListTables}, c.Op) {
 		add("expect absent needs absent_columns, or a list op")
@@ -351,8 +377,8 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Expect != Denied {
 			add("denied_by needs expect: denied")
 		}
-		if c.Op == StorageRead {
-			add("denied_by does not apply to storage_read, which bypasses Lake Formation")
+		if c.Op == StorageRead || c.Op == StorageWrite {
+			add("denied_by does not apply to %s, which bypasses Lake Formation", c.Op)
 		}
 	}
 	if c.RowPredicate != nil {
@@ -374,7 +400,7 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Expect == Inspect && len(c.ExpectPermissions) == 0 {
 			add("expect inspect needs expect_permissions")
 		}
-		if c.Op != GetSettings && c.Op != ListCatalogs && (c.Resource.CatalogID == "" || c.Resource.Database == "") {
+		if c.Op != GetSettings && c.Op != ListCatalogs && c.Op != AccountSettings && c.Op != CatalogEncryption && c.Op != CatalogResourcePolicy && (c.Resource.CatalogID == "" || c.Resource.Database == "") {
 			add("probe resources need catalog_id and database")
 		}
 		if slices.Contains(QueryOps, c.Op) && c.Expect != Inspect && c.Resource.Workgroup == "" {

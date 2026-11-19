@@ -52,5 +52,12 @@ output "manifest" {
 
     tables      = local.tables
     kms_key_arn = module.lakehouse.kms_key_arn
+
+    # Expected account settings for the spec 003 check cases
+    account_settings = {
+      cross_account_version   = "4"
+      catalog_encryption_mode = module.lakehouse.catalog_encryption_mode
+      catalog_kms_key_arn     = module.lakehouse.catalog_kms_key_arn
+    }
   }
 }

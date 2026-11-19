@@ -61,7 +61,8 @@ resource "aws_iam_role" "persona" {
 # Identity policies grant API reachability only; Lake Formation decides every data and metadata
 # outcome. No persona policy may allow s3tables:GetTableData, s3tables:GetTableMetadataLocation,
 # s3tables:PutTableData, or s3:GetObject on table storage: the storage-bypass cases (FR-022)
-# expect those calls to be denied.
+# expect those calls to be denied. The one exception is the bypass persona below, which holds them
+# on purpose so the table-bucket deny is what refuses it (spec 003 FR-015).
 
 resource "aws_iam_role_policy" "module_doc" {
   for_each = local.persona_module_docs
@@ -133,6 +134,14 @@ data "aws_iam_policy_document" "admin" {
     effect    = "Allow"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [module.lakehouse.kms_key_arn]
+  }
+
+  # Spec 003 check cases read the account's catalog settings
+  statement {
+    sid       = "CatalogSettings"
+    effect    = "Allow"
+    actions   = ["glue:GetDataCatalogEncryptionSettings", "glue:GetResourcePolicy"]
+    resources = ["arn:${local.partition}:glue:${local.region}:${local.account_id}:catalog"]
   }
 }
 
@@ -213,4 +222,66 @@ resource "aws_iam_role_policy" "roadmin" {
   name   = "lfverify-roadmin"
   role   = aws_iam_role.persona["roadmin"].id
   policy = data.aws_iam_policy_document.roadmin.json
+}
+
+# ----
+# Bypass persona (spec 003 FR-015, FR-020 cases 1 and 2)
+# ----
+
+data "aws_iam_policy_document" "bypass" {
+  statement {
+    sid       = "DirectTableStorage"
+    effect    = "Allow"
+    actions   = ["s3tables:*"]
+    resources = flatten([for b in values(module.lakehouse.zone_table_bucket_arns) : [b, "${b}/*"]])
+  }
+
+  # Table data objects live in service-named buckets (<uuid>--table-s3), so they cannot be
+  # scoped by name here; the table-bucket deny is the control under test
+  statement {
+    sid       = "DirectTableObjects"
+    effect    = "Allow"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["arn:${local.partition}:s3:::*--table-s3/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "bypass" {
+  name   = "direct-storage"
+  role   = aws_iam_role.persona["bypass"].id
+  policy = data.aws_iam_policy_document.bypass.json
+}
+
+# ----
+# Catalog key access in per_caller mode (spec 003 FR-010)
+# ----
+
+# The long-lived key delegates to IAM, and fixture roles come and go with each run, so each
+# persona gets key use through its own policy rather than the key policy
+data "aws_iam_policy_document" "catalog_key_user" {
+  statement {
+    sid    = "CatalogKey"
+    effect = "Allow"
+    actions = [
+      "kms:CreateGrant",
+      "kms:Decrypt",
+      "kms:DescribeKey",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = [var.catalog_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:EncryptionContext:glue_catalog_id"
+      values   = [local.account_id]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "catalog_key_user" {
+  for_each = var.catalog_key_access_mode == "per_caller" ? local.personas : {}
+
+  name   = "catalog-key"
+  role   = aws_iam_role.persona[each.key].id
+  policy = data.aws_iam_policy_document.catalog_key_user.json
 }

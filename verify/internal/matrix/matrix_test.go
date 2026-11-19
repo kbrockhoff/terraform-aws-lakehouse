@@ -65,6 +65,14 @@ func TestInvalid(t *testing.T) {
 		{"via on both styles", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: gamma, table: t, via: named}, expect: denied}\n", "applies only to label-style query cases"},
 		{"via on a catalog op", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, style: label, op: get_table, resource: {tenant: gamma, table: t, via: named}, expect: denied}\n", "applies only to label-style query cases"},
 		{"via in probe mode", "mode: probe\npersonas:\n  - key: a\n    role_arn: arn:aws:iam::1:role/a\n    cases:\n      - {id: x, op: select, resource: {catalog_id: c, database: d, table: t, workgroup: w, via: named}, expect: denied}\n", "via is for full mode"},
+		// Spec 003 check ops and direct storage writes
+		{"check op without match", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, style: label, op: account_settings, expect: allowed}\n", "check ops need expect: match"},
+		{"match on an access op", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: alpha, table: t}, expect: match}\n", "expect match is for check ops"},
+		{"expect_values without match", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: select, resource: {tenant: alpha, table: t}, expect: denied, expect_values: {mode: SSE-KMS}}\n", "expect_values needs expect: match"},
+		{"check op on both styles", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: catalog_encryption, expect: match}\n", "use style: label"},
+		{"denied_by on storage_write", "mode: full\npersonas:\n  - key: a\n    cases:\n      - {id: x, op: storage_write, resource: {tenant: alpha, table: t}, expect: denied, denied_by: lake_formation}\n", "does not apply to storage_write"},
+		{"probe IAM_ALLOWED_PRINCIPALS check without a database", "mode: probe\npersonas:\n  - key: a\n    role_arn: arn:aws:iam::1:role/a\n    cases:\n      - {id: x, op: no_iam_allowed_principals, expect: match}\n", "probe resources need catalog_id and database"},
+		{"probe storage_write", "mode: probe\npersonas:\n  - key: a\n    role_arn: arn:aws:iam::1:role/a\n    cases:\n      - {id: x, op: storage_write, resource: {catalog_id: c, database: d, table: t}, expect: denied}\n", "probe mode never attempts storage_write"},
 	}
 	for _, c := range cases {
 		_, err := Parse([]byte(c.yaml))
@@ -79,14 +87,27 @@ func TestInvalid(t *testing.T) {
 }
 
 func TestIsWrite(t *testing.T) {
-	for _, o := range []Op{Insert, Grant, PutSettings, DropTable} {
+	for _, o := range []Op{Insert, Grant, PutSettings, DropTable, StorageWrite} {
 		if !o.IsWrite() {
 			t.Errorf("%s must be a write", o)
 		}
 	}
-	for _, o := range []Op{Select, GetSettings, ListPermissions, StorageRead} {
+	for _, o := range []Op{Select, GetSettings, ListPermissions, StorageRead, AccountSettings, CatalogEncryption, CatalogResourcePolicy, NoIAMAllowedPrincipals} {
 		if o.IsWrite() {
 			t.Errorf("%s must not be a write", o)
+		}
+	}
+}
+
+// TestCheckOpsValid checks that check ops parse in both modes; probe check cases need no
+// catalog or database.
+func TestCheckOpsValid(t *testing.T) {
+	for _, y := range []string{
+		"mode: full\npersonas:\n  - key: admin\n    cases:\n      - {id: s, style: label, op: account_settings, expect: match, expect_values: {cross_account_version: manifest}}\n      - {id: r, style: label, op: catalog_resource_policy, expect: match}\n",
+		"mode: probe\npersonas:\n  - key: admin\n    role_arn: arn:aws:iam::1:role/a\n    cases:\n      - {id: e, op: catalog_encryption, expect: match, expect_values: {mode: SSE-KMS-WITH-SERVICE-ROLE}}\n      - {id: i, op: no_iam_allowed_principals, resource: {catalog_id: c, database: d}, expect: match}\n",
+	} {
+		if _, err := Parse([]byte(y)); err != nil {
+			t.Errorf("valid check ops rejected: %v", err)
 		}
 	}
 }

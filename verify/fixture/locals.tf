@@ -26,6 +26,9 @@ locals {
     reader_cells  = { kind = "reader", module_docs = [["alpha", "reader/reader_cells"]] }
     control       = { kind = "control", module_docs = [["alpha", "reader/reader_single"]] }
     steward       = { kind = "steward", module_docs = [] } # keyed by role ARN in the module; see personas.tf
+    # Broad direct storage permissions and no Lake Formation grant: the table-bucket deny alone
+    # must stop it (spec 003 FR-015). A reader document gives it Athena and Glue reachability.
+    bypass = { kind = "bypass", module_docs = [["alpha", "reader/reader_single"]] }
   }
 
   # One inline policy per persona and module document, because the documents share statement IDs

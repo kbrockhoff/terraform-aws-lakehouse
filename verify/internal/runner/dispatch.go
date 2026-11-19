@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -215,8 +217,77 @@ func (r *Runner) dispatch(ctx context.Context, pc *ops.Clients, inst matrix.Inst
 
 	case matrix.StorageRead:
 		return pc.StorageRead(ctx, t), obs
+	case matrix.StorageWrite:
+		// Full mode only: probe mode never attempts writes (matrix validation)
+		key := fmt.Sprintf("lfverify-%s-%s.txt", r.Manifest.RunID, strings.NewReplacer("/", "-", "_", "-").Replace(salt))
+		return pc.StorageWrite(ctx, t, key), obs
+
+	case matrix.AccountSettings:
+		want, err := r.expectValues(c)
+		if err != nil {
+			return errResult(err), obs
+		}
+		return pc.AccountSettings(ctx, want), obs
+	case matrix.CatalogEncryption:
+		want, err := r.expectValues(c)
+		if err != nil {
+			return errResult(err), obs
+		}
+		// Probe mode has no manifest; an empty catalog ID means the caller's account
+		catalogID := ""
+		if r.Manifest != nil {
+			catalogID = r.Manifest.AccountID
+		}
+		return pc.CatalogEncryption(ctx, catalogID, want), obs
+	case matrix.CatalogResourcePolicy:
+		return pc.CatalogResourcePolicy(ctx), obs
+	case matrix.NoIAMAllowedPrincipals:
+		// Full mode checks every label namespace of the fixture; probe mode the case's database
+		var dbs []ops.Database
+		if r.Manifest != nil {
+			for _, k := range slices.Sorted(maps.Keys(r.Manifest.Styles.Label.Namespaces)) {
+				ns := r.Manifest.Styles.Label.Namespaces[k]
+				dbs = append(dbs, ops.Database{CatalogID: ns.CatalogID, Name: ns.Database})
+			}
+		} else {
+			dbs = []ops.Database{{CatalogID: t.CatalogID, Name: t.Database}}
+		}
+		return pc.NoIAMAllowedPrincipals(ctx, dbs), obs
 	}
 	return errResult(fmt.Errorf("operation %s is not implemented", c.Op)), obs
+}
+
+// manifestSettingKeys maps a check case's expect_values key to the fixture manifest's
+// account_settings key, for values written as "manifest"
+var manifestSettingKeys = map[string]string{
+	"cross_account_version": "cross_account_version",
+	"mode":                  "catalog_encryption_mode",
+	"kms_key_arn":           "catalog_kms_key_arn",
+}
+
+// expectValues resolves a check case's expectations, replacing "manifest" with the fixture's
+// expected value.
+func (r *Runner) expectValues(c matrix.Case) (map[string]string, error) {
+	out := map[string]string{}
+	for k, v := range c.ExpectValues {
+		if v != "manifest" {
+			out[k] = v
+			continue
+		}
+		if r.Manifest == nil {
+			return nil, fmt.Errorf("expect_values %s: \"manifest\" needs full mode; name the value in probe mode", k)
+		}
+		mk, ok := manifestSettingKeys[k]
+		if !ok {
+			return nil, fmt.Errorf("expect_values %s cannot come from the manifest", k)
+		}
+		mv, ok := r.Manifest.AccountSettings[mk]
+		if !ok || mv == "" {
+			return nil, fmt.Errorf("manifest has no account_settings.%s; re-apply the fixture", mk)
+		}
+		out[k] = mv
+	}
+	return out, nil
 }
 
 // deleteTable removes a table through the storage API as the runner, which does not depend on

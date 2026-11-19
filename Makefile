@@ -168,7 +168,10 @@ RUN_ID ?= $(shell cat $(VERIFY_RUN_FILE) 2>/dev/null)
 VERIFY_OUT = $(CURDIR)/verify/out/$(RUN_ID)
 LFVERIFY := $(CURDIR)/verify/out/lfverify
 VERIFY_TF = cd verify/fixture && TF_DATA_DIR=$(VERIFY_OUT)/.terraform terraform
-VERIFY_VARS = -var run_id=$(RUN_ID) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
+# Spec 003: the fixture owns the account settings and supplies a long-lived catalog key
+# (LFVERIFY_CATALOG_KEY_ARN, verify/README.md); CATALOG_KEY_ACCESS_MODE picks the mode under test
+CATALOG_KEY_ACCESS_MODE ?= service_role
+VERIFY_VARS = -var run_id=$(RUN_ID) -var catalog_kms_key_arn=$(LFVERIFY_CATALOG_KEY_ARN) -var catalog_key_access_mode=$(CATALOG_KEY_ACCESS_MODE) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
 VERIFY_MANIFEST = $(VERIFY_OUT)/manifest.json
 INJECT ?=
 INJECT_PERSONA ?=
@@ -205,6 +208,7 @@ verify-new-run: ## Start a new run ID (six hex characters) and remember it
 
 verify-init:
 	@test -n "$(RUN_ID)" || { echo "$(RED)✗ RUN_ID is not set; run make verify-new-run$(RESET)"; exit 1; }
+	@test -n "$(LFVERIFY_CATALOG_KEY_ARN)" || { echo "$(RED)✗ LFVERIFY_CATALOG_KEY_ARN is not set; it names the long-lived catalog key (verify/README.md)$(RESET)"; exit 1; }
 	@mkdir -p $(VERIFY_OUT)
 	@$(VERIFY_TF) init -input=false -reconfigure -backend-config=path=$(VERIFY_OUT)/terraform.tfstate >/dev/null
 
