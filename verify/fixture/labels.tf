@@ -23,7 +23,7 @@ locals {
   orders_internal     = [for c in local.orders_columns : c if !contains(keys(local.column_sensitivity.orders), c)]
 }
 
-resource "aws_lakeformation_resource_lf_tags" "orders_table" {
+resource "aws_lakeformation_resource_lf_tag" "orders_table" {
   for_each = local.stage2_label_namespaces
 
   table {
@@ -41,7 +41,7 @@ resource "aws_lakeformation_resource_lf_tags" "orders_table" {
   depends_on = [module.lakehouse]
 }
 
-resource "aws_lakeformation_resource_lf_tags" "orders_internal_columns" {
+resource "aws_lakeformation_resource_lf_tag" "orders_internal_columns" {
   for_each = local.stage2_label_namespaces
 
   table_with_columns {
@@ -56,10 +56,10 @@ resource "aws_lakeformation_resource_lf_tags" "orders_internal_columns" {
     value = "internal"
   }
 
-  depends_on = [module.lakehouse, aws_lakeformation_resource_lf_tags.orders_table]
+  depends_on = [module.lakehouse, aws_lakeformation_resource_lf_tag.orders_table]
 }
 
-resource "aws_lakeformation_resource_lf_tags" "orders_restricted_columns" {
+resource "aws_lakeformation_resource_lf_tag" "orders_restricted_columns" {
   for_each = local.stage2_label_namespaces
 
   table_with_columns {
@@ -74,10 +74,10 @@ resource "aws_lakeformation_resource_lf_tags" "orders_restricted_columns" {
     value = "restricted"
   }
 
-  depends_on = [module.lakehouse, aws_lakeformation_resource_lf_tags.orders_table]
+  depends_on = [module.lakehouse, aws_lakeformation_resource_lf_tag.orders_table]
 }
 
-resource "aws_lakeformation_resource_lf_tags" "scratch_mw" {
+resource "aws_lakeformation_resource_lf_tag" "scratch_mw" {
   count = var.stage == 2 ? 1 : 0
 
   table {
@@ -97,7 +97,7 @@ resource "aws_lakeformation_resource_lf_tags" "scratch_mw" {
 
 # Writer pipelines label the tables they create (001 FR-011a); without this, customers and scratch
 # would inherit the tenant ceiling (restricted) and hide from column-limited readers
-resource "aws_lakeformation_resource_lf_tags" "internal_tables" {
+resource "aws_lakeformation_resource_lf_tag" "internal_tables" {
   for_each = {
     for pair in setproduct(keys(local.stage2_label_namespaces), ["customers", "scratch"]) : "${pair[0]}/${pair[1]}" => {
       namespace = local.stage2_label_namespaces[pair[0]]
@@ -118,4 +118,52 @@ resource "aws_lakeformation_resource_lf_tags" "internal_tables" {
 
   # The runner becomes a data-lake admin inside the module; nothing here may run before that
   depends_on = [module.lakehouse]
+}
+
+# ----
+# Migration from aws_lakeformation_resource_lf_tags (awslkhs-8oof)
+# ----
+
+# The plural resource reads every tag on the table, including the module's row-filter exclusion
+# keys, so it was replaced on every apply, and its delete removed all of them. Forget it without
+# calling delete; the singular resources above adopt the existing tags.
+
+removed {
+  from = aws_lakeformation_resource_lf_tags.orders_table
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_lakeformation_resource_lf_tags.orders_internal_columns
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_lakeformation_resource_lf_tags.orders_restricted_columns
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_lakeformation_resource_lf_tags.scratch_mw
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_lakeformation_resource_lf_tags.internal_tables
+
+  lifecycle {
+    destroy = false
+  }
 }

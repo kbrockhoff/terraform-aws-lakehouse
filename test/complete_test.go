@@ -142,7 +142,7 @@ func TestTerraformCompleteExample(t *testing.T) {
 	rfTag := changes[tenantPrefix("sales")+`aws_lakeformation_lf_tag.row_filter["gdpranalyst"]`]
 	require.NotNil(t, rfTag)
 	assert.Equal(t, []string{"no", "yes"}, strs(after(rfTag)["values"]))
-	filtered := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tags.row_filtered_table["gdpranalyst/curated/orders"]`])
+	filtered := after(changes[tenantPrefix("sales")+`aws_lakeformation_resource_lf_tag.row_filtered_table["gdpranalyst/curated/orders"]`])
 	require.NotNil(t, filtered)
 	assert.Equal(t, "orders", block(filtered, "table")["name"])
 	assert.Equal(t, "yes", list(filtered["lf_tag"])[0].(map[string]interface{})["value"])
@@ -610,7 +610,7 @@ func TestRowFilterExclusionFollowsPrincipal(t *testing.T) {
 	_, has := lfExpression(semantic)[rfKey]
 	assert.False(t, has, "other principals keep their grants")
 
-	filtered := changes[sales+`aws_lakeformation_resource_lf_tags.row_filtered_table["eu/analyst/curated/orders"]`]
+	filtered := changes[sales+`aws_lakeformation_resource_lf_tag.row_filtered_table["eu/analyst/curated/orders"]`]
 	require.NotNil(t, filtered, "the filtered table is labeled under the full reader key")
 	assert.Equal(t, "orders", block(after(filtered), "table")["name"])
 }

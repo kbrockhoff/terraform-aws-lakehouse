@@ -42,6 +42,7 @@ var createActions = map[string]string{
 	"aws_s3tables_namespace":                             "s3tables:CreateNamespace",
 	"aws_lakeformation_lf_tag":                           "lakeformation:CreateLFTag",
 	"aws_lakeformation_resource_lf_tags":                 "lakeformation:AddLFTagsToResource",
+	"aws_lakeformation_resource_lf_tag":                  "lakeformation:AddLFTagsToResource",
 	"aws_lakeformation_permissions":                      "lakeformation:GrantPermissions",
 	"aws_lakeformation_data_cells_filter":                "lakeformation:CreateDataCellsFilter",
 	"aws_lakeformation_resource":                         "lakeformation:RegisterResource",

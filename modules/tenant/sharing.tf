@@ -98,7 +98,7 @@ resource "aws_lakeformation_permissions" "share_table" {
 
   # The row-filtered table associations set their exclusion keys to "yes"; until they exist those
   # tables inherit "no" from the database and would match. Ordering also revokes before they go.
-  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_resource_lf_tags.row_filtered_table, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter, terraform_data.share_guard, terraform_data.admin_guard]
+  depends_on = [aws_lakeformation_resource_lf_tags.database, aws_lakeformation_resource_lf_tag.row_filtered_table, aws_lakeformation_lf_tag.tenant, aws_lakeformation_lf_tag.row_filter, terraform_data.share_guard, terraform_data.admin_guard]
 }
 
 # DESCRIBE only: GRANT_WITH_LF_TAG_EXPRESSION cannot be granted across accounts

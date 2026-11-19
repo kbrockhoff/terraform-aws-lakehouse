@@ -389,3 +389,20 @@ All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `
   pass** after the review fixes, with the platform now owning the consumer's tag `DESCRIBE` grants (six
   `consumer_tag_describe` grants) and tenants granting only their own keys. The consumer re-grant by tag
   succeeds. Teardown clean, settings restored.
+
+### awslkhs-8oof: row-filter exclusion labels
+
+- **Cause**: `aws_lakeformation_resource_lf_tags` (provider 6.73.0, unchanged on `main`) reads every tag assigned
+  to the table and deletes every tag in its state. Every apply replaced it, and the destroy removed writer labels
+  and the other readers' row-filter exclusion keys, so a filtered reader could transiently match the table with
+  its tag grant.
+- **Fix**: the module's `row_filtered_table` and the fixture's table and column labels use the singular
+  `aws_lakeformation_resource_lf_tag`, which reads and removes only its own key. `removed` blocks with
+  `destroy = false` forget the plural resources without calling their delete.
+- **`9b5164`** (2026-11-19): deployed at `d5776cc` (plural), then upgraded in one apply.
+  - The plan forgot every plural label resource ("will not be destroyed") and created the singular ones.
+  - The `alpha/curated/orders` labels (sensitivity `restricted`, both readers' exclusion keys `yes`) were
+    unchanged before the upgrade, after it, and after the matrix.
+  - The re-plan shows no label changes. Its remaining replacements are the fixture's own `owner_*` and
+    `consumer_link` grants (`awslkhs-c921`).
+  - `verify-run` with the consumer: **238 of 238 pass**. Teardown clean.

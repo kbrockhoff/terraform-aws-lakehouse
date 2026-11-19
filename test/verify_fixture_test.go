@@ -87,8 +87,8 @@ func TestVerifyFixture(t *testing.T) {
 		assert.Contains(t, a, `aws_lakeformation_permissions.named_table["meta_writer/table/n_alpha/scratch"]`)
 		assert.Equal(t, 3, countWithPrefix(a, `module.lakehouse.module.tenant["alpha"].aws_lakeformation_data_cells_filter.this[`))
 		// alpha raw, alpha curated, beta curated, gamma curated
-		assert.Equal(t, 4, countWithPrefix(a, "aws_lakeformation_resource_lf_tags.orders_restricted_columns["))
-		assert.Contains(t, a, "aws_lakeformation_resource_lf_tags.scratch_mw[0]")
+		assert.Equal(t, 4, countWithPrefix(a, "aws_lakeformation_resource_lf_tag.orders_restricted_columns["))
+		assert.Contains(t, a, "aws_lakeformation_resource_lf_tag.scratch_mw[0]")
 		assert.NotContains(t, a, "aws_lakeformation_permissions.inject_open_default[0]")
 	})
 

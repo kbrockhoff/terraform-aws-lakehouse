@@ -70,7 +70,12 @@ resource "aws_lakeformation_lf_tag" "metadata_writer" {
 
 # Marks each row-filtered table for its reader, so the reader's tag grant skips it and the data
 # cells filter is the reader's only access. Like row filters, it needs the table to exist.
-resource "aws_lakeformation_resource_lf_tags" "row_filtered_table" {
+#
+# The singular resource reads and removes only its own key. The plural aws_lakeformation_resource_lf_tags
+# reads every tag assigned to the table (writer labels, other readers' exclusion keys), so it was
+# replaced on every apply, and its delete removed all of them: another reader could lose its
+# exclusion and see every row (awslkhs-8oof).
+resource "aws_lakeformation_resource_lf_tag" "row_filtered_table" {
   for_each = local.row_filtered_tables
 
   table {
@@ -85,4 +90,15 @@ resource "aws_lakeformation_resource_lf_tags" "row_filtered_table" {
   }
 
   depends_on = [aws_lakeformation_resource_lf_tags.database, terraform_data.admin_guard]
+}
+
+# Forget the plural resource without calling its delete, which would remove every tag on the
+# table, including the exclusion keys the singular resource now owns. The singular resource adopts
+# the existing tag on create (AddLFTagsToResource is idempotent).
+removed {
+  from = aws_lakeformation_resource_lf_tags.row_filtered_table
+
+  lifecycle {
+    destroy = false
+  }
 }
