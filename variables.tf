@@ -73,21 +73,14 @@ variable "zones_config" {
 # ----
 
 variable "catalog_integration_config" {
-  description = "Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN. allow_full_table_external_data_access moved to account_settings_config.s3tables_catalog."
+  description = "Account-level Lake Formation integration for S3 Tables. Exactly one deployment per account and Region sets enabled = true; secondary deployments pass the owner's data access role ARN."
   type = object({
-    enabled                               = bool
-    data_access_role_arn                  = string
-    allow_full_table_external_data_access = optional(bool)
+    enabled              = bool
+    data_access_role_arn = string
   })
   default = {
     enabled              = true
     data_access_role_arn = ""
-  }
-
-  # The catalog moved to modules/account-settings (spec 003 FR-029 to FR-031)
-  validation {
-    condition     = var.catalog_integration_config.allow_full_table_external_data_access == null
-    error_message = "catalog_integration_config.allow_full_table_external_data_access moved to account_settings_config.s3tables_catalog.allow_full_table_external_data_access."
   }
 
   validation {
