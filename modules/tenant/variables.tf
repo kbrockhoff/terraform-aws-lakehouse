@@ -72,6 +72,25 @@ variable "platform" {
     condition     = length(var.platform.zones) > 0 && length(var.platform.lf_tags.sensitivity.values) > 0 && length(var.platform.lf_tags.domain.values) > 0
     error_message = "platform must have zones and LF-tag vocabularies; pass the root module's platform_contract output (it is null when the platform has enabled = false)."
   }
+
+  # A standalone tenant takes the contract from remote state or SSM, so the KMS principals it puts
+  # in the tenant key policy are checked here too, not only by the root. Empty lists (contracts
+  # published before these fields) stay valid.
+  validation {
+    condition = alltrue([
+      for a in var.platform.key_administrator_arns :
+      can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a)) && split(":", a)[4] == var.platform.account_id
+    ])
+    error_message = "platform.key_administrator_arns entries must be IAM role or user ARNs without wildcards, in the platform account."
+  }
+
+  validation {
+    condition = alltrue([
+      for a in var.platform.direct_access.exempt_principal_arns :
+      can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a))
+    ])
+    error_message = "platform.direct_access.exempt_principal_arns entries must be IAM role or user ARNs without wildcards."
+  }
 }
 
 variable "name" {

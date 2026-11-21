@@ -42,7 +42,9 @@ Destroying this submodule resets catalog encryption to `DISABLED` and empties th
 
 ## Modules
 
-No modules.
+| Name | Source | Version |
+| ---- | ------ | ------- |
+| <a name="module_key_policy_statements"></a> [key\_policy\_statements](#module\_key\_policy\_statements) | ../key-policy-statements | n/a |
 
 ## Resources
 
@@ -65,7 +67,7 @@ No modules.
 | ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_account_id"></a> [account\_id](#input\_account\_id) | AWS account ID whose Lake Formation and Glue Data Catalog settings this submodule owns. | `string` | n/a | yes |
 | <a name="input_admin_principal_arns"></a> [admin\_principal\_arns](#input\_admin\_principal\_arns) | Lake Formation data-lake admins, including studio integration principals. Authoritative: admins not listed are removed. | `list(string)` | n/a | yes |
-| <a name="input_catalog_encryption"></a> [catalog\_encryption](#input\_catalog\_encryption) | Catalog metadata encryption. An empty kms\_key\_arn creates the dedicated catalog key. | <pre>object({<br/>    key_access_mode             = string<br/>    kms_key_arn                 = string<br/>    additional_key_user_arns    = list(string)<br/>    key_deletion_principal_arns = list(string)<br/>  })</pre> | n/a | yes |
+| <a name="input_catalog_encryption"></a> [catalog\_encryption](#input\_catalog\_encryption) | Catalog metadata encryption. An empty kms\_key\_arn creates the dedicated catalog key. | <pre>object({<br/>    key_access_mode             = string<br/>    kms_key_arn                 = string<br/>    additional_key_user_arns    = list(string)<br/>    key_deletion_principal_arns = list(string)<br/>    connection_writer_arns      = list(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_catalog_resource_policy"></a> [catalog\_resource\_policy](#input\_catalog\_resource\_policy) | Optional Glue Data Catalog resource policy: the RAM sharing statement plus caller-supplied Deny statements. | <pre>object({<br/>    enabled           = bool<br/>    deny_policy_jsons = list(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_data_lake"></a> [data\_lake](#input\_data\_lake) | Explicit values for every data-lake settings field. PutDataLakeSettings replaces the whole object, so nothing is left implicit. | <pre>object({<br/>    allow_external_data_filtering         = bool<br/>    external_data_filtering_allow_list    = list(string)<br/>    authorized_session_tag_values         = list(string)<br/>    allow_full_table_external_data_access = bool<br/>    trusted_resource_owners               = list(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_deployer_role_arn"></a> [deployer\_role\_arn](#input\_deployer\_role\_arn) | Role ARN of the deploying session. It must be one of admin\_principal\_arns. | `string` | n/a | yes |
@@ -77,7 +79,7 @@ No modules.
 | <a name="input_region"></a> [region](#input\_region) | AWS Region of the settings. | `string` | n/a | yes |
 | <a name="input_catalog_ready"></a> [catalog\_ready](#input\_catalog\_ready) | ID of the root module's s3tablescatalog check-and-create step. Every resource here waits on it, so the catalog exists before anything else is created or changed (spec 003 FR-029). | `string` | `""` | no |
 | <a name="input_cross_account_version"></a> [cross\_account\_version](#input\_cross\_account\_version) | Lake Formation cross-account version (4 or 5). Versions are never lowered; 5 is irreversible. | `number` | `4` | no |
-| <a name="input_identity_center"></a> [identity\_center](#input\_identity\_center) | Optional Lake Formation integration with an existing IAM Identity Center instance. instance\_arn is required when enabled. | <pre>object({<br/>    enabled      = bool<br/>    instance_arn = string<br/>  })</pre> | <pre>{<br/>  "enabled": false,<br/>  "instance_arn": ""<br/>}</pre> | no |
+| <a name="input_identity_center"></a> [identity\_center](#input\_identity\_center) | Optional Lake Formation integration with an existing IAM Identity Center instance (root account\_settings\_config.identity\_center, validated there). | <pre>object({<br/>    enabled      = bool<br/>    instance_arn = string<br/>  })</pre> | <pre>{<br/>  "enabled": false,<br/>  "instance_arn": ""<br/>}</pre> | no |
 | <a name="input_key_user_arns"></a> [key\_user\_arns](#input\_key\_user\_arns) | Tenant persona ARNs granted catalog key use in per\_caller mode. | `list(string)` | `[]` | no |
 | <a name="input_permissions_boundary_arn"></a> [permissions\_boundary\_arn](#input\_permissions\_boundary\_arn) | Permissions boundary for the catalog-encryption role. Empty means none. | `string` | `""` | no |
 | <a name="input_read_only_admin_principal_arns"></a> [read\_only\_admin\_principal\_arns](#input\_read\_only\_admin\_principal\_arns) | Lake Formation read-only admins. Authoritative, like admin\_principal\_arns. | `list(string)` | `[]` | no |

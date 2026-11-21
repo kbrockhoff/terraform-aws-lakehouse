@@ -110,6 +110,30 @@ resource "terraform_data" "settings_guard" {
 }
 
 # The approved consumer list never includes this account (FR-022)
+# Every module-created key is administered only by encryption_config.key_administrator_arns; the
+# account root can only read it. Applying from an unlisted role would fail PutKeyPolicy (KMS
+# lockout check) or rewrite the policy without itself, so the plan fails first instead.
+resource "terraform_data" "key_administrators_guard" {
+  count = local.creates_kms_key ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = length(local.key_administrator_arns) > 0
+      error_message = "This deployment creates KMS keys, so encryption_config.key_administrator_arns must name their administrators: every role that applies this deployment (CI and break-glass included), as stable role ARNs. The account root can only read the keys."
+    }
+
+    precondition {
+      condition     = contains(local.key_administrator_arns, local.deployer_role_arn)
+      error_message = "The deploying role (${local.deployer_role_arn}) is not in encryption_config.key_administrator_arns, so it cannot manage the module's KMS keys. Add it, applying from a role that is already listed."
+    }
+
+    precondition {
+      condition     = alltrue([for a in local.key_administrator_arns : split(":", a)[4] == local.account_id])
+      error_message = "Every encryption_config.key_administrator_arns entry must be in this account (${local.account_id}); key policies only accept administrators from the key's account."
+    }
+  }
+}
+
 resource "terraform_data" "sharing_guard" {
   count = var.enabled && length(var.sharing_config.consumer_accounts) > 0 ? 1 : 0
 

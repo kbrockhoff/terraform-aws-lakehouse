@@ -45,6 +45,7 @@ precedence over this guide when the two conflict.
 ### Operations
 - `modules/cost-estimation`: idle fixed monthly estimates for the platform and each tenant, compliance cost, and usage rates from the AWS Price List
 - `modules/deployer`: least-privilege `platform` or `tenant` scope policies (split into two managed policies) attached to an existing role; never called by the root
+- `modules/key-policy-statements`: the key policy statements every module-created key shares (named `KeyAdministrators` from `encryption_config.key_administrator_arns`, a read-only `AccountReadOnly` root, optional break-glass deletion, direct-access exemptions); called by the root, `modules/account-settings`, and `modules/tenant`. The root's `key_administrators_guard` fails the plan unless the deploying role is listed and every entry is in the account
 
 ### Module Files
 - Root: `variables.tf`, `locals.tf` (environment defaults, effective config, `platform_contract`), `dependencies.tf`, `main.tf` (account settings, catalog integration, guards, `module.tenant`), `kms.tf`, `lf-tags.tf`, `table-buckets.tf`, `query.tf`, `alarms.tf`, `cost-estimation.tf`, `outputs.tf`

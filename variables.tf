@@ -114,6 +114,9 @@ variable "account_settings_config" {
       It must never be the platform key or a tenant key.
     - catalog_encryption.key_deletion_principal_arns: break-glass principals that may schedule
       deletion of, or disable, the catalog key. Empty makes the protection absolute.
+    - catalog_encryption.connection_writer_arns: roles that create or update Glue connections with
+      passwords. The catalog key encrypts connection passwords, so they get kms:Encrypt on it through
+      Glue only (in both key-access modes); they need kms:Encrypt in IAM too.
     - catalog_resource_policy: optional Glue resource policy; only RAM sharing plus Deny statements.
     - permissions_boundary_arn: boundary for the module-created Lake Formation and Glue roles.
     - s3tables_catalog.allow_full_table_external_data_access (default true): set on s3tablescatalog
@@ -140,6 +143,7 @@ variable "account_settings_config" {
       kms_key_arn                 = optional(string, "")
       additional_key_user_arns    = optional(list(string), [])
       key_deletion_principal_arns = optional(list(string), [])
+      connection_writer_arns      = optional(list(string), [])
     }), {})
     catalog_resource_policy = optional(object({
       enabled           = optional(bool, false)
@@ -179,9 +183,15 @@ variable "account_settings_config" {
       for a in concat(
         var.account_settings_config.catalog_encryption.additional_key_user_arns,
         var.account_settings_config.catalog_encryption.key_deletion_principal_arns,
-      ) : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*]+$", a))
+        var.account_settings_config.catalog_encryption.connection_writer_arns,
+      ) : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a))
     ])
-    error_message = "additional_key_user_arns and key_deletion_principal_arns entries must be IAM role or user ARNs without wildcards."
+    error_message = "additional_key_user_arns, key_deletion_principal_arns, and connection_writer_arns entries must be IAM role or user ARNs without wildcards."
+  }
+
+  validation {
+    condition     = length(var.account_settings_config.catalog_encryption.connection_writer_arns) <= 20
+    error_message = "catalog_encryption.connection_writer_arns may hold at most 20 entries."
   }
 
   validation {
@@ -354,7 +364,7 @@ variable "governance_config" {
   validation {
     condition = (
       length(var.governance_config.direct_access_exempt_principal_arns) <= 20 &&
-      alltrue([for a in var.governance_config.direct_access_exempt_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*]+$", a))])
+      alltrue([for a in var.governance_config.direct_access_exempt_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a))])
     )
     error_message = "direct_access_exempt_principal_arns may hold at most 20 IAM role or user ARNs, without wildcards."
   }
@@ -485,7 +495,7 @@ variable "query_config" {
 # ----
 
 variable "encryption_config" {
-  description = "Configuration object for encryption settings and KMS key management. key_administrator_arns are named key administrators on every key the module creates (platform, catalog metadata, and tenant keys), alongside the deploying role; the account root gets read-only access only."
+  description = "Configuration object for encryption settings and KMS key management. key_administrator_arns are the only administrators of every key the module creates (platform, catalog metadata, and designated-tenant keys): list every role that applies the platform or a standalone tenant, as stable same-account role ARNs. The account-wide statement is read-only (scoped exceptions such as Athena results and direct-access exemptions are listed in the README, KMS Key Policies), so the list is required whenever a key is created, and the plan fails unless the deploying role is in it. Administrators hold kms:PutKeyPolicy, so treat them as trusted policy editors."
   type = object({
     create_kms_key               = bool
     kms_key_id                   = string
@@ -512,7 +522,7 @@ variable "encryption_config" {
   }
 
   validation {
-    condition     = alltrue([for a in var.encryption_config.key_administrator_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*]+$", a))])
+    condition     = alltrue([for a in var.encryption_config.key_administrator_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a))])
     error_message = "Every key_administrator_arns entry must be an IAM role or user ARN without wildcards."
   }
 

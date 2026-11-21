@@ -29,73 +29,30 @@ resource "aws_kms_alias" "main" {
   target_key_id = aws_kms_key.main[0].key_id
 }
 
-# KMS Key Policy - allows account root and SNS service access, plus the statements S3 Tables,
-# Lake Formation, and Athena need
+# Statements every module-created key shares: named administrators, a read-only account root,
+# and key use for direct-access exemptions
+module "key_policy_statements" {
+  source = "./modules/key-policy-statements"
+  count  = var.enabled ? 1 : 0
+
+  account_id                          = local.account_id
+  partition                           = local.partition
+  region                              = local.region
+  key_administrator_arns              = local.key_administrator_arns
+  direct_access_exempt_principal_arns = var.governance_config.direct_access_exempt_principal_arns
+  # The platform's table buckets, the encryption context the maintenance statement also uses
+  table_storage_arn_patterns = ["arn:${local.partition}:s3tables:${local.region}:${local.account_id}:bucket/${local.name_prefix}-*/*"]
+}
+
+# KMS Key Policy - named administrators, a read-only account root, and SNS service access, plus
+# the statements S3 Tables, Lake Formation, and Athena need
 data "aws_iam_policy_document" "kms_key_policy" {
   count = var.enabled && var.encryption_config.create_kms_key ? 1 : 0
 
-  source_policy_documents = [data.aws_iam_policy_document.required_kms_statements[0].json]
-
-  # Named key administrators manage the key; the account root only reads it
-  statement {
-    sid    = "KeyAdministrators"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = local.key_administrator_arns
-    }
-    # Key management only: no Encrypt, Decrypt, GenerateDataKey, or CreateGrant, so administrators
-    # cannot read data or grant themselves use
-    actions = [
-      "kms:CancelKeyDeletion",
-      "kms:CreateAlias",
-      "kms:DeleteAlias",
-      "kms:DescribeKey",
-      "kms:DisableKey",
-      "kms:DisableKeyRotation",
-      "kms:EnableKey",
-      "kms:EnableKeyRotation",
-      "kms:GetKeyPolicy",
-      "kms:GetKeyRotationStatus",
-      "kms:ListGrants",
-      "kms:ListKeyPolicies",
-      "kms:ListKeyRotations",
-      "kms:ListResourceTags",
-      "kms:PutKeyPolicy",
-      "kms:RetireGrant",
-      "kms:RevokeGrant",
-      "kms:RotateKeyOnDemand",
-      "kms:ScheduleKeyDeletion",
-      "kms:TagResource",
-      "kms:UntagResource",
-      "kms:UpdateAlias",
-      "kms:UpdateKeyDescription",
-    ]
-    resources = ["*"]
-    # Administrators must belong to this account, even if a listed ARN names another
-    condition {
-      test     = "StringEquals"
-      variable = "aws:PrincipalAccount"
-      values   = [local.account_id]
-    }
-  }
-
-  # The rest of the account may only inspect the key
-  statement {
-    sid    = "AccountReadOnly"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
-    }
-    actions   = ["kms:Describe*", "kms:Get*", "kms:List*"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:PrincipalAccount"
-      values   = [local.account_id]
-    }
-  }
+  source_policy_documents = [
+    data.aws_iam_policy_document.required_kms_statements[0].json,
+    module.key_policy_statements[0].administration_json,
+  ]
 
   # Allow SNS service to use the key
   statement {
@@ -125,6 +82,8 @@ data "aws_iam_policy_document" "kms_key_policy" {
 # keys
 data "aws_iam_policy_document" "required_kms_statements" {
   count = var.enabled ? 1 : 0
+
+  source_policy_documents = compact([module.key_policy_statements[0].direct_access_json])
 
   # S3 Tables maintenance (compaction, snapshot and unreferenced-file cleanup) on platform buckets
   statement {
@@ -166,33 +125,6 @@ data "aws_iam_policy_document" "required_kms_statements" {
         "s3tables.${local.region}.amazonaws.com",
         "s3.${local.region}.amazonaws.com", # table metadata and data files are read through S3
       ]
-    }
-  }
-
-  # Principals exempt from the table-bucket direct-access deny read table storage themselves, and
-  # the account root no longer delegates key use to IAM
-  dynamic "statement" {
-    for_each = length(var.governance_config.direct_access_exempt_principal_arns) > 0 ? [1] : []
-    content {
-      sid    = "AllowDirectAccessExemptions"
-      effect = "Allow"
-      principals {
-        type        = "AWS"
-        identifiers = var.governance_config.direct_access_exempt_principal_arns
-      }
-      actions = [
-        "kms:Decrypt",
-        "kms:GenerateDataKey",
-      ]
-      resources = ["*"]
-      condition {
-        test     = "StringEquals"
-        variable = "kms:ViaService"
-        values = [
-          "s3tables.${local.region}.amazonaws.com",
-          "s3.${local.region}.amazonaws.com",
-        ]
-      }
     }
   }
 

@@ -124,6 +124,7 @@ Lake Formation does not enforce the roll-up, and the module does not detect drif
 | Name | Source | Version |
 | ---- | ------ | ------- |
 | <a name="module_cost_estimation"></a> [cost\_estimation](#module\_cost\_estimation) | ../cost-estimation | n/a |
+| <a name="module_key_policy_statements"></a> [key\_policy\_statements](#module\_key\_policy\_statements) | ../key-policy-statements | n/a |
 
 ## Resources
 

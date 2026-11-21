@@ -23,6 +23,14 @@ resource "aws_kms_key" "catalog" {
       condition     = length(local.catalog_key_users) <= 200
       error_message = "Per-caller catalog encryption names ${length(local.catalog_key_users)} principals in the key policy; at most 200 fit within the 32 KB key-policy limit. Use key_access_mode = \"service_role\"."
     }
+
+    # The count check above ignores ARN length and the administrator, break-glass, and connection
+    # writer lists, so check the policy as sent (whitespace-free JSON). Known at plan time when no
+    # principal in it is created by the same plan, otherwise checked before the key is created.
+    precondition {
+      condition     = length(jsonencode(jsondecode(data.aws_iam_policy_document.catalog_key_policy.json))) <= 32768
+      error_message = "The catalog key policy exceeds the 32,768-byte KMS key policy limit. Shorten the per-caller key users (key_access_mode = \"service_role\" needs none), key administrators, break-glass principals, or connection writers."
+    }
   }
 
   depends_on = [terraform_data.catalog_ready]
@@ -47,70 +55,23 @@ locals {
   )))
 }
 
+# Named administrators, a read-only account root, and the break-glass principals' path to retire
+# the key, which ProtectCatalogKey denies to everyone else
+module "key_policy_statements" {
+  source = "../key-policy-statements"
+
+  account_id                  = var.account_id
+  partition                   = var.partition
+  region                      = var.region
+  key_administrator_arns      = var.key_administrator_arns
+  key_deletion_principal_arns = var.catalog_encryption.key_deletion_principal_arns
+}
+
 data "aws_iam_policy_document" "catalog_key_policy" {
-  source_policy_documents = [data.aws_iam_policy_document.required_catalog_key_statements.json]
-
-  # Named key administrators manage the key and keep it out of lockout; the account root only
-  # reads it
-  statement {
-    sid    = "KeyAdministrators"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = var.key_administrator_arns
-    }
-    # Key management only: no Encrypt, Decrypt, GenerateDataKey, or CreateGrant, so administrators
-    # cannot read data or grant themselves use
-    actions = [
-      "kms:CancelKeyDeletion",
-      "kms:CreateAlias",
-      "kms:DeleteAlias",
-      "kms:DescribeKey",
-      "kms:DisableKey",
-      "kms:DisableKeyRotation",
-      "kms:EnableKey",
-      "kms:EnableKeyRotation",
-      "kms:GetKeyPolicy",
-      "kms:GetKeyRotationStatus",
-      "kms:ListGrants",
-      "kms:ListKeyPolicies",
-      "kms:ListKeyRotations",
-      "kms:ListResourceTags",
-      "kms:PutKeyPolicy",
-      "kms:RetireGrant",
-      "kms:RevokeGrant",
-      "kms:RotateKeyOnDemand",
-      "kms:ScheduleKeyDeletion",
-      "kms:TagResource",
-      "kms:UntagResource",
-      "kms:UpdateAlias",
-      "kms:UpdateKeyDescription",
-    ]
-    resources = ["*"]
-    # Administrators must belong to this account, even if a listed ARN names another
-    condition {
-      test     = "StringEquals"
-      variable = "aws:PrincipalAccount"
-      values   = [var.account_id]
-    }
-  }
-
-  # The rest of the account may only inspect the key
-  statement {
-    sid    = "AccountReadOnly"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:${var.partition}:iam::${var.account_id}:root"]
-    }
-    actions   = ["kms:Describe*", "kms:Get*", "kms:List*"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:PrincipalAccount"
-      values   = [var.account_id]
-    }
-  }
+  source_policy_documents = [
+    data.aws_iam_policy_document.required_catalog_key_statements.json,
+    module.key_policy_statements.administration_json,
+  ]
 }
 
 # Statements a consumer-supplied catalog key also needs (required_catalog_kms_key_policy_json)
@@ -182,6 +143,38 @@ data "aws_iam_policy_document" "required_catalog_key_statements" {
         test     = "StringEquals"
         variable = "kms:EncryptionContext:glue_catalog_id"
         values   = [var.account_id]
+      }
+    }
+  }
+
+  # Glue encrypts connection passwords with the caller's own kms:Encrypt (CreateConnection and
+  # UpdateConnection), in both key-access modes. Delegated by exact principal ARN, so a retired
+  # writer role never invalidates the policy, and only through Glue.
+  dynamic "statement" {
+    for_each = length(var.catalog_encryption.connection_writer_arns) > 0 ? [1] : []
+    content {
+      sid    = "AllowConnectionPasswordEncryption"
+      effect = "Allow"
+      principals {
+        type        = "AWS"
+        identifiers = ["arn:${var.partition}:iam::${var.account_id}:root"]
+      }
+      actions   = ["kms:Encrypt"]
+      resources = ["*"]
+      condition {
+        test     = "ArnEquals"
+        variable = "aws:PrincipalArn"
+        values   = sort(distinct(var.catalog_encryption.connection_writer_arns))
+      }
+      condition {
+        test     = "StringEquals"
+        variable = "aws:PrincipalAccount"
+        values   = [var.account_id]
+      }
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["glue.${var.region}.amazonaws.com"]
       }
     }
   }

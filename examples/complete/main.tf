@@ -50,12 +50,15 @@ module "main" {
   data_tags              = var.data_tags
   environment_type       = var.environment_type
   cost_estimation_config = var.cost_estimation_config
-  encryption_config      = var.encryption_config
-  monitoring_config      = var.monitoring_config
-  alarms_config          = var.alarms_config
-  zones_config           = var.zones_config
-  storage_config         = var.storage_config
-  query_config           = var.query_config
+  # Key administrators default to the deploying role; production lists every applying role
+  encryption_config = merge(var.encryption_config, {
+    key_administrator_arns = length(var.encryption_config.key_administrator_arns) > 0 ? var.encryption_config.key_administrator_arns : [data.aws_iam_session_context.current.issuer_arn]
+  })
+  monitoring_config = var.monitoring_config
+  alarms_config     = var.alarms_config
+  zones_config      = var.zones_config
+  storage_config    = var.storage_config
+  query_config      = var.query_config
 
   catalog_integration_config = var.catalog_integration_config
   account_settings_config    = var.account_settings_config

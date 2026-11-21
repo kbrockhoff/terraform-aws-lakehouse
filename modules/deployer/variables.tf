@@ -71,7 +71,7 @@ variable "identity_center_instance_arn" {
 
   validation {
     condition     = var.identity_center_instance_arn == "" || can(regex("^arn:aws[a-z-]*:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$", var.identity_center_instance_arn))
-    error_message = "identity_center_instance_arn must be empty or an IAM Identity Center instance ARN."
+    error_message = "identity_center_instance_arn must be empty or an IAM Identity Center instance ARN (arn:aws:sso:::instance/ssoins-...)."
   }
 }
 

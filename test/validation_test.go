@@ -141,6 +141,13 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"identity center instance while disabled", map[string]interface{}{"account_settings_config": map[string]interface{}{
 			"identity_center": map[string]interface{}{"enabled": false, "instance_arn": "arn:aws:sso:::instance/ssoins-0123456789abcdef"}}},
 			"must be an IAM Identity Center instance ARN"},
+		{"question mark in key administrator", map[string]interface{}{"encryption_config": map[string]interface{}{
+			"create_kms_key": true, "kms_key_id": "", "kms_key_deletion_window_days": 30,
+			"key_administrator_arns": []string{"arn:aws:iam::123456789012:role/key-admin?"}}},
+			"Every key_administrator_arns entry must be an IAM role or user ARN without wildcards"},
+		{"wildcard connection writer", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"catalog_encryption": map[string]interface{}{"connection_writer_arns": []string{"arn:aws:iam::123456789012:role/*"}}}},
+			"connection_writer_arns entries must be IAM role or user ARNs without wildcards"},
 		{"invalid key access mode", map[string]interface{}{"account_settings_config": map[string]interface{}{
 			"catalog_encryption": map[string]interface{}{"key_access_mode": "shared"}}},
 			"must be service_role or per_caller"},

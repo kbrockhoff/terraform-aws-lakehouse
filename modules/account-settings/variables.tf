@@ -128,6 +128,7 @@ variable "catalog_encryption" {
     kms_key_arn                 = string
     additional_key_user_arns    = list(string)
     key_deletion_principal_arns = list(string)
+    connection_writer_arns      = list(string)
   })
 
   validation {
@@ -161,6 +162,11 @@ variable "key_administrator_arns" {
   validation {
     condition     = length(var.key_administrator_arns) > 0
     error_message = "key_administrator_arns must name at least one principal."
+  }
+
+  validation {
+    condition     = alltrue([for a in var.key_administrator_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a))])
+    error_message = "Every key_administrator_arns entry must be an IAM role or user ARN without wildcards."
   }
 }
 
@@ -197,7 +203,7 @@ variable "permissions_boundary_arn" {
 }
 
 variable "identity_center" {
-  description = "Optional Lake Formation integration with an existing IAM Identity Center instance. instance_arn is required when enabled."
+  description = "Optional Lake Formation integration with an existing IAM Identity Center instance (root account_settings_config.identity_center, validated there)."
   type = object({
     enabled      = bool
     instance_arn = string
@@ -206,13 +212,5 @@ variable "identity_center" {
     enabled      = false
     instance_arn = ""
   }
-
-  validation {
-    condition = (
-      var.identity_center.enabled ?
-      can(regex("^arn:aws[a-z-]*:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$", var.identity_center.instance_arn)) :
-      var.identity_center.instance_arn == ""
-    )
-    error_message = "identity_center.instance_arn must be an IAM Identity Center instance ARN when enabled, and empty otherwise."
-  }
+  # Validated by the root module's account_settings_config, the only caller
 }

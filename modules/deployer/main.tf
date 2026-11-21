@@ -480,7 +480,7 @@ data "aws_iam_policy_document" "lakehouse" {
       # not this one, so the account is a wildcard and the instance ID scopes them.
       resources = [
         var.identity_center_instance_arn,
-        "arn:${var.partition}:sso::*:application/${element(split("/", var.identity_center_instance_arn), 1)}/*",
+        "arn:${var.partition}:sso::*:application/${regex("instance/(.+)$", var.identity_center_instance_arn)[0]}/*",
         "arn:${var.partition}:sso::aws:applicationProvider/lakeformation",
       ]
     }
