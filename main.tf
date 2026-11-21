@@ -29,6 +29,7 @@ module "account_settings" {
   permissions_boundary_arn     = var.account_settings_config.permissions_boundary_arn
   catalog_ready                = local.s3tables_catalog_ready
   kms_key_deletion_window_days = local.effective_config.kms_key_deletion_window_days
+  key_administrator_arns       = local.key_administrator_arns
 
   key_user_arns = local.tenant_persona_arns
   # Tenant keys are created inside the tenant modules after this call; catalog_key_guard checks them

@@ -339,6 +339,49 @@ func TestKeyProtectionStatement(t *testing.T) {
 	}
 }
 
+// TestKeyAdministratorStatements checks every module-created key policy: named key administrators
+// (the deployer plus key_administrator_arns) manage the key without using it, and the account
+// root may only read it.
+func TestKeyAdministratorStatements(t *testing.T) {
+	t.Parallel()
+	extra := "arn:aws:iam::123456789012:role/key-admin"
+	vars := completeVars(generateTestNamePrefix("ka"))
+	vars["encryption_config"] = map[string]interface{}{
+		"create_kms_key":               true,
+		"kms_key_id":                   "",
+		"kms_key_deletion_window_days": 30,
+		"key_administrator_arns":       []string{extra},
+	}
+	plan := planExample(t, "complete", vars)
+	checked := 0
+	for _, addr := range planDataSources(plan) {
+		if !strings.HasSuffix(addr, "data.aws_iam_policy_document.kms_key_policy[0]") &&
+			!strings.HasSuffix(addr, "data.aws_iam_policy_document.kms[0]") &&
+			!strings.HasSuffix(addr, "data.aws_iam_policy_document.catalog_key_policy") {
+			continue
+		}
+		stmts := statements(t, plan, addr)
+		assert.NotContains(t, stmts, "EnableRootAccess", addr)
+
+		admins := stmts["KeyAdministrators"]
+		require.NotNil(t, admins, addr)
+		principals := strs(block(admins, "principals")["identifiers"])
+		assert.Contains(t, principals, extra, addr)
+		assert.GreaterOrEqual(t, len(principals), 2, "%s: the deployer and the configured administrator", addr)
+		for _, a := range strs(admins["actions"]) {
+			assert.NotContains(t, []string{"kms:*", "kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:CreateGrant", "kms:ReEncryptFrom", "kms:ReEncryptTo"}, a, "%s: administrators cannot use the key", addr)
+		}
+		assert.Contains(t, strs(admins["actions"]), "kms:PutKeyPolicy", addr)
+		assert.Len(t, conditionValues(admins, "aws:PrincipalAccount"), 1, "%s: administrators are limited to this account", addr)
+
+		root := stmts["AccountReadOnly"]
+		require.NotNil(t, root, addr)
+		assert.Equal(t, []string{"kms:Describe*", "kms:Get*", "kms:List*"}, strs(root["actions"]), addr)
+		checked++
+	}
+	assert.GreaterOrEqual(t, checked, 3, "platform, catalog, and designated tenant key policies")
+}
+
 func TestEphemeralOwnerWarnsOnModuleCreatedCatalogKey(t *testing.T) {
 	t.Parallel()
 	supplied := existingCatalogKey(t)

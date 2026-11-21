@@ -154,6 +154,16 @@ variable "kms_key_deletion_window_days" {
   }
 }
 
+variable "key_administrator_arns" {
+  description = "Named administrators of the created catalog key, including the deploying role. The account root gets read-only access only."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.key_administrator_arns) > 0
+    error_message = "key_administrator_arns must name at least one principal."
+  }
+}
+
 variable "key_user_arns" {
   description = "Tenant persona ARNs granted catalog key use in per_caller mode."
   type        = list(string)

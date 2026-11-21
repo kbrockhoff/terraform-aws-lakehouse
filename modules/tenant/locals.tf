@@ -26,6 +26,12 @@ locals {
 
   kms_key_arn = local.designated ? aws_kms_key.this[0].arn : var.platform.kms_key_arn
 
+  # The tenant key's administrators: the platform's, plus the role applying this tenant
+  key_administrator_arns = sort(distinct(concat(
+    [data.aws_iam_session_context.current.issuer_arn],
+    var.platform.key_administrator_arns,
+  )))
+
   results = local.designated ? {
     bucket_arn  = aws_s3_bucket.results[0].arn
     bucket_name = aws_s3_bucket.results[0].bucket

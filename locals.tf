@@ -172,6 +172,10 @@ locals {
   # Role ARN of the deploying session (issuer of an assumed-role session)
   deployer_role_arn = data.aws_iam_session_context.current.issuer_arn
 
+  # Named administrators on every module-created key. The deploying role is always one, so the
+  # key policy passes the KMS lockout check and Terraform keeps managing the key.
+  key_administrator_arns = sort(distinct(concat([local.deployer_role_arn], var.encryption_config.key_administrator_arns)))
+
   # Account-wide Lake Formation and Glue settings are owned by one deployment per account and
   # Region. By default the deployment that owns the catalog integration owns them too (FR-001).
   settings_owner = var.account_settings_config.owner != null ? var.account_settings_config.owner : var.catalog_integration_config.enabled
@@ -284,6 +288,7 @@ locals {
     }
     regulation_designation = local.regulation_designation
     kms_key_arn            = local.kms_key_arn
+    key_administrator_arns = local.key_administrator_arns
     data_access_role_arn   = local.data_access_role_arn
     query_results = {
       bucket_name = aws_s3_bucket.query_results[0].bucket

@@ -65,6 +65,7 @@ variable "platform" {
     direct_access = optional(object({
       exempt_principal_arns = list(string)
     }), { exempt_principal_arns = [] })
+    key_administrator_arns = optional(list(string), [])
   })
 
   validation {

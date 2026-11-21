@@ -50,15 +50,60 @@ locals {
 data "aws_iam_policy_document" "catalog_key_policy" {
   source_policy_documents = [data.aws_iam_policy_document.required_catalog_key_statements.json]
 
-  # Account root access keeps the key manageable through IAM and prevents lockout
+  # Named key administrators manage the key and keep it out of lockout; the account root only
+  # reads it
   statement {
-    sid    = "EnableRootAccess"
+    sid    = "KeyAdministrators"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = var.key_administrator_arns
+    }
+    # Key management only: no Encrypt, Decrypt, GenerateDataKey, or CreateGrant, so administrators
+    # cannot read data or grant themselves use
+    actions = [
+      "kms:CancelKeyDeletion",
+      "kms:CreateAlias",
+      "kms:DeleteAlias",
+      "kms:DescribeKey",
+      "kms:DisableKey",
+      "kms:DisableKeyRotation",
+      "kms:EnableKey",
+      "kms:EnableKeyRotation",
+      "kms:GetKeyPolicy",
+      "kms:GetKeyRotationStatus",
+      "kms:ListGrants",
+      "kms:ListKeyPolicies",
+      "kms:ListKeyRotations",
+      "kms:ListResourceTags",
+      "kms:PutKeyPolicy",
+      "kms:RetireGrant",
+      "kms:RevokeGrant",
+      "kms:RotateKeyOnDemand",
+      "kms:ScheduleKeyDeletion",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:UpdateAlias",
+      "kms:UpdateKeyDescription",
+    ]
+    resources = ["*"]
+    # Administrators must belong to this account, even if a listed ARN names another
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalAccount"
+      values   = [var.account_id]
+    }
+  }
+
+  # The rest of the account may only inspect the key
+  statement {
+    sid    = "AccountReadOnly"
     effect = "Allow"
     principals {
       type        = "AWS"
       identifiers = ["arn:${var.partition}:iam::${var.account_id}:root"]
     }
-    actions   = ["kms:*"]
+    actions   = ["kms:Describe*", "kms:Get*", "kms:List*"]
     resources = ["*"]
     condition {
       test     = "StringEquals"

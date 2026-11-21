@@ -475,11 +475,12 @@ variable "query_config" {
 # ----
 
 variable "encryption_config" {
-  description = "Configuration object for encryption settings and KMS key management"
+  description = "Configuration object for encryption settings and KMS key management. key_administrator_arns are named key administrators on every key the module creates (platform, catalog metadata, and tenant keys), alongside the deploying role; the account root gets read-only access only."
   type = object({
     create_kms_key               = bool
     kms_key_id                   = string
     kms_key_deletion_window_days = number
+    key_administrator_arns       = optional(list(string), [])
   })
   default = {
     create_kms_key               = true
@@ -498,6 +499,16 @@ variable "encryption_config" {
   validation {
     condition     = var.encryption_config.kms_key_deletion_window_days >= 7 && var.encryption_config.kms_key_deletion_window_days <= 30
     error_message = "KMS key deletion window must be between 7 and 30 days when specified."
+  }
+
+  validation {
+    condition     = alltrue([for a in var.encryption_config.key_administrator_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*]+$", a))])
+    error_message = "Every key_administrator_arns entry must be an IAM role or user ARN without wildcards."
+  }
+
+  validation {
+    condition     = length(var.encryption_config.key_administrator_arns) <= 20
+    error_message = "encryption_config.key_administrator_arns may hold at most 20 entries."
   }
 }
 
