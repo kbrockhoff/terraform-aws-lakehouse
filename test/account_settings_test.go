@@ -250,6 +250,39 @@ func TestOwnerOnlyInputsRejectedOnNonOwner(t *testing.T) {
 	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "does not own the account settings")
 }
 
+// identityCenterInstance is a well-formed placeholder; plans never call Identity Center.
+const identityCenterInstance = "arn:aws:sso:::instance/ssoins-0123456789abcdef"
+
+// TestIdentityCenterIntegration checks FR-032: off by default, created by the owner for the
+// account's catalog when enabled, and owner-only.
+func TestIdentityCenterIntegration(t *testing.T) {
+	t.Parallel()
+	const addr = settingsPrefix + "aws_lakeformation_identity_center_configuration.this[0]"
+
+	off := planExample(t, "complete", completeVars(generateTestNamePrefix("icf")))
+	assert.NotContains(t, managedChanges(off), addr, "off by default")
+	assert.Equal(t, "", outputAfter(off, "identity_center_application_arn"))
+
+	vars := completeVars(generateTestNamePrefix("ico"))
+	vars["account_settings_config"] = map[string]interface{}{
+		"identity_center": map[string]interface{}{"enabled": true, "instance_arn": identityCenterInstance},
+	}
+	on := planExample(t, "complete", vars)
+	ic := after(managedChanges(on)[addr])
+	require.NotEmpty(t, ic, "the owner creates the integration")
+	assert.Equal(t, identityCenterInstance, ic["instance_arn"])
+	assert.Regexp(t, `^[0-9]{12}$`, ic["catalog_id"], "the account's default catalog")
+
+	vars = completeVars(generateTestNamePrefix("icn"))
+	vars["account_settings_config"] = map[string]interface{}{
+		"owner":           false,
+		"identity_center": map[string]interface{}{"enabled": true, "instance_arn": identityCenterInstance},
+	}
+	_, err := terraform.InitAndPlanE(t, exampleOptions(t, "complete", vars))
+	require.Error(t, err)
+	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "does not own the account settings")
+}
+
 // TestDataLakeSettingsExplicit checks FR-003: every field is declared with its secure default.
 func TestDataLakeSettingsExplicit(t *testing.T) {
 	t.Parallel()

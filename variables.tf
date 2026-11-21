@@ -120,6 +120,10 @@ variable "account_settings_config" {
       when the owner creates it, which happens only when it is missing; an existing catalog is never
       changed or deleted. True lets third-party engines get credentials without session tags when
       the caller has full table access.
+    - identity_center: connect Lake Formation to an existing IAM Identity Center instance
+      (instance_arn, required when enabled), so data permissions can be granted to Identity Center
+      users and groups and trusted identity propagation works. Turning it off deletes the
+      integration: grants to Identity Center users and groups stop working.
   EOT
   type = object({
     owner                 = optional(bool)
@@ -144,6 +148,10 @@ variable "account_settings_config" {
     permissions_boundary_arn = optional(string, "")
     s3tables_catalog = optional(object({
       allow_full_table_external_data_access = optional(bool, true)
+    }), {})
+    identity_center = optional(object({
+      enabled      = optional(bool, false)
+      instance_arn = optional(string, "")
     }), {})
   })
   default = {}
@@ -215,6 +223,15 @@ variable "account_settings_config" {
       can(regex("^arn:aws[a-z-]*:iam::([0-9]{12}|aws):policy/.+$", var.account_settings_config.permissions_boundary_arn))
     )
     error_message = "permissions_boundary_arn must be empty or an IAM policy ARN."
+  }
+
+  validation {
+    condition = (
+      var.account_settings_config.identity_center.enabled ?
+      can(regex("^arn:aws[a-z-]*:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$", var.account_settings_config.identity_center.instance_arn)) :
+      var.account_settings_config.identity_center.instance_arn == ""
+    )
+    error_message = "identity_center.instance_arn must be an IAM Identity Center instance ARN (arn:aws:sso:::instance/ssoins-...) when identity_center.enabled is true, and empty when it is false."
   }
 }
 

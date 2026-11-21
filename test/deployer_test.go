@@ -125,3 +125,38 @@ func TestDeployerPolicies(t *testing.T) {
 	assert.False(t, actions(t, noPricing, "platform_policy_json")["pricing:GetProducts"])
 	assert.False(t, actions(t, noPricing, "tenant_policy_json")["pricing:GetProducts"])
 }
+
+// TestDeployerIdentityCenterPermissions checks FR-032: the Identity Center integration actions
+// are granted to the platform deployer only when requested, never to a tenant pipeline.
+func TestDeployerIdentityCenterPermissions(t *testing.T) {
+	t.Parallel()
+	icActions := []string{
+		"lakeformation:CreateLakeFormationIdentityCenterConfiguration",
+		"lakeformation:DeleteLakeFormationIdentityCenterConfiguration",
+		"sso:CreateApplication",
+		"sso:DeleteApplication",
+		"sso:PutApplicationAuthenticationMethod",
+	}
+
+	off := planExample(t, "deployer", map[string]interface{}{})
+	const instance = "arn:aws:sso:::instance/ssoins-7223dc852c4ffcf3"
+	on := planExample(t, "deployer", map[string]interface{}{"identity_center_instance_arn": instance})
+	for _, a := range icActions {
+		assert.False(t, actions(t, off, "platform_policy_json")[a], "%s without identity_center_instance_arn", a)
+		assert.True(t, actions(t, on, "platform_policy_json")[a], "platform scope needs %s", a)
+		assert.False(t, actions(t, on, "tenant_policy_json")[a], "tenant scope must not include %s", a)
+	}
+	// Scoped to the instance, its applications in any owner account, and the Lake Formation provider
+	policy, _ := outputAfter(on, "platform_policy_json").(string)
+	assert.Contains(t, policy, `"`+instance+`"`)
+	assert.Contains(t, policy, "arn:aws:sso::*:application/ssoins-7223dc852c4ffcf3/*")
+	assert.Contains(t, policy, "arn:aws:sso::aws:applicationProvider/lakeformation")
+	assert.NotContains(t, policy, "arn:aws:sso:::instance/*")
+
+	// IAM counts managed policy size without whitespace
+	for _, name := range []string{"basic", "lakehouse"} {
+		policy, _ := after(managedChanges(on)["module.platform.aws_iam_policy."+name+"[0]"])["policy"].(string)
+		require.NotEmpty(t, policy, name)
+		assert.Less(t, len(strings.Join(strings.Fields(policy), "")), 6144, "%s policy exceeds the managed policy size quota", name)
+	}
+}

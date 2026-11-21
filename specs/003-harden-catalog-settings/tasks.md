@@ -907,6 +907,56 @@ destroy and upgrade path.
 
 ---
 
+## Phase 9: Identity Center Integration (FR-032)
+
+**Purpose**: Let the account-settings owner optionally connect Lake Formation to an existing IAM
+Identity Center instance (`aws_lakeformation_identity_center_configuration`, plan R14), with an
+owner-only input, a gated deployer statement, and an `lfverify` check (FR-020 case 12).
+
+- [x] T086 Sandbox confirmation (plan item 9) with the sandbox organization's Identity Center
+  instance: whether the scoped `sso:` resources are enough to create, update, and delete the
+  integration; whether the instance must be in the deployment's Region; and that deleting it
+  leaves the data-lake settings and other grants unchanged. Record it as item 9 in
+  `specs/003-harden-catalog-settings/sandbox-results.md`, and widen `LakeFormationIdentityCenter`
+  (T090) if the sandbox requires it.
+- [x] T087 Root `variables.tf`: add `account_settings_config.identity_center` (`enabled`, default
+  false; `instance_arn`, default empty) with validations: enabled requires an Identity Center
+  instance ARN, disabled requires it empty. Document the consequence of turning it off. Add both
+  fields to `owner_only_inputs_default` in `locals.tf`.
+- [x] T088 [P] `modules/account-settings`:
+  - `identity-center.tf`: `aws_lakeformation_identity_center_configuration.this` (count =
+    enabled, `catalog_id` = account ID, `depends_on` the data-lake settings);
+  - `variables.tf`: an `identity_center` object input;
+  - `outputs.tf`: `identity_center_application_arn` (empty when off).
+- [x] T089 Root wiring: pass `identity_center` into `module.account_settings` (`main.tf`), add the
+  root output `identity_center_application_arn` (`outputs.tf`), and expose the input in
+  `examples/complete`.
+- [x] T090 [P] `modules/deployer`: an `identity_center_instance_arn` input (default empty) and
+  platform-scope `LakeFormationIdentityCenter` and `IdentityCenterApplication` statements with the
+  plan R14 actions, scoped to the instance (sandbox result 9, D5). Update
+  `test/deployer_test.go` (action coverage and policy size).
+- [x] T091 [P] Plan-only tests:
+  - `test/account_settings_test.go`: an owner with the integration enabled plans the resource with
+    the expected instance and catalog, and plans none when disabled;
+  - `test/validation_test.go`: enabled without an ARN, a malformed ARN, an ARN while disabled, and
+    a non-default value on a non-owner are rejected.
+- [x] T092 [P] `lfverify` FR-020 case 12: a check op `identity_center` (`matrix.go`,
+  `dispatch.go`, `ops/settings.go`) calling `DescribeLakeFormationIdentityCenterConfiguration`.
+  It compares the instance ARN with `expect_values` when the integration is expected, and only
+  reports otherwise. Add case `admin-identity-center` to `verify/matrix/full.yaml` and
+  `verify/matrix/probe.example.yaml`, the manifest key, and unit tests.
+- [x] T093 [P] Docs: an "Identity Center integration" section in `README.md` (prerequisites, the
+  turn-off warning, adopting an existing integration with `import`, the deployer flag),
+  `modules/account-settings/README.md`, and `make docs`.
+- [x] T094 Run `make pre-commit`, `make validate`, and `make security-scan`.
+- [x] T095 Sandbox run, recorded in `sandbox-results.md`: `make verify-full` with the integration
+  enabled for the sandbox instance (case 12 passes), then an apply with it disabled removes it.
+
+**Checkpoint**: The owner can connect Lake Formation to Identity Center with one input, non-owners
+cannot, and the harness reports the integration.
+
+---
+
 ## Dependencies and Execution Order
 
 ### Phase Dependencies
@@ -926,6 +976,9 @@ destroy and upgrade path.
 - **Phase 8** (Federated Table Storage Catalog, added 2026-11-19) depends on Phases 2 and 7. T073
   comes first. T074 blocks T075. T076 and T077 follow T075. T078 to T081 can run in parallel.
   T082 and T083 come next. T084 and T085 (catalog first) follow.
+- **Phase 9** (Identity Center Integration, added 2026-11-21) depends on Phase 8. T087 blocks T088
+  and T089. T090 to T093 can run in parallel after T089. T094 follows them. T086 and T095 need the
+  sandbox Identity Center instance, and T086 can widen T090.
 
 ### Resource Dependency Order (at apply time)
 
@@ -992,6 +1045,8 @@ destroy and upgrade path.
 - T070 and T071, after Polish: `make security-scan`, `make pre-commit`, `make validate`.
 - T082 and T083, after the federated catalog: `make validate`, `make security-scan`, and the
   sandbox create, leave-unchanged, and upgrade runs.
+- T094 and T095, after the Identity Center integration: `make validate`, `make security-scan`, and
+  the sandbox enable and disable runs.
 
 ### Environment Order
 

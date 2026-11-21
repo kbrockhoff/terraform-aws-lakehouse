@@ -105,6 +105,10 @@ It covers these personas:
   Fixture roles get key access through their own IAM policies, so the key policy never names them.
 - Optional: `CATALOG_KEY_ACCESS_MODE=per_caller` runs the fixture in per-caller catalog encryption
   mode. The default is `service_role`.
+- Optional: `IDENTITY_CENTER_INSTANCE_ARN=<arn:aws:sso:::instance/ssoins-...>` connects Lake Formation
+  to that Identity Center instance (spec 003 FR-032), and case `admin-identity-center` then requires
+  it. Without it, the case only reports the live integration. The fixture deletes the integration on
+  teardown, so use it only in an account where nothing else depends on one.
 - Optional: `CONSUMER_PROFILE=<aws profile>` turns on the spec 003 sharing cases (persona
   `consumer`). Requirements for the profile's account:
   - it is a second sandbox account in the same organization and Region, listed in

@@ -163,6 +163,11 @@ module "lakehouse" {
     s3tables_catalog = {
       allow_full_table_external_data_access = false
     }
+    # Optional: connect Lake Formation to the sandbox's Identity Center instance (FR-032)
+    identity_center = {
+      enabled      = var.identity_center_instance_arn != ""
+      instance_arn = var.identity_center_instance_arn
+    }
   }
 
   governance_config = {

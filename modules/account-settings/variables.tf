@@ -195,3 +195,24 @@ variable "permissions_boundary_arn" {
   type        = string
   default     = ""
 }
+
+variable "identity_center" {
+  description = "Optional Lake Formation integration with an existing IAM Identity Center instance. instance_arn is required when enabled."
+  type = object({
+    enabled      = bool
+    instance_arn = string
+  })
+  default = {
+    enabled      = false
+    instance_arn = ""
+  }
+
+  validation {
+    condition = (
+      var.identity_center.enabled ?
+      can(regex("^arn:aws[a-z-]*:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$", var.identity_center.instance_arn)) :
+      var.identity_center.instance_arn == ""
+    )
+    error_message = "identity_center.instance_arn must be an IAM Identity Center instance ARN when enabled, and empty otherwise."
+  }
+}

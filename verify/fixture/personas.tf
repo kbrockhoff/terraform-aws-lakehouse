@@ -143,6 +143,22 @@ data "aws_iam_policy_document" "admin" {
     actions   = ["glue:GetDataCatalogEncryptionSettings", "glue:GetResourcePolicy"]
     resources = ["arn:${local.partition}:glue:${local.region}:${local.account_id}:catalog"]
   }
+
+  # FR-020 case 12 reads the Identity Center integration. Lake Formation also describes the
+  # Identity Center application as the caller, which the instance's account owns (sandbox result 9).
+  statement {
+    sid       = "IdentityCenterIntegration"
+    effect    = "Allow"
+    actions   = ["lakeformation:DescribeLakeFormationIdentityCenterConfiguration"]
+    resources = ["*"] # Lake Formation has no resource-level permissions
+  }
+
+  statement {
+    sid       = "IdentityCenterApplication"
+    effect    = "Allow"
+    actions   = ["sso:DescribeApplication"]
+    resources = ["arn:${local.partition}:sso::*:application/*"]
+  }
 }
 
 resource "aws_iam_role_policy" "admin" {

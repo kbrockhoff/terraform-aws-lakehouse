@@ -196,7 +196,9 @@ locals {
     !var.account_settings_config.catalog_resource_policy.enabled &&
     length(var.account_settings_config.catalog_resource_policy.deny_policy_jsons) == 0 &&
     var.account_settings_config.permissions_boundary_arn == "" &&
-    var.account_settings_config.s3tables_catalog.allow_full_table_external_data_access
+    var.account_settings_config.s3tables_catalog.allow_full_table_external_data_access &&
+    !var.account_settings_config.identity_center.enabled &&
+    var.account_settings_config.identity_center.instance_arn == ""
   )
 
   # Registration waits for the settings, or for the guard when another deployment owns them

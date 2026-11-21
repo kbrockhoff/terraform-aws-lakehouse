@@ -64,6 +64,17 @@ variable "cost_estimation_enabled" {
   default     = true
 }
 
+variable "identity_center_instance_arn" {
+  description = "IAM Identity Center instance of the Lake Formation Identity Center integration (account_settings_config.identity_center). Adds the integration and Identity Center application permissions, scoped to this instance. Empty adds nothing. Platform scope only."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.identity_center_instance_arn == "" || can(regex("^arn:aws[a-z-]*:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$", var.identity_center_instance_arn))
+    error_message = "identity_center_instance_arn must be empty or an IAM Identity Center instance ARN."
+  }
+}
+
 variable "platform_contract_parameter_arn" {
   description = "ARN of the SSM parameter holding the platform contract, when tenant pipelines read it from SSM. Adds ssm:GetParameter on exactly that parameter. Empty adds nothing."
   type        = string

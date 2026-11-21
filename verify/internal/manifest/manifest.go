@@ -245,6 +245,7 @@ var settingKeys = map[string]string{
 	"kms_key_arn":                           "catalog_kms_key_arn",
 	"federated_identifier":                  "s3tables_catalog_identifier",
 	"allow_full_table_external_data_access": "s3tables_catalog_allow_full",
+	"instance_arn":                          "identity_center_instance_arn",
 }
 
 // ExpectValues resolves a check case's expectations, replacing FromManifest with the fixture's

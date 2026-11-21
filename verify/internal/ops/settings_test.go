@@ -70,3 +70,30 @@ func TestCatalogDefaultPermissions(t *testing.T) {
 		t.Errorf("default permissions = %q, want IAM_ALLOWED_PRINCIPALS", got)
 	}
 }
+
+func TestIdentityCenterMismatches(t *testing.T) {
+	const instance = "arn:aws:sso:::instance/ssoins-0123456789abcdef"
+	cases := []struct {
+		name, live, want string
+		mismatch         bool
+	}{
+		{"expected and present", instance, instance, false},
+		{"expected but missing", NotExpected, instance, true},
+		{"expected, other instance", "arn:aws:sso:::instance/ssoins-fedcba9876543210", instance, true},
+		{"not expected, missing", NotExpected, NotExpected, false},
+		{"not expected, present: report only", instance, NotExpected, false},
+	}
+	for _, c := range cases {
+		want := map[string]string{"instance_arn": c.want}
+		got := identityCenterMismatches(c.live, want)
+		if (len(got) > 0) != c.mismatch {
+			t.Errorf("%s: mismatches %v, want mismatch %v", c.name, got, c.mismatch)
+		}
+		if want["instance_arn"] != c.want {
+			t.Errorf("%s: want map was modified", c.name)
+		}
+	}
+	if got := identityCenterMismatches(instance, map[string]string{"instance": instance}); len(got) != 1 {
+		t.Errorf("unknown key: mismatches %v, want one", got)
+	}
+}

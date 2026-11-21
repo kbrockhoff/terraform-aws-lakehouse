@@ -33,6 +33,12 @@ variable "catalog_kms_key_arn" {
   }
 }
 
+variable "identity_center_instance_arn" {
+  description = "IAM Identity Center instance to connect Lake Formation to for FR-020 case 12 (spec 003 FR-032). Empty leaves the integration off; the case then only reports the live state."
+  type        = string
+  default     = ""
+}
+
 variable "consumer_profile" {
   description = "AWS profile for the consumer sandbox account of the spec 003 sharing cases. Empty skips them. Its role must already be a Lake Formation data-lake admin there, and the account must be in verify/sandbox-accounts.txt."
   type        = string

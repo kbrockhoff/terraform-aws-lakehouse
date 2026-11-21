@@ -76,6 +76,8 @@ output "manifest" {
       # Set when the module creates s3tablescatalog; an existing catalog is never changed (FR-029)
       s3tables_catalog_identifier = "arn:${local.partition}:s3tables:${local.region}:${local.account_id}:bucket/*"
       s3tables_catalog_allow_full = "false"
+      # "none" when the run does not enable the Identity Center integration (FR-032)
+      identity_center_instance_arn = var.identity_center_instance_arn != "" ? var.identity_center_instance_arn : "none"
     }
   }
 }

@@ -27,3 +27,8 @@ output "required_catalog_kms_key_policy_json" {
   description = "Key policy statements a consumer-supplied catalog key needs. Account-root access is the key owner's own responsibility."
   value       = data.aws_iam_policy_document.required_catalog_key_statements.json
 }
+
+output "identity_center_application_arn" {
+  description = "ARN of the Identity Center application Lake Formation created for the integration. Empty when the integration is off."
+  value       = var.identity_center.enabled ? aws_lakeformation_identity_center_configuration.this[0].application_arn : ""
+}

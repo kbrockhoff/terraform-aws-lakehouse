@@ -132,6 +132,15 @@ func TestInvalidInputsFailPlan(t *testing.T) {
 		{"external filtering without allow list", map[string]interface{}{"account_settings_config": map[string]interface{}{
 			"data_lake": map[string]interface{}{"allow_external_data_filtering": true}}},
 			"requires a non-empty external_data_filtering_allow_list"},
+		{"identity center enabled without instance", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"identity_center": map[string]interface{}{"enabled": true}}},
+			"must be an IAM Identity Center instance ARN"},
+		{"identity center malformed instance", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"identity_center": map[string]interface{}{"enabled": true, "instance_arn": "arn:aws:sso:::instance/*"}}},
+			"must be an IAM Identity Center instance ARN"},
+		{"identity center instance while disabled", map[string]interface{}{"account_settings_config": map[string]interface{}{
+			"identity_center": map[string]interface{}{"enabled": false, "instance_arn": "arn:aws:sso:::instance/ssoins-0123456789abcdef"}}},
+			"must be an IAM Identity Center instance ARN"},
 		{"invalid key access mode", map[string]interface{}{"account_settings_config": map[string]interface{}{
 			"catalog_encryption": map[string]interface{}{"key_access_mode": "shared"}}},
 			"must be service_role or per_caller"},

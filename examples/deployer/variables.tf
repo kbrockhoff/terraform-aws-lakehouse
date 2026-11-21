@@ -13,3 +13,9 @@ variable "cost_estimation_enabled" {
   type        = bool
   default     = true
 }
+
+variable "identity_center_instance_arn" {
+  description = "Identity Center instance of the Lake Formation integration; empty grants no Identity Center permissions"
+  type        = string
+  default     = ""
+}

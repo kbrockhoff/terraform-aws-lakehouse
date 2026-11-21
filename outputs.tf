@@ -22,6 +22,11 @@ output "account_settings_owner" {
   value       = var.enabled && local.settings_owner
 }
 
+output "identity_center_application_arn" {
+  description = "ARN of the Identity Center application created by the Lake Formation Identity Center integration (FR-032). Empty when the integration is off or this deployment does not own the account settings."
+  value       = var.enabled && local.settings_owner ? module.account_settings[0].identity_center_application_arn : ""
+}
+
 output "catalog_encryption_role_arn" {
   description = "ARN of the Glue catalog-encryption role. Empty when this deployment does not own the account settings or uses per_caller mode."
   value       = var.enabled && local.settings_owner ? module.account_settings[0].catalog_encryption_role_arn : ""

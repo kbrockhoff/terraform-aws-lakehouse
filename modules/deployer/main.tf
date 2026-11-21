@@ -441,6 +441,51 @@ data "aws_iam_policy_document" "lakehouse" {
     }
   }
 
+  # Optional Lake Formation Identity Center integration (spec 003 FR-032). Lake Formation creates
+  # the Identity Center application with the caller's credentials.
+  dynamic "statement" {
+    for_each = var.scope == "platform" && var.identity_center_instance_arn != "" ? [1] : []
+    content {
+      sid    = "LakeFormationIdentityCenter"
+      effect = "Allow"
+      actions = [
+        "lakeformation:CreateLakeFormationIdentityCenterConfiguration",
+        "lakeformation:DescribeLakeFormationIdentityCenterConfiguration",
+        "lakeformation:UpdateLakeFormationIdentityCenterConfiguration",
+        "lakeformation:DeleteLakeFormationIdentityCenterConfiguration",
+      ]
+      resources = ["*"] # Lake Formation has no resource-level permissions
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.scope == "platform" && var.identity_center_instance_arn != "" ? [1] : []
+    content {
+      sid    = "IdentityCenterApplication"
+      effect = "Allow"
+      actions = [
+        "sso:CreateApplication",
+        "sso:DescribeApplication",
+        "sso:UpdateApplication",
+        "sso:DeleteApplication",
+        "sso:PutApplicationGrant",
+        "sso:GetApplicationGrant",
+        "sso:DeleteApplicationGrant",
+        "sso:PutApplicationAuthenticationMethod",
+        "sso:PutApplicationAccessScope",
+        "sso:PutApplicationAssignmentConfiguration",
+      ]
+      # The instance, its applications, and the Lake Formation application provider (sandbox
+      # result 9). Applications are owned by the instance's account, often the management account,
+      # not this one, so the account is a wildcard and the instance ID scopes them.
+      resources = [
+        var.identity_center_instance_arn,
+        "arn:${var.partition}:sso::*:application/${element(split("/", var.identity_center_instance_arn), 1)}/*",
+        "arn:${var.partition}:sso::aws:applicationProvider/lakeformation",
+      ]
+    }
+  }
+
   dynamic "statement" {
     for_each = var.scope == "platform" ? [1] : []
     content {

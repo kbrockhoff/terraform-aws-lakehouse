@@ -27,6 +27,7 @@ module "account_settings" {
   catalog_encryption           = var.account_settings_config.catalog_encryption
   catalog_resource_policy      = var.account_settings_config.catalog_resource_policy
   permissions_boundary_arn     = var.account_settings_config.permissions_boundary_arn
+  identity_center              = var.account_settings_config.identity_center
   catalog_ready                = local.s3tables_catalog_ready
   kms_key_deletion_window_days = local.effective_config.kms_key_deletion_window_days
   key_administrator_arns       = local.key_administrator_arns
@@ -83,7 +84,7 @@ resource "terraform_data" "settings_guard" {
 
     precondition {
       condition     = local.owner_only_inputs_default
-      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, permissions_boundary_arn, and s3tables_catalog must keep their defaults. Set them in the owner deployment."
+      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, permissions_boundary_arn, s3tables_catalog, and identity_center must keep their defaults. Set them in the owner deployment."
     }
 
     precondition {

@@ -92,6 +92,7 @@ const (
 	CatalogEncryption      Op = "catalog_encryption"
 	CatalogResourcePolicy  Op = "catalog_resource_policy"
 	S3TablesCatalog        Op = "s3tables_catalog"
+	IdentityCenter         Op = "identity_center"
 	NoIAMAllowedPrincipals Op = "no_iam_allowed_principals"
 
 	// Rule-boundary operations (FR-021): each attempts a grant the permission service must reject
@@ -106,7 +107,7 @@ var readOps = []Op{
 }
 
 // CheckOps compare live settings with expectations instead of testing a persona's access.
-var CheckOps = []Op{AccountSettings, CatalogEncryption, CatalogResourcePolicy, S3TablesCatalog, NoIAMAllowedPrincipals}
+var CheckOps = []Op{AccountSettings, CatalogEncryption, CatalogResourcePolicy, S3TablesCatalog, IdentityCenter, NoIAMAllowedPrincipals}
 
 var writeOps = []Op{
 	Insert, Update, Delete, CreateTable, AlterTable, DropTable, Grant, Revoke, AddLFTags,
@@ -412,7 +413,7 @@ func (m *Matrix) validateCase(c Case) []error {
 		if c.Expect == Inspect && len(c.ExpectPermissions) == 0 {
 			add("expect inspect needs expect_permissions")
 		}
-		if c.Op != GetSettings && c.Op != ListCatalogs && c.Op != AccountSettings && c.Op != CatalogEncryption && c.Op != CatalogResourcePolicy && c.Op != S3TablesCatalog && (c.Resource.CatalogID == "" || c.Resource.Database == "") {
+		if c.Op != GetSettings && c.Op != ListCatalogs && c.Op != AccountSettings && c.Op != CatalogEncryption && c.Op != CatalogResourcePolicy && c.Op != S3TablesCatalog && c.Op != IdentityCenter && (c.Resource.CatalogID == "" || c.Resource.Database == "") {
 			add("probe resources need catalog_id and database")
 		}
 		if slices.Contains(QueryOps, c.Op) && c.Expect != Inspect && c.Resource.Workgroup == "" {
