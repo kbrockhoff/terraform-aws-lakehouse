@@ -148,7 +148,11 @@ data "aws_iam_policy_document" "required_kms_statements" {
     }
   }
 
-  # Athena query results in the shared results bucket
+  # Athena query results through S3, in the platform's S3 buckets only: kms:ViaService alone would
+  # also cover S3-path decrypts of table storage for any principal with IAM key permissions. Table
+  # storage carries an s3tables encryption context, so it never matches. Buckets named with the
+  # platform prefix count as platform buckets, as in the maintenance statement, which keeps
+  # workgroups the consumer builds on the platform key working (sandbox run b4e4b9).
   statement {
     sid    = "AllowAthenaResults"
     effect = "Allow"
@@ -164,10 +168,34 @@ data "aws_iam_policy_document" "required_kms_statements" {
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
-      values = [
-        "s3.${local.region}.amazonaws.com",
-        "athena.${local.region}.amazonaws.com",
-      ]
+      values   = ["s3.${local.region}.amazonaws.com"]
+    }
+    # The bucket ARN with S3 Bucket Keys (enabled), the object ARN without
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:s3:arn"
+      values   = ["arn:${local.partition}:s3:::${local.name_prefix}-*"]
+    }
+  }
+
+  # Athena's own key use for query results, which carries no S3 encryption context. Table data
+  # is never decrypted through Athena directly, only through S3 with Lake Formation credentials.
+  statement {
+    sid    = "AllowAthenaService"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["athena.${local.region}.amazonaws.com"]
     }
   }
 }

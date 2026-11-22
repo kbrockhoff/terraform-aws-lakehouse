@@ -520,6 +520,34 @@ func TestKeyDelegatedStatements(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, exemptions, 2, "platform and designated-tenant keys")
 
+	// Athena results key use through S3 is limited to the results buckets, so it never covers S3-path
+	// decrypts of table storage; Athena's own calls keep a separate statement
+	results := 0
+	for _, addr := range planDataSources(plan) {
+		if !strings.HasSuffix(addr, "data.aws_iam_policy_document.required_kms_statements[0]") &&
+			!(strings.Contains(addr, "module.tenant[") && strings.HasSuffix(addr, "data.aws_iam_policy_document.kms[0]")) {
+			continue
+		}
+		stmts := statements(t, plan, addr)
+		athena := stmts["AllowAthenaResults"]
+		require.NotNil(t, athena, addr)
+		via := conditionValues(athena, "kms:ViaService")
+		require.Len(t, via, 1, addr)
+		assert.Regexp(t, `^s3\.[a-z0-9-]+\.amazonaws\.com$`, via[0], addr)
+		// Platform key: the platform's S3 buckets (never an s3tables context); tenant key: its results bucket
+		contexts := conditionValues(athena, "kms:EncryptionContext:aws:s3:arn")
+		require.NotEmpty(t, contexts, addr)
+		for _, c := range contexts {
+			assert.Regexp(t, `^arn:aws:s3:::`+name+`-(\*|[a-z0-9]+-athena-results-[0-9]{12}(/\*)?)$`, c, addr)
+		}
+		require.NotNil(t, stmts["AllowAthenaService"], addr)
+		service := conditionValues(stmts["AllowAthenaService"], "kms:ViaService")
+		require.Len(t, service, 1, addr)
+		assert.Regexp(t, `^athena\.[a-z0-9-]+\.amazonaws\.com$`, service[0], addr)
+		results++
+	}
+	assert.GreaterOrEqual(t, results, 2, "platform and designated-tenant keys")
+
 	writers := statements(t, plan, settingsPrefix+"data.aws_iam_policy_document.required_catalog_key_statements")["AllowConnectionPasswordEncryption"]
 	require.NotNil(t, writers, "connection writers keep kms:Encrypt for Glue connection passwords")
 	assert.Equal(t, []string{"kms:Encrypt"}, strs(writers["actions"]))

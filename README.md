@@ -569,7 +569,8 @@ use to the account; each is limited by service, encryption context, or exact pri
 
   | Key | Statement | Grants | Limited to |
   |---|---|---|---|
-  | Platform, tenant | `AllowAthenaResults` | `kms:Decrypt`, `kms:GenerateDataKey` | calls through S3 or Athena (query results) |
+  | Platform, tenant | `AllowAthenaResults` | `kms:Decrypt`, `kms:GenerateDataKey` | calls through S3 on S3 buckets named with `name_prefix` (platform key) or the tenant's results bucket (tenant key), by encryption context; never table storage |
+  | Platform, tenant | `AllowAthenaService` | `kms:Decrypt`, `kms:GenerateDataKey` | calls through Athena itself, which never decrypts table data directly |
   | Platform, tenant | `AllowDirectAccessExemptions` | `kms:Decrypt`, `kms:GenerateDataKey` | `direct_access_exempt_principal_arns`, through S3 Tables or S3, on the module's table buckets (encryption context) |
   | Catalog | `AllowGlueCatalogEncryption` | `kms:CreateGrant` | grants for AWS resources, for this account's catalog |
   | Catalog | `KeyDeletionBreakGlass` | schedule or cancel deletion, disable, enable | `catalog_encryption.key_deletion_principal_arns` |

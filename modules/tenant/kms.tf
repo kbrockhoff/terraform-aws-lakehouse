@@ -104,6 +104,7 @@ data "aws_iam_policy_document" "kms" {
     }
   }
 
+  # Athena query results through S3, in this tenant's results bucket only
   statement {
     sid    = "AllowAthenaResults"
     effect = "Allow"
@@ -119,10 +120,37 @@ data "aws_iam_policy_document" "kms" {
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
+      values   = ["s3.${local.region}.amazonaws.com"]
+    }
+    # The bucket ARN with S3 Bucket Keys (enabled), the object ARN without
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:s3:arn"
       values = [
-        "s3.${local.region}.amazonaws.com",
-        "athena.${local.region}.amazonaws.com",
+        "arn:${local.partition}:s3:::${local.results_bucket_name}",
+        "arn:${local.partition}:s3:::${local.results_bucket_name}/*",
       ]
+    }
+  }
+
+  # Athena's own key use for query results, which carries no S3 encryption context. Table data
+  # is never decrypted through Athena directly, only through S3 with Lake Formation credentials.
+  statement {
+    sid    = "AllowAthenaService"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["athena.${local.region}.amazonaws.com"]
     }
   }
 }

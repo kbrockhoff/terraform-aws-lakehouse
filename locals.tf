@@ -146,6 +146,9 @@ locals {
   ) : ""
   kms_key_arn = local.kms_key_id
 
+  # Shared Athena query results bucket
+  query_results_bucket_name = "${local.name_prefix}-athena-results-${local.account_id}"
+
   # SNS topic logic - use provided topic ARN or create new one
   create_sns_topic = var.enabled && local.effective_config.alarms_enabled && var.alarms_config.create_sns_topic
   alarm_sns_topic_arn = var.enabled && local.effective_config.alarms_enabled ? (
