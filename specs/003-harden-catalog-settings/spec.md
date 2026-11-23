@@ -11,7 +11,8 @@ protection, wildcard-principal scope, migration limited to ephemeral test deploy
 2026-11-18: dedicated catalog-metadata key in FR-009, FR-012, FR-013, FR-026; amended 2026-11-18
 from sandbox results T004 and T007: FR-009 scope, FR-011 condition, FR-024 label visibility,
 FR-026 no consumer key grant; amended 2026-11-19: federated table storage catalog ownership in
-FR-029 to FR-031, created only when missing and never deleted)
+FR-029 to FR-031, created only when missing and never deleted; amended 2026-11-21: optional
+Identity Center integration of the permission service in FR-032)
 **Input**: User description: "Upgrade and improve security on the metadata catalog and central data
 permission service account settings. The input is a set of design considerations for running managed
 table storage protected by tag-based permissions alongside a unified analytics studio in the same
@@ -157,7 +158,8 @@ explicit, reviewable values. Then:
     - catalog metadata encryption and its key-access mode, role, and key protections (FR-009 to
       FR-014);
     - the federated table storage catalog, created only when missing and never deleted (FR-029
-      to FR-031).
+      to FR-031);
+    - the optional Identity Center integration of the permission service (FR-032).
   - **The flag is independent of the catalog-integration flag.**
     - A deployment that owns the catalog integration but not the account settings MUST run the
       same plan-time administrator guard that secondary deployments run today.
@@ -338,6 +340,38 @@ explicit, reviewable values. Then:
   apply that upgrades it. The catalog-integration unit keeps the storage registration and the
   data-access role.
 
+#### Identity Center Integration
+
+- **FR-032**: The account-settings owner MUST support an optional integration of the permission
+  service with an existing IAM Identity Center instance (added 2026-11-21). The integration lets
+  administrators grant data permissions to Identity Center users and groups, and lets query
+  engines that use trusted identity propagation act as those users. The default is off.
+  - **Inputs**: an enabled flag (default false) and the Identity Center instance ARN, grouped
+    under the account-settings configuration (FR-002).
+    - When enabled, the instance ARN MUST be a valid Identity Center instance ARN without
+      wildcards.
+    - When disabled, the instance ARN MUST be empty. Validation rejects any value, the same way
+      the studio flag does (FR-007).
+  - **When enabled**, the owner MUST create the integration for this account's default catalog.
+    It MUST be created after the permission-service settings (FR-003), because the deploying role
+    must already be an administrator.
+  - **Owner only** (FR-001): a non-owner deployment MUST reject a non-default value. Nothing else
+    in the platform depends on the integration, so non-owners run no live check for it.
+  - **Turning it off** on the owner MUST delete the integration on the next apply. The
+    documentation MUST warn that permissions granted to Identity Center users and groups then stop
+    working, and that engines using trusted identity propagation lose access through it.
+  - **An integration created outside the module**: the service allows one per catalog, so the
+    create fails while another exists. The documentation MUST describe adopting it with an import
+    instead.
+  - **Outputs**: the integration's application ARN, empty when the integration is off or the
+    deployment is not the owner.
+  - **Deployer permissions**: the deployer policy MUST grant the integration's permission-service
+    and Identity Center application actions only when the integration is requested, scoped to the
+    configured instance and its applications. The applications belong to the instance's account,
+    which is usually not this one (amended 2026-11-21 from plan D5, sandbox result 9).
+  - The integration MUST NOT configure external filtering targets or cross-account share
+    recipients. The infrastructure provider cannot set them yet (see Out of Scope).
+
 #### Direct Storage Bypass Prevention
 
 - **FR-015**: Every table storage bucket the platform creates (shared zone buckets and designated
@@ -443,6 +477,10 @@ explicit, reviewable values. Then:
   (federated over every table storage bucket, connection `aws:s3tables`, empty default
   permissions, and the expected full-table external access). Full mode teardown MUST confirm that
   the catalog still exists after the fixture is destroyed (FR-030).
+
+  Case 12, in both modes: when the Identity Center integration is expected (FR-032), it exists for
+  the account's default catalog with the expected instance. When it is not expected, the harness
+  reports whether one exists without failing, because the owner may not manage it.
 
   Full mode MUST also run these cases, in both key-access modes, with a second sandbox account as
   the consumer:
@@ -569,6 +607,9 @@ as the data.
       list is rejected, and a non-owner fails when a listed principal is not a live administrator
       (FR-007).
 - [x] New resources carry common tags only. No data tags are applied to keys or roles.
+- [x] With the Identity Center integration off, a non-empty instance ARN is rejected. With it on, a
+      missing or malformed ARN is rejected, and a non-owner rejects any non-default value
+      (FR-032).
 
 ### Security Validation
 
@@ -612,6 +653,8 @@ as the data.
 - [x] The catalog still exists after the owner deployment is destroyed, after the owner flag is
       turned off, and after an upgrade from a version that managed it in the catalog-integration
       unit (FR-030, FR-031).
+- [x] With the Identity Center integration enabled, the owner's apply creates it for the expected
+      instance, FR-020 case 12 passes, and turning it off removes it in one apply (FR-032).
 
 ## Assumptions *(include if making assumptions)*
 
@@ -642,6 +685,10 @@ as the data.
 - The account's resource-sharing service has sharing within the organization enabled, so
   same-organization shares are accepted automatically.
 
+- When the Identity Center integration is enabled (FR-032), an organization or account instance of
+  IAM Identity Center already exists and is reachable from this account and Region, and the
+  deploying role may create Identity Center applications in it.
+
 - Wherever the account-settings owner is applied, the AWS command-line tool is installed and the
   environment's credentials resolve to the deployment's account and Region (FR-029). Terraform's own
   provider credentials are not visible to it.
@@ -659,6 +706,13 @@ as the data.
 - Upgrading the sharing protocol version beyond 4 (an input allows it; the default stays at 4).
 - Additional catalogs beyond the federated table storage catalog.
 - Automated detection of sensitive columns.
+- Identity Center itself: creating the instance, its identity source, users, groups, or the
+  trusted token issuers of query engines (FR-032 only connects the permission service to an
+  existing instance).
+- Granting data permissions to Identity Center users and groups through the tenant persona
+  inputs. Persona inputs stay IAM role and user ARNs in this release.
+- External filtering targets and cross-account share recipients of the Identity Center
+  integration, and Identity Center settings on the interactive query service workgroups.
 
 ## Dependencies *(include if external dependencies exist)*
 

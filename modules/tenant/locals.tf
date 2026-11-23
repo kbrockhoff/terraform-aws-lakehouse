@@ -26,6 +26,13 @@ locals {
 
   kms_key_arn = local.designated ? aws_kms_key.this[0].arn : var.platform.kms_key_arn
 
+  # A designated tenant's own Athena results bucket; its key policy limits results key use to it
+  results_bucket_name = "${local.name_prefix}-${var.name}-athena-results-${local.account_id}"
+
+  # The tenant key's administrators are the platform's, so platform operators keep control of it
+  # whichever pipeline applies the tenant (aws_kms_key.this checks the applying role is listed)
+  key_administrator_arns = var.platform.key_administrator_arns
+
   results = local.designated ? {
     bucket_arn  = aws_s3_bucket.results[0].arn
     bucket_name = aws_s3_bucket.results[0].bucket

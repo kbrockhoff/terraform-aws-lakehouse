@@ -107,6 +107,15 @@ personas:
           create_table_default_permissions: none
           allow_full_table_external_data_access: "true"
         rule: spec 003 FR-029
+      - id: auditor-identity-center
+        op: identity_center
+        expect: match
+        expect_values:
+          # The expected Identity Center instance, or "none" to only report the live integration.
+          # The persona needs lakeformation:DescribeLakeFormationIdentityCenterConfiguration and
+          # sso:DescribeApplication on the instance's applications.
+          instance_arn: arn:aws:sso:::instance/ssoins-0123456789abcdef
+        rule: spec 003 FR-032
       - id: auditor-catalog-resource-policy
         op: catalog_resource_policy
         expect: match

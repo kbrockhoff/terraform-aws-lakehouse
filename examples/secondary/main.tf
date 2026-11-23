@@ -7,6 +7,12 @@ provider "aws" {
   region = "us-east-1"
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_session_context" "current" {
+  arn = data.aws_caller_identity.current.arn
+}
+
 # A second platform in an account and Region whose catalog integration another deployment owns
 module "main" {
   source = "../../"
@@ -37,6 +43,14 @@ module "main" {
   # Admins are managed by the owning deployment; this list is not applied here
   governance_config = {
     admin_principal_arns = []
+  }
+
+  # This deployment creates its own platform key, administered by the roles that apply it
+  encryption_config = {
+    create_kms_key               = true
+    kms_key_id                   = ""
+    kms_key_deletion_window_days = 14
+    key_administrator_arns       = [data.aws_iam_session_context.current.issuer_arn]
   }
 
   tenants = {

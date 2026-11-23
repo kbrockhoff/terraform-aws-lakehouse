@@ -27,8 +27,10 @@ module "account_settings" {
   catalog_encryption           = var.account_settings_config.catalog_encryption
   catalog_resource_policy      = var.account_settings_config.catalog_resource_policy
   permissions_boundary_arn     = var.account_settings_config.permissions_boundary_arn
+  identity_center              = var.account_settings_config.identity_center
   catalog_ready                = local.s3tables_catalog_ready
   kms_key_deletion_window_days = local.effective_config.kms_key_deletion_window_days
+  key_administrator_arns       = local.key_administrator_arns
 
   key_user_arns = local.tenant_persona_arns
   # Tenant keys are created inside the tenant modules after this call; catalog_key_guard checks them
@@ -82,7 +84,7 @@ resource "terraform_data" "settings_guard" {
 
     precondition {
       condition     = local.owner_only_inputs_default
-      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, permissions_boundary_arn, and s3tables_catalog must keep their defaults. Set them in the owner deployment."
+      error_message = "This deployment does not own the account settings (account_settings_config.owner is false), so cross_account_version, data_lake, catalog_encryption, catalog_resource_policy, permissions_boundary_arn, s3tables_catalog, and identity_center must keep their defaults. Set them in the owner deployment."
     }
 
     precondition {
@@ -108,6 +110,30 @@ resource "terraform_data" "settings_guard" {
 }
 
 # The approved consumer list never includes this account (FR-022)
+# Every module-created key is administered only by encryption_config.key_administrator_arns; the
+# account root can only read it. Applying from an unlisted role would fail PutKeyPolicy (KMS
+# lockout check) or rewrite the policy without itself, so the plan fails first instead.
+resource "terraform_data" "key_administrators_guard" {
+  count = local.creates_kms_key ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = length(local.key_administrator_arns) > 0
+      error_message = "This deployment creates KMS keys, so encryption_config.key_administrator_arns must name their administrators: every role that applies this deployment (CI and break-glass included), as stable role ARNs. The account root can only read the keys."
+    }
+
+    precondition {
+      condition     = contains(local.key_administrator_arns, local.deployer_role_arn)
+      error_message = "The deploying role (${local.deployer_role_arn}) is not in encryption_config.key_administrator_arns, so it cannot manage the module's KMS keys. Add it, applying from a role that is already listed."
+    }
+
+    precondition {
+      condition     = alltrue([for a in local.key_administrator_arns : split(":", a)[4] == local.account_id])
+      error_message = "Every encryption_config.key_administrator_arns entry must be in this account (${local.account_id}); key policies only accept administrators from the key's account."
+    }
+  }
+}
+
 resource "terraform_data" "sharing_guard" {
   count = var.enabled && length(var.sharing_config.consumer_accounts) > 0 ? 1 : 0
 

@@ -133,7 +133,7 @@ test-tenancy: check-aws ## Run only tenancy tests (tenant isolation, type sync, 
 
 test-account-settings: check-aws ## Run only account settings and sharing tests (spec 003)
 	@echo "$(CYAN)Running account settings and sharing tests...$(RESET)"
-	@cd test && go test -v -timeout 45m -run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestEphemeral|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare|TestStandaloneTenantRejectsUnapprovedShare'
+	@cd test && go test -v -timeout 45m -run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestIdentityCenter|TestEphemeral|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare|TestStandaloneTenantRejectsUnapprovedShare'
 	@echo "$(GREEN)✓ test-account-settings passed$(RESET)"
 
 test-standalone: check-aws ## Run only standalone tenant tests
@@ -180,7 +180,7 @@ VERIFY_TF = cd verify/fixture && TF_DATA_DIR=$(VERIFY_OUT)/.terraform terraform
 CATALOG_KEY_ACCESS_MODE ?= service_role
 # CONSUMER_PROFILE (an AWS profile for the consumer sandbox account) turns on the sharing cases;
 # RELEASE=true makes lfverify fail instead of skipping them
-VERIFY_VARS = -var run_id=$(RUN_ID) -var catalog_kms_key_arn=$(LFVERIFY_CATALOG_KEY_ARN) -var catalog_key_access_mode=$(CATALOG_KEY_ACCESS_MODE) $(if $(CONSUMER_PROFILE),-var consumer_profile=$(CONSUMER_PROFILE),) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
+VERIFY_VARS = -var run_id=$(RUN_ID) -var catalog_kms_key_arn=$(LFVERIFY_CATALOG_KEY_ARN) -var catalog_key_access_mode=$(CATALOG_KEY_ACCESS_MODE) $(if $(CONSUMER_PROFILE),-var consumer_profile=$(CONSUMER_PROFILE),) $(if $(IDENTITY_CENTER_INSTANCE_ARN),-var identity_center_instance_arn=$(IDENTITY_CENTER_INSTANCE_ARN),) $(if $(RUNNER_ROLE_ARN),-var runner_role_arn=$(RUNNER_ROLE_ARN),) $(if $(READ_ONLY_RUNNER_ARNS),-var 'read_only_runner_arns=$(READ_ONLY_RUNNER_ARNS)',)
 VERIFY_MANIFEST = $(VERIFY_OUT)/manifest.json
 INJECT ?=
 INJECT_PERSONA ?=

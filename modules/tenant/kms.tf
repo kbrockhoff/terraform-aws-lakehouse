@@ -14,6 +14,18 @@ resource "aws_kms_key" "this" {
   tags = merge(local.tags, {
     Name = "${local.name_prefix}-${var.name}-cmk"
   })
+
+  lifecycle {
+    precondition {
+      condition     = length(local.key_administrator_arns) > 0
+      error_message = "Tenant ${var.name}: the platform contract names no key administrators, so the tenant key would have none. Set encryption_config.key_administrator_arns on the platform, apply it, and republish its platform_contract."
+    }
+
+    precondition {
+      condition     = contains(local.key_administrator_arns, data.aws_iam_session_context.current.issuer_arn)
+      error_message = "Tenant ${var.name}: the applying role (${data.aws_iam_session_context.current.issuer_arn}) is not one of the platform's key administrators, so it could not manage the tenant key. Add it to the platform's encryption_config.key_administrator_arns and apply the platform first."
+    }
+  }
 }
 
 resource "aws_kms_alias" "this" {
@@ -23,25 +35,30 @@ resource "aws_kms_alias" "this" {
   target_key_id = aws_kms_key.this[0].key_id
 }
 
+module "key_policy_statements" {
+  source = "../key-policy-statements"
+  count  = local.designated ? 1 : 0
+
+  account_id                          = local.account_id
+  partition                           = local.partition
+  region                              = local.region
+  key_administrator_arns              = local.key_administrator_arns
+  direct_access_exempt_principal_arns = var.platform.direct_access.exempt_principal_arns
+  # This tenant's dedicated buckets, which its key encrypts
+  table_storage_arn_patterns = [
+    for name in values(local.dedicated_bucket_names) :
+    "arn:${local.partition}:s3tables:${local.region}:${local.account_id}:bucket/${name}/*"
+  ]
+}
+
 # The same statements as the platform key, with maintenance limited to this tenant's buckets
 data "aws_iam_policy_document" "kms" {
   count = local.designated ? 1 : 0
 
-  statement {
-    sid    = "EnableRootAccess"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
-    }
-    actions   = ["kms:*"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:PrincipalAccount"
-      values   = [local.account_id]
-    }
-  }
+  source_policy_documents = compact([
+    module.key_policy_statements[0].administration_json,
+    module.key_policy_statements[0].direct_access_json,
+  ])
 
   statement {
     sid    = "AllowS3TablesMaintenance"
@@ -87,6 +104,7 @@ data "aws_iam_policy_document" "kms" {
     }
   }
 
+  # Athena query results through S3, in this tenant's results bucket only
   statement {
     sid    = "AllowAthenaResults"
     effect = "Allow"
@@ -102,10 +120,37 @@ data "aws_iam_policy_document" "kms" {
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
+      values   = ["s3.${local.region}.amazonaws.com"]
+    }
+    # The bucket ARN with S3 Bucket Keys (enabled), the object ARN without
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:s3:arn"
       values = [
-        "s3.${local.region}.amazonaws.com",
-        "athena.${local.region}.amazonaws.com",
+        "arn:${local.partition}:s3:::${local.results_bucket_name}",
+        "arn:${local.partition}:s3:::${local.results_bucket_name}/*",
       ]
+    }
+  }
+
+  # Athena's own key use for query results, which carries no S3 encryption context. Table data
+  # is never decrypted through Athena directly, only through S3 with Lake Formation credentials.
+  statement {
+    sid    = "AllowAthenaService"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["athena.${local.region}.amazonaws.com"]
     }
   }
 }

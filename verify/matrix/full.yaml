@@ -137,6 +137,13 @@ personas:
           create_table_default_permissions: none
           allow_full_table_external_data_access: manifest
         rule: spec 003 FR-029 - s3tablescatalog exists, federated over every table bucket, no identity-policy-only defaults
+      - id: admin-identity-center
+        style: label
+        op: identity_center
+        expect: match
+        expect_values:
+          instance_arn: manifest
+        rule: spec 003 FR-032 - the Lake Formation Identity Center integration uses the expected instance; reported only when the run does not enable it
       - id: admin-catalog-resource-policy
         style: label
         op: catalog_resource_policy

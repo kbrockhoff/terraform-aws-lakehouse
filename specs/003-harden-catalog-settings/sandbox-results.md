@@ -299,6 +299,46 @@ tasks T002 to T007 and T063.
     in T083: the producer keeps the catalog between runs, while each run registers `bucket/*`
     again.
 
+## 9. Lake Formation Identity Center integration (T086)
+
+- **Command**: run `86acc2` (`make verify-up`/`verify-seed` with
+  `IDENTITY_CENTER_INSTANCE_ARN=arn:aws:sso:::instance/ssoins-7223dc852c4ffcf3`), then CloudTrail `LookupEvents`
+  for `sso.amazonaws.com`, and `iam simulate-custom-policy` on the deployer statement.
+- **Observed**:
+  - The sandbox sees one organization instance, `ssoins-7223dc852c4ffcf3`, owned by the management account
+    `695323546123`, primary and only Region us-east-1. No integration existed before the run.
+  - `aws_lakeformation_identity_center_configuration` was created in 2 s, after the data-lake settings, and
+    returned `arn:aws:sso::695323546123:application/ssoins-7223dc852c4ffcf3/apl-722304af20d9d37f`.
+  - Lake Formation calls Identity Center **with the caller's credentials** (`invokedBy` glue.amazonaws.com):
+    - `CreateApplication` on the instance and `arn:aws:sso::aws:applicationProvider/lakeformation`
+      (`portalOptions.visible = false`, name `AWS-Lake-Formation-AWS-Glue-Data-Catalog-492637581429`);
+    - `PutApplicationAuthenticationMethod` (IAM, actor policy conditioned on `aws:SourceAccount` = this
+      account) and `PutApplicationGrant` (token exchange), both on the application ARN;
+    - `DescribeLakeFormationIdentityCenterConfiguration` also calls `sso:DescribeApplication` as the caller. The
+      fixture's check persona lacked it, so case `admin-identity-center` first ended **not-run**
+      (AccessDenied on `sso:DescribeApplication`).
+  - **The application ARN carries the instance owner's account** (`695323546123`), not this account.
+  - Policy simulation against those exact ARNs:
+    - the planned scope (`instance/*`, `sso::492637581429:application/*`, `applicationProvider/*`) allows
+      `CreateApplication` but **implicitly denies** every application call (`PutApplicationAuthenticationMethod`,
+      `PutApplicationGrant`, `DescribeApplication`, `UpdateApplication`, `DeleteApplication`), so the deployer
+      could never have created the integration;
+    - the corrected scope (the instance ARN, `sso::*:application/ssoins-7223dc852c4ffcf3/*`, and
+      `applicationProvider/lakeformation`) allows all of them and denies another instance.
+  - **Deleting the integration** (apply with it off, nothing else changed): the data-lake settings
+    (SHA-256 prefix `2265e5ff9f8ef2c7`) and all 214 Lake Formation grants (`fb9b6bbce98828b4`) were identical before
+    and after; `DescribeLakeFormationIdentityCenterConfiguration` then returned `EntityNotFoundException`.
+    Re-enabling it after a delete created a new integration in one apply.
+  - **Region**: not exercised. The instance exists only in us-east-1, the sandbox's Region. A deployment in another
+    Region stays covered by the spec assumption that the instance is reachable from it.
+- **Date**: 2026-11-21
+- **Design impact**:
+  - Deviation **D5**: the deployer input is `identity_center_instance_arn`, not a flag. It scopes the `sso:`
+    actions to that instance, its applications in any owner account, and the Lake Formation provider.
+  - The fixture's admin persona and the probe example gain `sso:DescribeApplication`. The README says reading
+    the integration needs it.
+  - FR-032 was amended (deployer permissions scoped to the instance and its applications).
+
 ## Full-mode runs (T063)
 
 The fixture owns the account settings and supplies the long-lived catalog key
@@ -499,3 +539,17 @@ All four checks ran on run **`6e9eff`** (2026-11-19): producer `492637581429`, `
   - The upgrade plan moved the step to `terraform_data.s3tables_catalog[0]` ("moved from ...") and updated it
     in place; it neither destroyed nor re-ran it. It created the two `catalog_ready` markers.
   - **239 of 239 cases pass**, and teardown logged "s3tablescatalog kept".
+
+### Phase 9: Identity Center integration (T094, T095)
+
+- **T094**: `make pre-commit`, `make validate`, and `make security-scan` pass. Checkov: 977 passed, 0 failed.
+- **`86acc2`** (sandbox, no consumer), run step by step instead of `make verify-full` so the integration could
+  be turned off mid-run:
+  1. `verify-up` and `verify-seed` with the instance: the integration was created. The first `verify-run` ended
+     230 pass and 1 not run: `admin-identity-center` lacked `sso:DescribeApplication` (item 9).
+  2. After the persona fix (`verify-apply`): **231 of 231 cases pass**, including `admin-identity-center` with the
+     expected instance.
+  3. `verify-apply` with the integration off destroyed it in one apply (1 destroyed, nothing else changed;
+     settings and grants unchanged, item 9). Re-enabling and disabling once more behaved the same.
+  4. `verify-run` with it off: **231 of 231 cases pass**; `admin-identity-center` only reports.
+  5. `verify-down`: data-lake settings restored, "s3tablescatalog kept", run torn down.

@@ -8,7 +8,7 @@ resource "aws_s3_bucket" "results" {
   # checkov:skip=CKV2_AWS_62:Nothing consumes notifications for transient query results
   count = local.designated ? 1 : 0
 
-  bucket        = "${local.name_prefix}-${var.name}-athena-results-${local.account_id}"
+  bucket        = local.results_bucket_name
   force_destroy = local.effective.force_destroy
 
   tags = local.data_tags

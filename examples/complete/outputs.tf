@@ -22,3 +22,8 @@ output "required_kms_key_policy_json" {
   description = "Key policy statements the platform key needs"
   value       = module.main.required_kms_key_policy_json
 }
+
+output "identity_center_application_arn" {
+  description = "ARN of the Identity Center application for the Lake Formation integration; empty when off"
+  value       = module.main.identity_center_application_arn
+}

@@ -112,7 +112,7 @@ appears when an Ephemeral owner encrypts the catalog with a key it created itsel
 unchanged.
 **Cost Estimation**: The existing `modules/cost-estimation` counts one more KMS key (about USD 1
 per month) when the owner deployment creates the catalog key, and gains a usage line for catalog
-KMS requests.
+KMS requests. The Identity Center integration (FR-032) has no charge and adds no cost line.
 **Target Environments**: All `environment_type` values. Sandbox account `492637581429`
 (us-east-1) is the producer. A second sandbox account in the same organization is the consumer
 and needs to be added to `verify/sandbox-accounts.txt`.
@@ -211,6 +211,29 @@ documented and are confirmed by T-S1.
   - *Design consequence*: the user chose an apply-time CLI check-and-create (`terraform_data` with
     `local-exec`) over an input flag. The catalog is therefore not in state. Its attributes are
     verified by `lfverify` (FR-020 case 11), not by plan drift. See Complexity Tracking.
+- **R14** (2026-11-21)
+  - *Finding*: `aws_lakeformation_identity_center_configuration` (hashicorp/aws, added well before
+    the `>= 6.59.0` floor) takes only `instance_arn` and an optional `catalog_id`, and exports
+    `application_arn` and `resource_share`. It has no external filtering or share recipient
+    arguments, and no tags. AWS documents the caller's permissions as
+    `lakeformation:{Create,Describe,Update,Delete}LakeFormationIdentityCenterConfiguration` plus
+    `sso:CreateApplication`, `sso:DescribeApplication`, `sso:UpdateApplication`,
+    `sso:DeleteApplication`, `sso:PutApplicationGrant`, `sso:GetApplicationGrant`,
+    `sso:DeleteApplicationGrant`, `sso:PutApplicationAuthenticationMethod`,
+    `sso:PutApplicationAccessScope` and `sso:PutApplicationAssignmentConfiguration`, all on `*`.
+    Only one configuration exists per catalog.
+  - *Design consequence*: FR-032 manages the resource in `modules/account-settings`, behind an
+    owner-only flag, with no provider floor change. External filtering and share recipients stay
+    out of scope. Whether the `sso:` actions accept resource-level scoping (instance and
+    application ARNs) is unconfirmed, so it is a sandbox item (plan item 9); the deployer
+    statement starts scoped and falls back to `*` only if the sandbox requires it.
+  - *Sandbox result 9 (2026-11-21)*: scoping works, but not as first planned. Lake Formation
+    calls `sso:` with the caller's credentials (`invokedBy` glue.amazonaws.com).
+    `CreateApplication` acts on the instance and `applicationProvider/lakeformation`. The
+    application calls act on `arn:aws:sso::<instance owner account>:application/<instance id>/apl-*`,
+    and the owner is the Identity Center account (the management account), not this one. Reading
+    the integration also needs `sso:DescribeApplication`. The deployer input therefore became
+    `identity_center_instance_arn` (deviation D5).
 
 ## Principles Check
 
@@ -403,6 +426,22 @@ No changes. Network foundations remain out of scope in 001.
    - **Tags**: `common_tags` only. The catalog holds no data at rest itself (bd memory
      `data-tags-data-at-rest-only`).
 
+7. `aws_lakeformation_identity_center_configuration.this` (FR-032, added 2026-11-21), in
+   `identity-center.tf`, count = `identity_center.enabled`:
+   - `catalog_id` = the account ID and `instance_arn` from the input;
+   - `depends_on` the data-lake settings (item 1), so the deployer is already an admin. That also
+     orders it after `catalog_ready`;
+   - no tags argument exists (R14), so no tags are applied;
+   - no `prevent_destroy`: turning the flag off deletes it by design, and the README warns about
+     the effect on Identity Center grants;
+   - output `identity_center_application_arn`, passed through to the root (empty when off or on a
+     non-owner).
+
+   An integration created outside the module makes the create fail, because the service allows
+   one per catalog. The README documents a root `import` block to adopt it
+   (`module.<name>.module.account_settings[0].aws_lakeformation_identity_center_configuration.this[0]`,
+   ID = the account ID).
+
 **Catalog key in `modules/account-settings/kms.tf`**:
 
 - `aws_kms_key.catalog`, with `count = var.catalog_encryption.kms_key_arn == "" ? 1 : 0`:
@@ -516,6 +555,12 @@ The existing `secondary_admin_guard` becomes `settings_guard`, with a `moved` bl
     `ram:AssociateResourceSharePermission` and `ram:DisassociateResourceSharePermission`, with
     `ram:ResourceShareName` like `LakeFormation*` where the action supports it. The list mirrors
     `AWSLakeFormationCrossAccountManager`.
+  - `LakeFormationIdentityCenter` and `IdentityCenterApplication` (FR-032), only when the new
+    `identity_center_instance_arn` input is set (default empty): the four
+    `lakeformation:*LakeFormationIdentityCenterConfiguration` actions on `*` (no resource-level
+    permissions), and the R14 `sso:` actions scoped to that instance, its applications in any
+    owner account (`arn:<partition>:sso::*:application/<instance id>/*`), and
+    `arn:<partition>:sso::aws:applicationProvider/lakeformation` (sandbox result 9, D5).
 - **Extended statements**: `lakeformation:PutDataLakeSettings` is already covered, and the
   existing role-management statement already covers the new role name (`iam:PassRole` for
   `<prefix>-glue-catalog-encryption`).
@@ -535,12 +580,15 @@ The existing `secondary_admin_guard` becomes `settings_guard`, with a `moved` bl
     - `catalog_resource_policy`: `enabled`, `deny_policy_jsons`;
     - `permissions_boundary_arn`;
     - `s3tables_catalog`: `allow_full_table_external_data_access` (bool, default **true**, per the
-      user's create command). It replaces `catalog_integration_config.allow_full_table_external_data_access`,
-      and a validation rejects the old attribute with a message naming the new one.
+      user's create command). It replaces `catalog_integration_config.allow_full_table_external_data_access`.
+    - `identity_center` (FR-032, added 2026-11-21): `enabled` (bool, default false) and
+      `instance_arn` (string, default empty). Enabled requires an ARN matching
+      `^arn:aws[a-z-]*:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}$`. Disabled requires it empty.
+      Both are owner-only (`owner_only_inputs_default`).
   - `studio_config`: `enabled` (default false) and `integration_principal_arns`.
   - `sharing_config`: `consumer_accounts`.
   - `governance_config.direct_access_exempt_principal_arns` (new optional attribute).
-- **Validation** (FR-001, FR-004, FR-007):
+- **Validation** (FR-001, FR-004, FR-007, FR-032):
   - Owner-only fields must be at their defaults when `owner` is false.
   - External data filtering requires a non-empty allow list.
   - The studio flag and its principal list must agree.
@@ -606,6 +654,7 @@ specs/003-harden-catalog-settings/
 │   ├── account-settings/       # NEW: data-lake settings, catalog key, encryption role + settings, Glue policy
 │   │   ├── main.tf
 │   │   ├── kms.tf              # dedicated catalog-metadata key, alias, and policy
+│   │   ├── identity-center.tf  # optional Lake Formation Identity Center integration (FR-032)
 │   │   ├── iam.tf
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
@@ -618,7 +667,8 @@ specs/003-harden-catalog-settings/
 │   │   ├── storage.tf          # + DenyDirectTableAccess on dedicated buckets
 │   │   ├── variables.tf        # + shares in tenant type, platform.sharing, platform.direct_access
 │   │   └── main.tf             # + share preconditions
-│   ├── deployer/main.tf        # + GlueCatalogSettings, LakeFormationCrossAccount
+│   ├── deployer/main.tf        # + GlueCatalogSettings, LakeFormationCrossAccount,
+│   │                           #   LakeFormationIdentityCenter (identity_center_instance_arn)
 │   └── cost-estimation/        # + catalog KMS request line
 ├── examples/{complete,secondary,standalone-tenant}/   # updated inputs
 ├── test/                       # + account_settings_test.go, sharing_test.go; extended validation/secondary/complete tests
@@ -660,6 +710,12 @@ go in `modules/tenant` so that tenant authority bounds them (FR-023).
   - *Spec*: FR-003: list of explicit fields
   - *Deviation*: Adds `SET_CONTEXT` to the explicit parameters.
   - *Reason*: `PutDataLakeSettings` replaces `Parameters` wholesale (R2).
+- **D5** (2026-11-21, sandbox result 9)
+  - *Spec*: FR-032: deployer permissions "scoped to this account's applications"
+  - *Deviation*: scoped to the configured instance and its applications in any owner account,
+    through a deployer `identity_center_instance_arn` input instead of a flag.
+  - *Reason*: the Identity Center application belongs to the instance's account, usually the
+    management account, so an ARN with this account never matches. FR-032 was amended.
 
 ## Sandbox Confirmation (T-S1, first implementation task)
 
@@ -685,6 +741,11 @@ Run in `492637581429`, with the consumer account once one is provisioned. Record
    - Whether a catalog created by the CLI behaves like the provider-created one for
      `lfverify`.
    - That `verify-down` and the removal from `catalog-integration` leave the catalog in place.
+9. (FR-032, 2026-11-21) With the account's Identity Center instance:
+   - whether the scoped `sso:` resources in `LakeFormationIdentityCenter` are enough to create,
+     update, and delete the integration, or the actions need `*`;
+   - whether the instance must be in the deployment's Region;
+   - that deleting the integration leaves the data-lake settings and other grants unchanged.
 
 ## Complexity Tracking
 

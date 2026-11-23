@@ -56,6 +56,7 @@ variable "encryption_config" {
     create_kms_key               = bool
     kms_key_id                   = string
     kms_key_deletion_window_days = number
+    key_administrator_arns       = optional(list(string), [])
   })
   default = {
     create_kms_key               = true

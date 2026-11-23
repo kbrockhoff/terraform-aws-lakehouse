@@ -151,6 +151,14 @@ module "lakehouse" {
     dml_workgroup_enabled = true
   }
 
+  # Key administrators: the runner and, when Terraform runs as another role, that role too
+  encryption_config = {
+    create_kms_key               = true
+    kms_key_id                   = ""
+    kms_key_deletion_window_days = 7
+    key_administrator_arns       = distinct([local.runner_role_arn, data.aws_iam_session_context.current.issuer_arn])
+  }
+
   # The fixture owns the account settings (Ephemeral) and supplies the long-lived catalog key
   account_settings_config = {
     catalog_encryption = {
@@ -162,6 +170,11 @@ module "lakehouse" {
     # sandbox consistent whichever created it (sandbox-results.md, T083).
     s3tables_catalog = {
       allow_full_table_external_data_access = false
+    }
+    # Optional: connect Lake Formation to the sandbox's Identity Center instance (FR-032)
+    identity_center = {
+      enabled      = var.identity_center_instance_arn != ""
+      instance_arn = var.identity_center_instance_arn
     }
   }
 

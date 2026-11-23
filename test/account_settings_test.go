@@ -250,6 +250,39 @@ func TestOwnerOnlyInputsRejectedOnNonOwner(t *testing.T) {
 	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "does not own the account settings")
 }
 
+// identityCenterInstance is a well-formed placeholder; plans never call Identity Center.
+const identityCenterInstance = "arn:aws:sso:::instance/ssoins-0123456789abcdef"
+
+// TestIdentityCenterIntegration checks FR-032: off by default, created by the owner for the
+// account's catalog when enabled, and owner-only.
+func TestIdentityCenterIntegration(t *testing.T) {
+	t.Parallel()
+	const addr = settingsPrefix + "aws_lakeformation_identity_center_configuration.this[0]"
+
+	off := planExample(t, "complete", completeVars(generateTestNamePrefix("icf")))
+	assert.NotContains(t, managedChanges(off), addr, "off by default")
+	assert.Equal(t, "", outputAfter(off, "identity_center_application_arn"))
+
+	vars := completeVars(generateTestNamePrefix("ico"))
+	vars["account_settings_config"] = map[string]interface{}{
+		"identity_center": map[string]interface{}{"enabled": true, "instance_arn": identityCenterInstance},
+	}
+	on := planExample(t, "complete", vars)
+	ic := after(managedChanges(on)[addr])
+	require.NotEmpty(t, ic, "the owner creates the integration")
+	assert.Equal(t, identityCenterInstance, ic["instance_arn"])
+	assert.Regexp(t, `^[0-9]{12}$`, ic["catalog_id"], "the account's default catalog")
+
+	vars = completeVars(generateTestNamePrefix("icn"))
+	vars["account_settings_config"] = map[string]interface{}{
+		"owner":           false,
+		"identity_center": map[string]interface{}{"enabled": true, "instance_arn": identityCenterInstance},
+	}
+	_, err := terraform.InitAndPlanE(t, exampleOptions(t, "complete", vars))
+	require.Error(t, err)
+	assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), "does not own the account settings")
+}
+
 // TestDataLakeSettingsExplicit checks FR-003: every field is declared with its secure default.
 func TestDataLakeSettingsExplicit(t *testing.T) {
 	t.Parallel()
@@ -330,13 +363,196 @@ func TestKeyProtectionStatement(t *testing.T) {
 			require.NotNil(t, protect)
 			assert.Equal(t, "Deny", protect["effect"])
 			assert.Equal(t, []string{"kms:DisableKey", "kms:ScheduleKeyDeletion"}, strs(protect["actions"]))
+			keyPolicies(t, plan) // the catalog key policy merges the administration document
+			breakGlassStmt := statements(t, plan, settingsPrefix+"module.key_policy_statements.data.aws_iam_policy_document.administration")["KeyDeletionBreakGlass"]
 			if c.principals == nil {
 				assert.Empty(t, list(protect["condition"]), "no exceptions: the deny is absolute")
+				assert.Nil(t, breakGlassStmt, "no break-glass statement without break-glass principals")
 			} else {
 				assert.Equal(t, c.principals, conditionValues(protect, "aws:PrincipalArn"))
+				// The root no longer grants kms:* through IAM, so the exempted principals need their own
+				// allow, matched by exact ARN so a retired break-glass role never invalidates the policy
+				require.NotNil(t, breakGlassStmt)
+				assert.Equal(t, c.principals, conditionValues(breakGlassStmt, "aws:PrincipalArn"))
+				assert.Regexp(t, `^arn:aws:iam::[0-9]{12}:root$`, strs(block(breakGlassStmt, "principals")["identifiers"])[0])
+				assert.Subset(t, strs(breakGlassStmt["actions"]), []string{"kms:ScheduleKeyDeletion", "kms:DisableKey"})
 			}
 		})
 	}
+}
+
+// keyPolicies maps each module-created key policy document (platform, catalog metadata, and
+// designated-tenant keys) to the shared administration document merged into it. The key
+// policies reference roles created in the same plan, so their merged JSON is unknown until
+// apply; the administration documents are known, and the tests read their statements.
+func keyPolicies(t *testing.T, plan *terraform.PlanStruct) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	admin := regexp.MustCompile(`^(.*)module\.key_policy_statements(\[0\])?\.data\.aws_iam_policy_document\.administration$`)
+	for _, addr := range planDataSources(plan) {
+		m := admin.FindStringSubmatch(addr)
+		if m == nil {
+			continue
+		}
+		var policy string
+		for _, name := range []string{"kms_key_policy[0]", "kms[0]", "catalog_key_policy"} {
+			if dataValues(plan, m[1]+"data.aws_iam_policy_document."+name) != nil {
+				policy = m[1] + "data.aws_iam_policy_document." + name
+			}
+		}
+		if policy == "" {
+			continue // a platform with create_kms_key = false renders the statements without a key
+		}
+		// The key policy merges this document's JSON
+		adminJSON, _ := dataValues(plan, addr)["json"].(string)
+		require.NotEmpty(t, adminJSON, addr)
+		assert.Contains(t, strs(dataValues(plan, policy)["source_policy_documents"]), adminJSON, "%s merges %s", policy, addr)
+		out[policy] = addr
+	}
+	return out
+}
+
+func keyAdministrators(t *testing.T, plan *terraform.PlanStruct, adminAddr string) []string {
+	t.Helper()
+	admins := statements(t, plan, adminAddr)["KeyAdministrators"]
+	require.NotNil(t, admins, adminAddr)
+	return strs(block(admins, "principals")["identifiers"])
+}
+
+func keyAdminVars(prefix string, admins []string) map[string]interface{} {
+	vars := completeVars(generateTestNamePrefix(prefix))
+	vars["encryption_config"] = map[string]interface{}{
+		"create_kms_key":               true,
+		"kms_key_id":                   "",
+		"kms_key_deletion_window_days": 30,
+		"key_administrator_arns":       admins,
+	}
+	return vars
+}
+
+// TestKeyAdministratorStatements checks every module-created key policy: only the explicit
+// key_administrator_arns manage the key, without using it, and the account root may only read it.
+// The list is never derived from the session, and the plan fails unless the deployer is listed.
+func TestKeyAdministratorStatements(t *testing.T) {
+	t.Parallel()
+
+	// The complete example defaults the list to the deploying role
+	base := planExample(t, "complete", completeVars(generateTestNamePrefix("kab")))
+	var deployer []string
+	for _, adminAddr := range keyPolicies(t, base) {
+		deployer = keyAdministrators(t, base, adminAddr)
+		break
+	}
+	require.Len(t, deployer, 1, "exactly the listed role, nothing added")
+	account := strings.Split(deployer[0], ":")[4]
+
+	extra := "arn:aws:iam::" + account + ":role/key-admin"
+	plan := planExample(t, "complete", keyAdminVars("ka", []string{extra, deployer[0]}))
+	policies := keyPolicies(t, plan)
+	assert.GreaterOrEqual(t, len(policies), 3, "platform, catalog, and designated tenant key policies")
+	for policy, adminAddr := range policies {
+		assert.NotContains(t, statements(t, plan, policy), "EnableRootAccess", policy)
+
+		stmts := statements(t, plan, adminAddr)
+		assert.ElementsMatch(t, []string{deployer[0], extra}, keyAdministrators(t, plan, adminAddr), "%s: exactly the configured administrators", policy)
+		admins := stmts["KeyAdministrators"]
+		for _, a := range strs(admins["actions"]) {
+			assert.NotContains(t, []string{"kms:*", "kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:CreateGrant", "kms:ReEncryptFrom", "kms:ReEncryptTo"}, a, "%s: administrators cannot use the key", policy)
+		}
+		assert.Contains(t, strs(admins["actions"]), "kms:PutKeyPolicy", policy)
+		assert.Equal(t, []string{account}, conditionValues(admins, "aws:PrincipalAccount"), "%s: administrators are limited to this account", policy)
+
+		root := stmts["AccountReadOnly"]
+		require.NotNil(t, root, policy)
+		assert.Equal(t, []string{"kms:Describe*", "kms:Get*", "kms:List*"}, strs(root["actions"]), policy)
+	}
+
+	for _, c := range []struct {
+		name, want string
+		admins     []string
+	}{
+		{"deployer not listed", "is not in encryption_config.key_administrator_arns", []string{extra}},
+		{"cross-account administrator", "must be in this account", []string{deployer[0], "arn:aws:iam::999999999999:role/key-admin"}},
+	} {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := terraform.InitAndPlanE(t, exampleOptions(t, "complete", keyAdminVars("kar", c.admins)))
+			require.Error(t, err)
+			assert.Contains(t, spaces.ReplaceAllString(err.Error(), " "), c.want)
+		})
+	}
+}
+
+// TestKeyDelegatedStatements checks the account-delegated key use that remains: each statement is
+// matched by exact principal ARN (a retired role never invalidates the policy), and exemptions only
+// reach the module's table storage.
+func TestKeyDelegatedStatements(t *testing.T) {
+	t.Parallel()
+	exempt := "arn:aws:iam::123456789012:role/migration"
+	writer := "arn:aws:iam::123456789012:role/glue-connections"
+	name := generateTestNamePrefix("kd")
+	vars := completeVars(name)
+	vars["governance_config"] = map[string]interface{}{
+		"domain_values":                       []string{"general", "sales", "finance", "health"},
+		"direct_access_exempt_principal_arns": []string{exempt},
+	}
+	vars["account_settings_config"] = map[string]interface{}{
+		"catalog_encryption": map[string]interface{}{"connection_writer_arns": []string{writer}},
+	}
+	plan := planExample(t, "complete", vars)
+
+	exemptions := 0
+	for _, addr := range planDataSources(plan) {
+		if !strings.HasSuffix(addr, "module.key_policy_statements[0].data.aws_iam_policy_document.direct_access[0]") {
+			continue
+		}
+		stmt := statements(t, plan, addr)["AllowDirectAccessExemptions"]
+		require.NotNil(t, stmt, addr)
+		assert.Regexp(t, `^arn:aws:iam::[0-9]{12}:root$`, strs(block(stmt, "principals")["identifiers"])[0], addr)
+		assert.Equal(t, []string{exempt}, conditionValues(stmt, "aws:PrincipalArn"), addr)
+		contexts := conditionValues(stmt, "kms:EncryptionContext:aws:s3:arn")
+		require.NotEmpty(t, contexts, "%s: limited to table storage", addr)
+		for _, c := range contexts {
+			assert.Regexp(t, `^arn:aws:s3tables:[a-z0-9-]+:[0-9]{12}:bucket/`+name+`-[^/]*/\*$`, c, addr)
+		}
+		exemptions++
+	}
+	assert.GreaterOrEqual(t, exemptions, 2, "platform and designated-tenant keys")
+
+	// Athena results key use through S3 is limited to the results buckets, so it never covers S3-path
+	// decrypts of table storage; Athena's own calls keep a separate statement
+	results := 0
+	for _, addr := range planDataSources(plan) {
+		if !strings.HasSuffix(addr, "data.aws_iam_policy_document.required_kms_statements[0]") &&
+			!(strings.Contains(addr, "module.tenant[") && strings.HasSuffix(addr, "data.aws_iam_policy_document.kms[0]")) {
+			continue
+		}
+		stmts := statements(t, plan, addr)
+		athena := stmts["AllowAthenaResults"]
+		require.NotNil(t, athena, addr)
+		via := conditionValues(athena, "kms:ViaService")
+		require.Len(t, via, 1, addr)
+		assert.Regexp(t, `^s3\.[a-z0-9-]+\.amazonaws\.com$`, via[0], addr)
+		// Platform key: the platform's S3 buckets (never an s3tables context); tenant key: its results bucket
+		contexts := conditionValues(athena, "kms:EncryptionContext:aws:s3:arn")
+		require.NotEmpty(t, contexts, addr)
+		for _, c := range contexts {
+			assert.Regexp(t, `^arn:aws:s3:::`+name+`-(\*|[a-z0-9]+-athena-results-[0-9]{12}(/\*)?)$`, c, addr)
+		}
+		require.NotNil(t, stmts["AllowAthenaService"], addr)
+		service := conditionValues(stmts["AllowAthenaService"], "kms:ViaService")
+		require.Len(t, service, 1, addr)
+		assert.Regexp(t, `^athena\.[a-z0-9-]+\.amazonaws\.com$`, service[0], addr)
+		results++
+	}
+	assert.GreaterOrEqual(t, results, 2, "platform and designated-tenant keys")
+
+	writers := statements(t, plan, settingsPrefix+"data.aws_iam_policy_document.required_catalog_key_statements")["AllowConnectionPasswordEncryption"]
+	require.NotNil(t, writers, "connection writers keep kms:Encrypt for Glue connection passwords")
+	assert.Equal(t, []string{"kms:Encrypt"}, strs(writers["actions"]))
+	assert.Equal(t, []string{writer}, conditionValues(writers, "aws:PrincipalArn"))
+	assert.Regexp(t, `^glue\.`, conditionValues(writers, "kms:ViaService")[0])
 }
 
 func TestEphemeralOwnerWarnsOnModuleCreatedCatalogKey(t *testing.T) {

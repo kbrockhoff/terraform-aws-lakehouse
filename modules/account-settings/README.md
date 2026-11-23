@@ -12,6 +12,9 @@ account and Region calls it (`account_settings_config.owner` in the root module)
   deletion and disabling except to break-glass principals.
 - **Catalog resource policy** (optional): the RAM `glue:ShareResource` statement plus caller-supplied Deny statements,
   with `EnableHybrid = TRUE`.
+- **Identity Center integration** (optional, `identity_center`): connects Lake Formation to an existing IAM
+  Identity Center instance. Disabling it deletes the integration (see the root README, "Identity Center
+  Integration").
 - **Federated `s3tablescatalog`**: created by the root module's `terraform_data.s3tables_catalog` before anything
   else. Every resource here waits on it through the `catalog_ready` input (see the root README, "S3 Tables
   Catalog").
@@ -39,7 +42,9 @@ Destroying this submodule resets catalog encryption to `DISABLED` and empties th
 
 ## Modules
 
-No modules.
+| Name | Source | Version |
+| ---- | ------ | ------- |
+| <a name="module_key_policy_statements"></a> [key\_policy\_statements](#module\_key\_policy\_statements) | ../key-policy-statements | n/a |
 
 ## Resources
 
@@ -52,6 +57,7 @@ No modules.
 | [aws_kms_alias.catalog](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_key.catalog](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_lakeformation_data_lake_settings.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_data_lake_settings) | resource |
+| [aws_lakeformation_identity_center_configuration.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lakeformation_identity_center_configuration) | resource |
 | [terraform_data.catalog_ready](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [time_sleep.catalog_encryption_role](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 
@@ -61,17 +67,19 @@ No modules.
 | ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_account_id"></a> [account\_id](#input\_account\_id) | AWS account ID whose Lake Formation and Glue Data Catalog settings this submodule owns. | `string` | n/a | yes |
 | <a name="input_admin_principal_arns"></a> [admin\_principal\_arns](#input\_admin\_principal\_arns) | Lake Formation data-lake admins, including studio integration principals. Authoritative: admins not listed are removed. | `list(string)` | n/a | yes |
-| <a name="input_catalog_encryption"></a> [catalog\_encryption](#input\_catalog\_encryption) | Catalog metadata encryption. An empty kms\_key\_arn creates the dedicated catalog key. | <pre>object({<br/>    key_access_mode             = string<br/>    kms_key_arn                 = string<br/>    additional_key_user_arns    = list(string)<br/>    key_deletion_principal_arns = list(string)<br/>  })</pre> | n/a | yes |
+| <a name="input_catalog_encryption"></a> [catalog\_encryption](#input\_catalog\_encryption) | Catalog metadata encryption. An empty kms\_key\_arn creates the dedicated catalog key. | <pre>object({<br/>    key_access_mode             = string<br/>    kms_key_arn                 = string<br/>    additional_key_user_arns    = list(string)<br/>    key_deletion_principal_arns = list(string)<br/>    connection_writer_arns      = list(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_catalog_resource_policy"></a> [catalog\_resource\_policy](#input\_catalog\_resource\_policy) | Optional Glue Data Catalog resource policy: the RAM sharing statement plus caller-supplied Deny statements. | <pre>object({<br/>    enabled           = bool<br/>    deny_policy_jsons = list(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_data_lake"></a> [data\_lake](#input\_data\_lake) | Explicit values for every data-lake settings field. PutDataLakeSettings replaces the whole object, so nothing is left implicit. | <pre>object({<br/>    allow_external_data_filtering         = bool<br/>    external_data_filtering_allow_list    = list(string)<br/>    authorized_session_tag_values         = list(string)<br/>    allow_full_table_external_data_access = bool<br/>    trusted_resource_owners               = list(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_deployer_role_arn"></a> [deployer\_role\_arn](#input\_deployer\_role\_arn) | Role ARN of the deploying session. It must be one of admin\_principal\_arns. | `string` | n/a | yes |
 | <a name="input_environment_type"></a> [environment\_type](#input\_environment\_type) | Environment type of the owning deployment. Only Ephemeral may change the catalog key after installation. | `string` | n/a | yes |
+| <a name="input_key_administrator_arns"></a> [key\_administrator\_arns](#input\_key\_administrator\_arns) | Named administrators of the created catalog key, including the deploying role. The account root gets read-only access only. | `list(string)` | n/a | yes |
 | <a name="input_kms_key_deletion_window_days"></a> [kms\_key\_deletion\_window\_days](#input\_kms\_key\_deletion\_window\_days) | Deletion window for the created catalog key. Deletion itself is denied to everyone but key\_deletion\_principal\_arns. | `number` | n/a | yes |
 | <a name="input_name_prefix"></a> [name\_prefix](#input\_name\_prefix) | Organization unique prefix used for resource names. | `string` | n/a | yes |
 | <a name="input_partition"></a> [partition](#input\_partition) | AWS partition (aws, aws-us-gov, aws-cn). | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | AWS Region of the settings. | `string` | n/a | yes |
 | <a name="input_catalog_ready"></a> [catalog\_ready](#input\_catalog\_ready) | ID of the root module's s3tablescatalog check-and-create step. Every resource here waits on it, so the catalog exists before anything else is created or changed (spec 003 FR-029). | `string` | `""` | no |
 | <a name="input_cross_account_version"></a> [cross\_account\_version](#input\_cross\_account\_version) | Lake Formation cross-account version (4 or 5). Versions are never lowered; 5 is irreversible. | `number` | `4` | no |
+| <a name="input_identity_center"></a> [identity\_center](#input\_identity\_center) | Optional Lake Formation integration with an existing IAM Identity Center instance (root account\_settings\_config.identity\_center, validated there). | <pre>object({<br/>    enabled      = bool<br/>    instance_arn = string<br/>  })</pre> | <pre>{<br/>  "enabled": false,<br/>  "instance_arn": ""<br/>}</pre> | no |
 | <a name="input_key_user_arns"></a> [key\_user\_arns](#input\_key\_user\_arns) | Tenant persona ARNs granted catalog key use in per\_caller mode. | `list(string)` | `[]` | no |
 | <a name="input_permissions_boundary_arn"></a> [permissions\_boundary\_arn](#input\_permissions\_boundary\_arn) | Permissions boundary for the catalog-encryption role. Empty means none. | `string` | `""` | no |
 | <a name="input_read_only_admin_principal_arns"></a> [read\_only\_admin\_principal\_arns](#input\_read\_only\_admin\_principal\_arns) | Lake Formation read-only admins. Authoritative, like admin\_principal\_arns. | `list(string)` | `[]` | no |
@@ -87,5 +95,6 @@ No modules.
 | <a name="output_catalog_kms_key_arn"></a> [catalog\_kms\_key\_arn](#output\_catalog\_kms\_key\_arn) | ARN of the dedicated catalog-metadata key, created here or supplied. |
 | <a name="output_cross_account_version"></a> [cross\_account\_version](#output\_cross\_account\_version) | Lake Formation cross-account version managed here. |
 | <a name="output_data_lake_settings_id"></a> [data\_lake\_settings\_id](#output\_data\_lake\_settings\_id) | ID of the data-lake settings. Registration and grants wait on it so the deployer's admin rights exist first. |
+| <a name="output_identity_center_application_arn"></a> [identity\_center\_application\_arn](#output\_identity\_center\_application\_arn) | ARN of the Identity Center application Lake Formation created for the integration. Empty when the integration is off. |
 | <a name="output_required_catalog_kms_key_policy_json"></a> [required\_catalog\_kms\_key\_policy\_json](#output\_required\_catalog\_kms\_key\_policy\_json) | Key policy statements a consumer-supplied catalog key needs. Account-root access is the key owner's own responsibility. |
 <!-- END_TF_DOCS -->

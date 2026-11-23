@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -162,6 +163,40 @@ func (c *Clients) S3TablesCatalog(ctx context.Context, want map[string]string) R
 		}
 	}
 	return checkResult(compare(actual, want))
+}
+
+// NotExpected is the identity_center expect_values instance_arn for a deployment that does not
+// enable the integration. The check then only reports the live state, because the integration
+// may be managed outside the module (spec 003 FR-020 case 12).
+const NotExpected = "none"
+
+// IdentityCenter compares the live Lake Formation Identity Center integration with want (FR-020
+// case 12, FR-032). Its one key is instance_arn: the expected instance, or NotExpected.
+func (c *Clients) IdentityCenter(ctx context.Context, want map[string]string) Result {
+	live := NotExpected
+	out, err := c.LF.DescribeLakeFormationIdentityCenterConfiguration(ctx, &lakeformation.DescribeLakeFormationIdentityCenterConfigurationInput{})
+	var notFound *lftypes.EntityNotFoundException
+	switch {
+	case errors.As(err, &notFound):
+	case err != nil:
+		return fromErr(err, classify.Exists{Resource: true})
+	default:
+		live = aws.ToString(out.InstanceArn)
+	}
+	res := checkResult(identityCenterMismatches(live, want))
+	res.Names = []string{"instance_arn=" + live}
+	return res
+}
+
+// identityCenterMismatches compares the live instance ARN (NotExpected when no integration exists)
+// with want. An integration that is not expected is never a mismatch.
+func identityCenterMismatches(live string, want map[string]string) []string {
+	if want["instance_arn"] == NotExpected {
+		rest := maps.Clone(want)
+		delete(rest, "instance_arn")
+		return compare(map[string]string{}, rest)
+	}
+	return compare(map[string]string{"instance_arn": live}, want)
 }
 
 // catalogDefaultPermissions renders a Glue catalog's default permissions as sorted principals;

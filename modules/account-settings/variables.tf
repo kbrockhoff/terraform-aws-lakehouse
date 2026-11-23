@@ -128,6 +128,7 @@ variable "catalog_encryption" {
     kms_key_arn                 = string
     additional_key_user_arns    = list(string)
     key_deletion_principal_arns = list(string)
+    connection_writer_arns      = list(string)
   })
 
   validation {
@@ -151,6 +152,21 @@ variable "kms_key_deletion_window_days" {
   validation {
     condition     = var.kms_key_deletion_window_days >= 7 && var.kms_key_deletion_window_days <= 30
     error_message = "kms_key_deletion_window_days must be between 7 and 30."
+  }
+}
+
+variable "key_administrator_arns" {
+  description = "Named administrators of the created catalog key, including the deploying role. The account root gets read-only access only."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.key_administrator_arns) > 0
+    error_message = "key_administrator_arns must name at least one principal."
+  }
+
+  validation {
+    condition     = alltrue([for a in var.key_administrator_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a))])
+    error_message = "Every key_administrator_arns entry must be an IAM role or user ARN without wildcards."
   }
 }
 
@@ -184,4 +200,17 @@ variable "permissions_boundary_arn" {
   description = "Permissions boundary for the catalog-encryption role. Empty means none."
   type        = string
   default     = ""
+}
+
+variable "identity_center" {
+  description = "Optional Lake Formation integration with an existing IAM Identity Center instance (root account_settings_config.identity_center, validated there)."
+  type = object({
+    enabled      = bool
+    instance_arn = string
+  })
+  default = {
+    enabled      = false
+    instance_arn = ""
+  }
+  # Validated by the root module's account_settings_config, the only caller
 }

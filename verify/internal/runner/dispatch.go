@@ -247,6 +247,12 @@ func (r *Runner) dispatch(ctx context.Context, pc *ops.Clients, inst matrix.Inst
 			return errResult(err), obs
 		}
 		return pc.S3TablesCatalog(ctx, want), obs
+	case matrix.IdentityCenter:
+		want, err := r.expectValues(c)
+		if err != nil {
+			return errResult(err), obs
+		}
+		return pc.IdentityCenter(ctx, want), obs
 	case matrix.NoIAMAllowedPrincipals:
 		// Full mode checks every label namespace of the fixture; probe mode the case's database
 		var dbs []ops.Database

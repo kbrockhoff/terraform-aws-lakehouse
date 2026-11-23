@@ -8,13 +8,14 @@ data "aws_region" "current" {}
 module "platform" {
   source = "../../modules/deployer"
 
-  name_prefix             = var.name_prefix
-  scope                   = "platform"
-  iam_role_arn            = var.iam_role_arn
-  cost_estimation_enabled = var.cost_estimation_enabled
-  partition               = data.aws_partition.current.partition
-  region                  = data.aws_region.current.region
-  account_id              = data.aws_caller_identity.current.account_id
+  name_prefix                  = var.name_prefix
+  scope                        = "platform"
+  iam_role_arn                 = var.iam_role_arn
+  cost_estimation_enabled      = var.cost_estimation_enabled
+  identity_center_instance_arn = var.identity_center_instance_arn
+  partition                    = data.aws_partition.current.partition
+  region                       = data.aws_region.current.region
+  account_id                   = data.aws_caller_identity.current.account_id
 }
 
 # Policy for a standalone tenant provisioning pipeline role

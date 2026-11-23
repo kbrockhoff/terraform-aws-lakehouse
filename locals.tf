@@ -146,6 +146,9 @@ locals {
   ) : ""
   kms_key_arn = local.kms_key_id
 
+  # Shared Athena query results bucket
+  query_results_bucket_name = "${local.name_prefix}-athena-results-${local.account_id}"
+
   # SNS topic logic - use provided topic ARN or create new one
   create_sns_topic = var.enabled && local.effective_config.alarms_enabled && var.alarms_config.create_sns_topic
   alarm_sns_topic_arn = var.enabled && local.effective_config.alarms_enabled ? (
@@ -172,6 +175,18 @@ locals {
   # Role ARN of the deploying session (issuer of an assumed-role session)
   deployer_role_arn = data.aws_iam_session_context.current.issuer_arn
 
+  # Named administrators on every module-created key: an explicit, stable list, never the session
+  # role, so applying from another role cannot rewrite the policy out from under itself.
+  # key_administrators_guard requires the deploying role to be listed.
+  key_administrator_arns = sort(distinct(var.encryption_config.key_administrator_arns))
+
+  # Whether this deployment creates any KMS key: platform, catalog metadata, or designated tenant
+  creates_kms_key = var.enabled && (
+    var.encryption_config.create_kms_key ||
+    (local.settings_owner && var.account_settings_config.catalog_encryption.kms_key_arn == "") ||
+    anytrue([for t in values(var.tenants) : length(t.compliance_frameworks) > 0])
+  )
+
   # Account-wide Lake Formation and Glue settings are owned by one deployment per account and
   # Region. By default the deployment that owns the catalog integration owns them too (FR-001).
   settings_owner = var.account_settings_config.owner != null ? var.account_settings_config.owner : var.catalog_integration_config.enabled
@@ -189,10 +204,13 @@ locals {
     var.account_settings_config.catalog_encryption.kms_key_arn == "" &&
     length(var.account_settings_config.catalog_encryption.additional_key_user_arns) == 0 &&
     length(var.account_settings_config.catalog_encryption.key_deletion_principal_arns) == 0 &&
+    length(var.account_settings_config.catalog_encryption.connection_writer_arns) == 0 &&
     !var.account_settings_config.catalog_resource_policy.enabled &&
     length(var.account_settings_config.catalog_resource_policy.deny_policy_jsons) == 0 &&
     var.account_settings_config.permissions_boundary_arn == "" &&
-    var.account_settings_config.s3tables_catalog.allow_full_table_external_data_access
+    var.account_settings_config.s3tables_catalog.allow_full_table_external_data_access &&
+    !var.account_settings_config.identity_center.enabled &&
+    var.account_settings_config.identity_center.instance_arn == ""
   )
 
   # Registration waits for the settings, or for the guard when another deployment owns them
@@ -284,6 +302,7 @@ locals {
     }
     regulation_designation = local.regulation_designation
     kms_key_arn            = local.kms_key_arn
+    key_administrator_arns = local.key_administrator_arns
     data_access_role_arn   = local.data_access_role_arn
     query_results = {
       bucket_name = aws_s3_bucket.query_results[0].bucket
