@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.4.0...v0.5.0) (2026-11-23)
+
+
+### Features
+
+* **settings:** optional Lake Formation Identity Center integration (FR-032) ([b664cc5](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/b664cc580bf5c209193d1f818ec72f9293d13909))
+
+
+### Bug Fixes
+
+* **kms:** explicit key administrators, scoped delegations, and review fixes ([71ce761](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/71ce761db8047993f32268d2528c93add51704af))
+* **kms:** limit Athena results key use to the platform's S3 buckets ([212a46e](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/212a46e91a90e017f0187da02735bfb5c8ae4b0b))
+* **kms:** name key administrators and limit account root to read-only ([7e43eb3](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/7e43eb32df07be9549ab143121acd1e55b807702))
+* **tenant:** validate key administrator account without indexing the ARN ([8ce33f6](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/8ce33f65b6a0e37828993accc9371e4f0d93e29e))
+* **test:** install test providers from a local mirror ([2e8e67b](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/2e8e67bda0b0b0999a558fc4ebf838bd30974c78))
+* **test:** skip Pricing API lookups outside cost-focused tests ([c7f557f](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/c7f557fae844839195c365700f8d97c2e7ca8c20))
+* **test:** stop Pricing API and registry flakes in make test ([34b3991](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/34b3991c316f9866df21676de510d60029b0961f))
+* **variables:** remove deprecated catalog_integration_config.allow_full_table_external_data_access ([cca0d0c](https://github.com/kbrockhoff/terraform-aws-lakehouse/commit/cca0d0caaeacbc2e09e814a4d29b12d0247e76f1))
+
 ## [0.4.0](https://github.com/kbrockhoff/terraform-aws-lakehouse/compare/v0.3.1...v0.4.0) (2026-11-19)
 
 
