@@ -79,7 +79,7 @@ variable "platform" {
   validation {
     condition = alltrue([
       for a in var.platform.key_administrator_arns :
-      can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[^*?]+$", a)) && split(":", a)[4] == var.platform.account_id
+      can(regex("^arn:aws[a-z-]*:iam::${var.platform.account_id}:(role|user)/[^*?]+$", a))
     ])
     error_message = "platform.key_administrator_arns entries must be IAM role or user ARNs without wildcards, in the platform account."
   }
