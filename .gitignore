@@ -55,3 +55,6 @@ makefile.tfplan
 # Access verification harness run output and fixture state
 verify/out/
 verify/fixture/.terraform*
+
+# Shared Terraform provider cache for tests (make test-providers)
+test/.plugin-cache/

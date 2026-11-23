@@ -3,6 +3,7 @@ package test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
@@ -18,7 +19,7 @@ func TestMain(m *testing.M) {
 
 // Helper function to get default terraform options for testing
 func getBaseTerraformOptions(terraformDir string) *terraform.Options {
-	return &terraform.Options{
+	opts := &terraform.Options{
 		TerraformDir: terraformDir,
 		NoColor:      true,
 		RetryableTerraformErrors: map[string]string{
@@ -84,8 +85,14 @@ func getBaseTerraformOptions(terraformDir string) *terraform.Options {
 			"DisabledException":                                  "AWS KMS key disabled",
 			"InvalidAliasNameException":                          "AWS KMS alias name invalid",
 		},
-		MaxRetries: 3,
+		MaxRetries:         3,
+		TimeBetweenRetries: 5 * time.Second,
 	}
+	// Terratest's defaults cover transient registry and provider download failures during init
+	for k, v := range terraform.DefaultRetryableTerraformErrors {
+		opts.RetryableTerraformErrors[k] = v
+	}
+	return opts
 }
 
 // generateTestNamePrefix generates a unique test name prefix with consistent length

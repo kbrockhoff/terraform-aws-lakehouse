@@ -1,7 +1,7 @@
 # Terraform Brockhoff Module Makefile
 # Optimized for AI agents to reduce LLM calls and token usage
 
-.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-consumer-admin verify-upgrade verify-upgrade-check verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
+.PHONY: help validate test clean format docs all status pre-commit lint check security-scan plan-examples destroy-examples test-providers test-defaults test-complete test-enabled-false test-tenancy test-account-settings test-standalone test-deployer test-secondary test-validation test-verify test-verify-fixture lint-verify verify-dist verify-build verify-new-run verify-consumer-admin verify-upgrade verify-upgrade-check verify-init verify-up verify-seed verify-run verify-apply verify-down verify-full verify-detect verify-cleanup verify-probe verify-probe-audit
 
 # Default target
 .DEFAULT_GOAL := help
@@ -105,55 +105,73 @@ security-scan: ## Run the Checkov security scan with the same flags as CI (extra
 	fi
 
 ##@ Testing
-test: check-aws ## Run all tests
+# Parallel tests each run terraform init in a temp copy of an example. test-providers initializes
+# every test directory once, filling a provider cache and the (uncommitted) lock files the copies
+# inherit; the tests then install only from that cache as a filesystem mirror, so their inits never
+# contact registry.terraform.io (awslkhs-3fnq).
+TF_TEST_CACHE := $(CURDIR)/test/.plugin-cache
+TF_TEST_DIRS := $(wildcard examples/*) verify/fixture
+TF_TEST_ENV := TF_CLI_CONFIG_FILE=$(TF_TEST_CACHE)/mirror.tfrc
+
+test-providers: ## Fill the provider cache and lock files that tests install from offline
+	@mkdir -p $(TF_TEST_CACHE)/providers
+	@for dir in $(TF_TEST_DIRS); do \
+		TF_PLUGIN_CACHE_DIR=$(TF_TEST_CACHE)/providers TF_DATA_DIR=$(TF_TEST_CACHE)/init/$$dir \
+			terraform -chdir=$$dir init -backend=false -input=false -no-color >/dev/null \
+			|| { echo "$(RED)✗ terraform init failed for $$dir$(RESET)"; exit 1; }; \
+	done
+	@printf 'provider_installation {\n  filesystem_mirror {\n    path = "%s"\n  }\n}\n' "$(TF_TEST_CACHE)/providers" > $(TF_TEST_CACHE)/mirror.tfrc
+	@echo "$(GREEN)✓ Provider cache ready$(RESET)"
+
+test: check-aws test-providers ## Run all tests
 	@echo "$(CYAN)Running tests...$(RESET)"
 	@cd test && go mod tidy
-	@cd test && go test -v -timeout 30m -parallel 4
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -parallel 4
 	@echo "$(GREEN)✓ All tests passed$(RESET)"
 
-test-defaults: check-aws ## Run only defaults example tests
+test-defaults: check-aws test-providers ## Run only defaults example tests
 	@echo "$(CYAN)Running defaults test...$(RESET)"
-	@cd test && go test -v -timeout 15m -run 'TestTerraformDefaultsExample|TestCostEstimationDisabled'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 15m -run 'TestTerraformDefaultsExample|TestCostEstimationDisabled'
 	@echo "$(GREEN)✓ Defaults test passed$(RESET)"
 
-test-complete: check-aws ## Run only complete example tests
+test-complete: check-aws test-providers ## Run only complete example tests
 	@echo "$(CYAN)Running complete test...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestTerraformCompleteExample|TestCompleteExampleSecurityControls|TestComplianceDesignationGatesTenantKeys|TestRowFilterExclusionFollowsPrincipal'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -run 'TestTerraformCompleteExample|TestCompleteExampleSecurityControls|TestComplianceDesignationGatesTenantKeys|TestRowFilterExclusionFollowsPrincipal'
 	@echo "$(GREEN)✓ Complete test passed$(RESET)"
 
-test-enabled-false: check-aws ## Run only enabled=false test
+test-enabled-false: check-aws test-providers ## Run only enabled=false test
 	@echo "$(CYAN)Running enabled=false test...$(RESET)"
-	@cd test && go test -v -timeout 15m -run TestEnabledFalse
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 15m -run TestEnabledFalse
 	@echo "$(GREEN)✓ Enabled=false test passed$(RESET)"
 
-test-tenancy: check-aws ## Run only tenancy tests (tenant isolation, type sync, zone override)
+test-tenancy: check-aws test-providers ## Run only tenancy tests (tenant isolation, type sync, zone override)
 	@echo "$(CYAN)Running tenancy tests (tenant isolation, type sync, zone override)...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestAddingTenantTouchesOnlyThatTenant|TestTenantTypeInSync|TestZoneOverrideWithoutConsumption'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -run 'TestAddingTenantTouchesOnlyThatTenant|TestTenantTypeInSync|TestZoneOverrideWithoutConsumption'
 	@echo "$(GREEN)✓ test-tenancy passed$(RESET)"
 
-test-account-settings: check-aws ## Run only account settings and sharing tests (spec 003)
+test-account-settings: check-aws test-providers ## Run only account settings and sharing tests (spec 003)
 	@echo "$(CYAN)Running account settings and sharing tests...$(RESET)"
-	@cd test && go test -v -timeout 45m -run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestIdentityCenter|TestEphemeral|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare|TestStandaloneTenantRejectsUnapprovedShare'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 45m -run 'TestOwner|TestDataLake|TestCatalog|TestKey|TestIdentityCenter|TestEphemeral|TestNoCatalog|TestShare|TestNoConsumer|TestRemoving|TestDesignatedTenantShare|TestStandaloneTenantRejectsUnapprovedShare'
 	@echo "$(GREEN)✓ test-account-settings passed$(RESET)"
 
-test-standalone: check-aws ## Run only standalone tenant tests
+test-standalone: check-aws test-providers ## Run only standalone tenant tests
 	@echo "$(CYAN)Running standalone tenant tests...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestStandaloneTenant'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -run 'TestStandaloneTenant'
 	@echo "$(GREEN)✓ test-standalone passed$(RESET)"
 
-test-deployer: check-aws ## Run only deployer policy tests
+test-deployer: check-aws test-providers ## Run only deployer policy tests
 	@echo "$(CYAN)Running deployer policy tests...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestDeployerPolicies'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -run 'TestDeployerPolicies'
 	@echo "$(GREEN)✓ test-deployer passed$(RESET)"
 
-test-secondary: check-aws ## Run only secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)
+test-secondary: check-aws test-providers ## Run only secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)
 	@echo "$(CYAN)Running secondary deployment test (needs LAKEHOUSE_TEST_LF_ADMIN=true)...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestSecondaryExampleSkipsAccountIntegration'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -run 'TestSecondaryExampleSkipsAccountIntegration'
 	@echo "$(GREEN)✓ test-secondary passed$(RESET)"
 
-test-validation: check-aws ## Run only input validation tests
+test-validation: check-aws test-providers ## Run only input validation tests
 	@echo "$(CYAN)Running input validation tests...$(RESET)"
-	@cd test && go test -v -timeout 30m -run 'TestInvalidInputsFailPlan|TestRegulatedDataInBaselineWarns'
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 30m -run 'TestInvalidInputsFailPlan|TestRegulatedDataInBaselineWarns'
 	@echo "$(GREEN)✓ test-validation passed$(RESET)"
 
 test-verify: ## Run lfverify vet and unit tests (offline, no AWS credentials)
@@ -161,9 +179,9 @@ test-verify: ## Run lfverify vet and unit tests (offline, no AWS credentials)
 	@cd verify && go vet ./... && go test ./...
 	@echo "$(GREEN)✓ test-verify passed$(RESET)"
 
-test-verify-fixture: check-aws ## Run only the plan-only access-verification fixture tests
+test-verify-fixture: check-aws test-providers ## Run only the plan-only access-verification fixture tests
 	@echo "$(CYAN)Running access-verification fixture tests...$(RESET)"
-	@cd test && go test -v -timeout 20m -run TestVerifyFixture
+	@cd test && $(TF_TEST_ENV) go test -v -timeout 20m -run TestVerifyFixture
 	@echo "$(GREEN)✓ test-verify-fixture passed$(RESET)"
 
 ##@ Access verification (live AWS runs; never part of validate or test)
