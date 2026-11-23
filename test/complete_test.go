@@ -20,14 +20,24 @@ var tenantOwners = map[string]string{
 	"claims":  "claims-data@example.com",
 }
 
+// completeVars plans the complete example without cost estimation: each plan otherwise reads
+// ~16 aws_pricing_product data sources, and parallel tests throttle the low-TPS Pricing API
+// until the run times out (awslkhs-ax11). Tests asserting cost outputs use completeVarsWithPricing.
 func completeVars(name string) map[string]interface{} {
+	return map[string]interface{}{
+		"name_prefix":            name,
+		"cost_estimation_config": map[string]interface{}{"enabled": false},
+	}
+}
+
+func completeVarsWithPricing(name string) map[string]interface{} {
 	return map[string]interface{}{"name_prefix": name}
 }
 
 func TestTerraformCompleteExample(t *testing.T) {
 	t.Parallel()
 	name := generateTestNamePrefix("comp")
-	plan := planExample(t, "complete", completeVars(name))
+	plan := planExample(t, "complete", completeVarsWithPricing(name))
 	changes := managedChanges(plan)
 	tenantPrefix := func(tn string) string { return shared + `module.tenant["` + tn + `"].` }
 
@@ -506,7 +516,7 @@ func TestComplianceDesignationGatesTenantKeys(t *testing.T) {
 
 	plans := map[string]*terraform.PlanStruct{}
 	for label, c := range cases {
-		vars := completeVars(name)
+		vars := completeVarsWithPricing(name)
 		vars["claims_compliance_frameworks"] = c.frameworks
 		overrides := map[string]interface{}{"dedicated_storage": c.dedicated}
 		if label != "hipaa" {
