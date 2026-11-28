@@ -1,0 +1,29 @@
+# Loads this repository's beads database into the lakehouse raw zone using the
+# shared beads-elt workflow. A Dolt push can't trigger on: push, so this polls;
+# runs where refs/dolt/data hasn't changed exit after one git ls-remote.
+name: Beads ELT raw load
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Reload even if refs/dolt/data hasn't changed
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  elt:
+    uses: kbrockhoff/gh-aidlc-actions-workflows/.github/workflows/beads-elt.yml@v0.1.0
+    with:
+      aws-region: us-east-1
+      table-bucket-arn: arn:aws:s3tables:us-east-1:679192973472:bucket/bc-lakehouse-prod-raw
+      namespace: aidlc
+      force: ${{ inputs.force || false }}
+    secrets:
+      aws-role-arn: ${{ secrets.DOLT_ELT_AWS_ROLE_ARN }}
